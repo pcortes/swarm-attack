@@ -1,2 +1,0 @@
-[console_scripts]
-swarm-attack = swarm_attack.cli:cli_main
