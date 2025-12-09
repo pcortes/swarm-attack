@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarm-attack"
+version = "0.1.0"
+description = "Autonomous AI-powered feature development CLI - run from any project directory"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Philip Cortes"}
+]
+keywords = ["ai", "automation", "development", "claude", "codex", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.scripts]
+swarm-attack = "swarm_attack.cli:cli_main"
+
+[project.urls]
+Homepage = "https://github.com/pcortes/swarm-attack"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["swarm_attack*"]
+
+[tool.setuptools.package-data]
+swarm_attack = ["*.md", "*.yaml", "*.yml"]

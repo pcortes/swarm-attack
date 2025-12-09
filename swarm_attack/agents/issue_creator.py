@@ -1,0 +1,275 @@
+"""
+Issue Creator Agent for Feature Swarm.
+
+This agent reads an approved engineering specification and generates
+GitHub issues for implementation.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
+from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
+from swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write
+
+if TYPE_CHECKING:
+    from swarm_attack.config import SwarmConfig
+    from swarm_attack.llm_clients import ClaudeCliRunner
+    from swarm_attack.logger import SwarmLogger
+    from swarm_attack.state_store import StateStore
+
+
+class IssueCreatorAgent(BaseAgent):
+    """
+    Agent that generates GitHub issues from engineering specs.
+
+    Reads a spec-final.md from specs/<feature>/ and generates a list of
+    GitHub issues with titles, bodies, labels, dependencies, and sizing.
+    Outputs to specs/<feature>/issues.json.
+    """
+
+    name = "issue_creator"
+
+    def __init__(
+        self,
+        config: SwarmConfig,
+        logger: Optional[SwarmLogger] = None,
+        llm_runner: Optional[ClaudeCliRunner] = None,
+        state_store: Optional[StateStore] = None,
+    ) -> None:
+        """Initialize the Issue Creator agent."""
+        super().__init__(config, logger, llm_runner, state_store)
+        self._skill_prompt: Optional[str] = None
+
+    def _get_spec_path(self, feature_id: str) -> Path:
+        """Get the path to the spec-final.md file."""
+        return self.config.specs_path / feature_id / "spec-final.md"
+
+    def _get_issues_path(self, feature_id: str) -> Path:
+        """Get the path to the output issues.json file."""
+        return self.config.specs_path / feature_id / "issues.json"
+
+    def _load_skill_prompt(self) -> str:
+        """Load and cache the skill prompt."""
+        if self._skill_prompt is None:
+            self._skill_prompt = self.load_skill("issue-creator")
+        return self._skill_prompt
+
+    def _build_prompt(self, feature_id: str, spec_content: str) -> str:
+        """Build the full prompt for Claude."""
+        skill_prompt = self._load_skill_prompt()
+
+        return f"""{skill_prompt}
+
+---
+
+## Context for This Task
+
+**Feature ID:** {feature_id}
+
+**Engineering Spec Content:**
+
+```markdown
+{spec_content}
+```
+
+---
+
+## Your Task
+
+Generate GitHub issues from the engineering specification above.
+
+Return ONLY valid JSON (no markdown code fence, no extra text) with this structure:
+
+{{
+  "feature_id": "{feature_id}",
+  "generated_at": "<ISO timestamp>",
+  "issues": [
+    {{
+      "title": "Short descriptive title",
+      "body": "## Description\\n...\\n\\n## Acceptance Criteria\\n- [ ] ...",
+      "labels": ["enhancement", "backend"],
+      "estimated_size": "small|medium|large",
+      "dependencies": [],
+      "order": 1
+    }}
+  ]
+}}
+
+Requirements:
+1. Each issue should be atomic and implementable in isolation (given dependencies)
+2. Order issues by implementation order (1 = first)
+3. Dependencies reference the order number of prerequisite issues
+4. Size: small (~1-2 hours), medium (~half day), large (~1+ day)
+5. Include relevant labels (enhancement, bug, backend, frontend, api, database, etc.)
+6. Body should include Description, Acceptance Criteria, and any relevant context
+"""
+
+    def _parse_json_response(self, text: str) -> dict[str, Any]:
+        """
+        Parse JSON from LLM response.
+
+        Handles responses that may be wrapped in markdown code fences.
+        """
+        # Try to extract JSON from code fence
+        code_fence_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
+        match = re.search(code_fence_pattern, text)
+        if match:
+            json_str = match.group(1)
+        else:
+            json_str = text.strip()
+
+        return json.loads(json_str)
+
+    def _validate_issues(self, data: dict[str, Any]) -> list[str]:
+        """
+        Validate the issues data structure.
+
+        Returns list of validation errors (empty if valid).
+        """
+        errors = []
+
+        if "issues" not in data:
+            errors.append("Missing 'issues' field in response")
+            return errors
+
+        issues = data["issues"]
+        if not isinstance(issues, list):
+            errors.append("'issues' must be a list")
+            return errors
+
+        required_fields = ["title", "body", "labels", "estimated_size", "dependencies", "order"]
+
+        for i, issue in enumerate(issues):
+            for field in required_fields:
+                if field not in issue:
+                    errors.append(f"Issue {i + 1} missing required field: {field}")
+
+        return errors
+
+    def run(self, context: dict[str, Any]) -> AgentResult:
+        """
+        Generate GitHub issues from an engineering spec.
+
+        Args:
+            context: Dictionary containing:
+                - feature_id: The feature identifier (required)
+
+        Returns:
+            AgentResult with:
+                - success: True if issues were generated
+                - output: Dict with issues_path, issues list, and count
+                - errors: List of any errors encountered
+                - cost_usd: Cost of the LLM invocation
+        """
+        feature_id = context.get("feature_id")
+        if not feature_id:
+            return AgentResult.failure_result("Missing required context: feature_id")
+
+        self._log("issue_creator_start", {"feature_id": feature_id})
+        self.checkpoint("started")
+
+        # Check if spec-final.md exists
+        spec_path = self._get_spec_path(feature_id)
+        if not file_exists(spec_path):
+            error = f"Spec not found at {spec_path}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
+
+        # Read spec content
+        try:
+            spec_content = read_file(spec_path)
+        except Exception as e:
+            error = f"Failed to read spec: {e}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
+
+        # Load skill prompt
+        try:
+            self._load_skill_prompt()
+        except SkillNotFoundError as e:
+            self._log("issue_creator_error", {"error": str(e)}, level="error")
+            return AgentResult.failure_result(str(e))
+
+        self.checkpoint("spec_loaded")
+
+        # Build prompt and invoke Claude
+        prompt = self._build_prompt(feature_id, spec_content)
+
+        try:
+            result = self.llm.run(
+                prompt,
+                allowed_tools=["Read", "Glob"],
+            )
+            cost = result.total_cost_usd
+        except ClaudeTimeoutError as e:
+            error = f"Claude timed out: {e}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
+        except ClaudeInvocationError as e:
+            error = f"Claude invocation failed: {e}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
+
+        self.checkpoint("llm_complete", cost_usd=cost)
+
+        # Parse JSON response
+        try:
+            issues_data = self._parse_json_response(result.text)
+        except json.JSONDecodeError as e:
+            error = f"Failed to parse JSON response: {e}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error, cost_usd=cost)
+
+        # Validate issues structure
+        validation_errors = self._validate_issues(issues_data)
+        if validation_errors:
+            error = f"Invalid issues data: {'; '.join(validation_errors)}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error, cost_usd=cost)
+
+        # Ensure feature_id and generated_at are set
+        if "feature_id" not in issues_data:
+            issues_data["feature_id"] = feature_id
+        if "generated_at" not in issues_data:
+            issues_data["generated_at"] = (
+                datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+
+        # Write issues.json
+        issues_path = self._get_issues_path(feature_id)
+        try:
+            ensure_dir(issues_path.parent)
+            safe_write(issues_path, json.dumps(issues_data, indent=2))
+        except Exception as e:
+            error = f"Failed to write issues.json: {e}"
+            self._log("issue_creator_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error, cost_usd=cost)
+
+        self.checkpoint("issues_written", cost_usd=0)
+
+        # Success
+        issues_list = issues_data["issues"]
+        self._log(
+            "issue_creator_complete",
+            {
+                "feature_id": feature_id,
+                "issues_path": str(issues_path),
+                "issue_count": len(issues_list),
+                "cost_usd": cost,
+            },
+        )
+
+        return AgentResult.success_result(
+            output={
+                "issues_path": str(issues_path),
+                "issues": issues_list,
+                "count": len(issues_list),
+            },
+            cost_usd=cost,
+        )
