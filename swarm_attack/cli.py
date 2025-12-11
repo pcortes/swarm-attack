@@ -27,7 +27,7 @@ from rich.text import Text
 
 from swarm_attack import __version__
 from swarm_attack.config import ConfigError, SwarmConfig, load_config
-from swarm_attack.models import FeaturePhase, RunState, TaskStage
+from swarm_attack.models import FeaturePhase, RunState, TaskRef, TaskStage
 from swarm_attack.orchestrator import Orchestrator
 from swarm_attack.state_store import StateStore, get_store
 from swarm_attack.utils.fs import copy_file, ensure_dir, file_exists, read_file, safe_write
@@ -69,6 +69,7 @@ STAGE_DISPLAY = {
     TaskStage.VERIFYING: ("Verifying", "blue"),
     TaskStage.DONE: ("Done", "green"),
     TaskStage.BLOCKED: ("Blocked", "red"),
+    TaskStage.SKIPPED: ("Skipped", "magenta"),
 }
 
 
@@ -99,10 +100,90 @@ def _get_task_summary(state: RunState) -> str:
     done = len(state.done_tasks)
     total = len(state.tasks)
     blocked = len(state.blocked_tasks)
+    skipped = len(state.skipped_tasks)
 
+    parts = [f"{done}/{total} done"]
     if blocked > 0:
-        return f"{done}/{total} ({blocked} blocked)"
-    return f"{done}/{total}"
+        parts.append(f"{blocked} blocked")
+    if skipped > 0:
+        parts.append(f"{skipped} skipped")
+
+    return ", ".join(parts)
+
+
+def _generate_completion_report(state: RunState, feature_id: str) -> str:
+    """
+    Generate a completion report for a feature.
+
+    Called when no more tasks are available (all done, blocked, or skipped).
+    """
+    from .models import TaskStage  # Import for dependency check
+
+    done = state.done_tasks
+    blocked = state.blocked_tasks
+    skipped = state.skipped_tasks
+    total = len(state.tasks)
+
+    # Build lookup for task stages
+    task_stages = {t.issue_number: t.stage for t in state.tasks}
+
+    lines = []
+    lines.append(f"[bold]Feature Completion Report: {feature_id}[/bold]\n")
+
+    # Summary
+    lines.append(f"Total Issues: {total}")
+    lines.append(f"✅ Completed: {len(done)}")
+    if blocked:
+        lines.append(f"❌ Blocked: {len(blocked)}")
+    if skipped:
+        lines.append(f"⏭️  Skipped: {len(skipped)}")
+    lines.append(f"💰 Total Cost: {_format_cost(state.cost_total_usd)}")
+    lines.append("")
+
+    # Blocked issues need attention - with reasons
+    if blocked:
+        lines.append("[yellow]Issues needing attention (BLOCKED):[/yellow]")
+        for task in blocked:
+            lines.append(f"  • #{task.issue_number}: {task.title}")
+            if task.blocked_reason:
+                lines.append(f"    └─ [dim]{task.blocked_reason}[/dim]")
+        lines.append("")
+
+    # Skipped issues - show which deps are blocked
+    if skipped:
+        lines.append("[magenta]Issues skipped (dependency blocked):[/magenta]")
+        for task in skipped:
+            lines.append(f"  • #{task.issue_number}: {task.title}")
+            # Show deps with their status
+            dep_status = []
+            for dep in task.dependencies:
+                stage = task_stages.get(dep)
+                if stage == TaskStage.BLOCKED:
+                    dep_status.append(f"#{dep} ❌")
+                elif stage == TaskStage.DONE:
+                    dep_status.append(f"#{dep} ✅")
+                elif stage == TaskStage.SKIPPED:
+                    dep_status.append(f"#{dep} ⏭️")
+                else:
+                    dep_status.append(f"#{dep}")
+            lines.append(f"    └─ deps: {', '.join(dep_status)}")
+        lines.append("")
+
+    # Next steps - more specific
+    if blocked or skipped:
+        lines.append("[cyan]Next steps:[/cyan]")
+        if blocked:
+            # Suggest fixing the first blocked issue
+            first_blocked = blocked[0]
+            lines.append(f"  1. Fix #{first_blocked.issue_number}: {first_blocked.title}")
+            if first_blocked.blocked_reason:
+                lines.append(f"     ({first_blocked.blocked_reason})")
+        lines.append(f"  2. Run: swarm-attack recover {feature_id}")
+        lines.append(f"  3. Or retry specific issue: swarm-attack run {feature_id} --issue N")
+    else:
+        lines.append("[green]🎉 All issues completed successfully![/green]")
+
+    return "\n".join(lines)
 
 
 def _init_swarm_directory(config: SwarmConfig) -> None:
@@ -286,6 +367,7 @@ def _show_feature_detail(store: StateStore, feature_id: str) -> None:
         # Summary
         done = len(state.done_tasks)
         blocked = len(state.blocked_tasks)
+        skipped = len(state.skipped_tasks)
         ready = len(state.ready_tasks)
         total = len(state.tasks)
 
@@ -294,6 +376,8 @@ def _show_feature_detail(store: StateStore, feature_id: str) -> None:
             summary_parts.append(f"[cyan]{ready}[/cyan] ready")
         if blocked > 0:
             summary_parts.append(f"[red]{blocked}[/red] blocked")
+        if skipped > 0:
+            summary_parts.append(f"[magenta]{skipped}[/magenta] skipped")
 
         console.print(f"\n[dim]Tasks:[/dim] {', '.join(summary_parts)}")
     else:
@@ -445,14 +529,20 @@ def init(
 def run(
     feature_id: str = typer.Argument(
         ...,
-        help="Feature ID to run the spec pipeline for.",
+        help="Feature ID to run pipeline for.",
+    ),
+    issue: Optional[int] = typer.Option(
+        None,
+        "--issue",
+        "-i",
+        help="Specific issue number to implement (only for implementation phase).",
     ),
 ) -> None:
     """
-    Run the spec debate pipeline for a feature.
+    Run the appropriate pipeline for a feature based on its phase.
 
-    Starts the Author -> Critic -> Moderator loop to generate
-    and refine an engineering specification from the PRD.
+    For PRD_READY/SPEC_IN_PROGRESS: Runs the spec debate pipeline.
+    For READY_TO_IMPLEMENT/IMPLEMENTING: Runs the implementation pipeline.
     """
     config = _get_config_or_default()
     _init_swarm_directory(config)
@@ -466,6 +556,49 @@ def run(
         console.print(f"  Create it with: [cyan]swarm-attack init {feature_id}[/cyan]")
         raise typer.Exit(1)
 
+    # Determine which pipeline to run based on phase
+    spec_phases = [
+        FeaturePhase.NO_PRD,
+        FeaturePhase.PRD_READY,
+        FeaturePhase.SPEC_IN_PROGRESS,
+    ]
+    impl_phases = [
+        FeaturePhase.READY_TO_IMPLEMENT,
+        FeaturePhase.IMPLEMENTING,
+    ]
+
+    if state.phase in spec_phases:
+        _run_spec_pipeline(config, store, state, feature_id)
+    elif state.phase in impl_phases:
+        _run_implementation(config, store, state, feature_id, issue)
+    elif state.phase == FeaturePhase.SPEC_APPROVED:
+        console.print(f"[yellow]Feature is in SPEC_APPROVED phase.[/yellow]")
+        console.print(f"  Run 'swarm-attack issues {feature_id}' to create issues first.")
+        raise typer.Exit(1)
+    elif state.phase == FeaturePhase.ISSUES_NEED_REVIEW:
+        console.print(f"[yellow]Feature has issues awaiting review.[/yellow]")
+        console.print(f"  Run 'swarm-attack greenlight {feature_id}' to approve issues first.")
+        raise typer.Exit(1)
+    elif state.phase == FeaturePhase.COMPLETE:
+        console.print(f"[green]Feature is already complete![/green]")
+        raise typer.Exit(0)
+    elif state.phase == FeaturePhase.BLOCKED:
+        console.print(f"[red]Feature is blocked and needs human intervention.[/red]")
+        console.print(f"  Check status with: swarm-attack status {feature_id}")
+        raise typer.Exit(1)
+    else:
+        console.print(f"[yellow]Feature is in phase: {_format_phase(state.phase)}[/yellow]")
+        console.print("  Cannot run pipeline in this phase.")
+        raise typer.Exit(1)
+
+
+def _run_spec_pipeline(
+    config: SwarmConfig,
+    store: StateStore,
+    state: RunState,
+    feature_id: str,
+) -> None:
+    """Run the spec debate pipeline."""
     # Check PRD exists
     prd_path = _get_prd_path(config, feature_id)
     if not file_exists(prd_path):
@@ -501,7 +634,7 @@ def run(
                 f"[cyan]Next step:[/cyan] Review the spec at:\n"
                 f"  specs/{feature_id}/spec-draft.md\n\n"
                 f"Then approve with:\n"
-                f"  [cyan]feature-swarm approve {feature_id}[/cyan]",
+                f"  [cyan]swarm-attack approve {feature_id}[/cyan]",
                 title="Pipeline Complete",
                 border_style="green",
             )
@@ -541,6 +674,109 @@ def run(
                 f"Error: {result.error}\n"
                 f"Cost: {_format_cost(result.total_cost_usd)}",
                 title="Pipeline Failed",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(1)
+
+
+def _run_implementation(
+    config: SwarmConfig,
+    store: StateStore,
+    state: RunState,
+    feature_id: str,
+    issue_number: Optional[int] = None,
+) -> None:
+    """Run the implementation pipeline for an issue."""
+    from swarm_attack.session_manager import SessionManager
+
+    # Update phase to IMPLEMENTING if it was READY_TO_IMPLEMENT
+    if state.phase == FeaturePhase.READY_TO_IMPLEMENT:
+        state.update_phase(FeaturePhase.IMPLEMENTING)
+        store.save(state)
+
+    console.print(f"[cyan]Starting implementation for:[/cyan] {feature_id}")
+    if issue_number:
+        console.print(f"[dim]Issue:[/dim] #{issue_number}")
+    else:
+        console.print(f"[dim]Issue:[/dim] (auto-select next available)")
+    console.print()
+
+    # Create session manager and orchestrator
+    session_manager = SessionManager(config, store)
+    orchestrator = Orchestrator(config, state_store=store)
+
+    # Inject session manager into orchestrator
+    orchestrator._session_manager = session_manager
+
+    with console.status("[yellow]Running implementation...[/yellow]"):
+        result = orchestrator.run_issue_session(feature_id, issue_number)
+
+    # Display results
+    console.print()
+
+    if result.status == "success":
+        console.print(
+            Panel(
+                f"[green]Implementation completed successfully![/green]\n\n"
+                f"Issue: #{result.issue_number}\n"
+                f"Tests Written: {result.tests_written}\n"
+                f"Tests Passed: {result.tests_passed}\n"
+                f"Commits: {', '.join(result.commits) if result.commits else 'None'}\n"
+                f"Cost: {_format_cost(result.cost_usd)}\n"
+                f"Retries: {result.retries}\n\n"
+                f"[cyan]Next step:[/cyan] Run again to implement next issue:\n"
+                f"  [cyan]swarm-attack run {feature_id}[/cyan]",
+                title="Implementation Complete",
+                border_style="green",
+            )
+        )
+    elif result.status == "blocked":
+        console.print(
+            Panel(
+                f"[yellow]Implementation blocked after max retries.[/yellow]\n\n"
+                f"Issue: #{result.issue_number}\n"
+                f"Tests Written: {result.tests_written}\n"
+                f"Tests Passed: {result.tests_passed}\n"
+                f"Tests Failed: {result.tests_failed}\n"
+                f"Retries: {result.retries}\n"
+                f"Cost: {_format_cost(result.cost_usd)}\n\n"
+                f"Error: {result.error}\n\n"
+                f"[dim]Issue marked as blocked. Run 'swarm-attack recover {feature_id}' for options.[/dim]",
+                title="Implementation Blocked",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(1)
+    elif result.error and "No issue available" in result.error:
+        # No more tasks - show completion report
+        # Reload state to get latest (including newly skipped tasks)
+        state = store.load(feature_id)
+        if state:
+            report = _generate_completion_report(state, feature_id)
+            console.print(
+                Panel(
+                    report,
+                    title="Feature Progress Report",
+                    border_style="cyan",
+                )
+            )
+
+            # Check if feature is complete
+            if len(state.done_tasks) == len(state.tasks):
+                state.update_phase(FeaturePhase.COMPLETE)
+                store.save(state)
+        else:
+            console.print("[yellow]No more issues available to work on.[/yellow]")
+    else:
+        # Failed
+        console.print(
+            Panel(
+                f"[red]Implementation failed.[/red]\n\n"
+                f"Issue: #{result.issue_number}\n"
+                f"Error: {result.error}\n"
+                f"Cost: {_format_cost(result.cost_usd)}",
+                title="Implementation Failed",
                 border_style="red",
             )
         )
@@ -648,6 +884,233 @@ def reject(
 
 
 @app.command()
+def greenlight(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature ID to greenlight for implementation.",
+    ),
+) -> None:
+    """
+    Greenlight issues for implementation.
+
+    After issues have been created and reviewed, use this command to
+    approve them and move to the implementation phase.
+    """
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+
+    store = get_store(config)
+
+    # Check feature exists
+    state = store.load(feature_id)
+    if state is None:
+        console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
+        raise typer.Exit(1)
+
+    # Check phase - should be ISSUES_NEED_REVIEW or SPEC_APPROVED (if issues were created)
+    valid_phases = [FeaturePhase.ISSUES_NEED_REVIEW, FeaturePhase.SPEC_APPROVED]
+    if state.phase not in valid_phases:
+        console.print(
+            f"[yellow]Warning:[/yellow] Feature is in phase '{_format_phase(state.phase)}', "
+            f"expected ISSUES_NEED_REVIEW or SPEC_APPROVED."
+        )
+        console.print("  Proceeding anyway...")
+
+    # Check if issues.json exists
+    issues_path = config.specs_path / feature_id / "issues.json"
+    if not issues_path.exists():
+        console.print(f"[red]Error:[/red] No issues found at {issues_path}")
+        console.print("  Run 'swarm-attack issues {feature_id}' first to create issues.")
+        raise typer.Exit(1)
+
+    # Load issues.json and populate tasks in state
+    import json
+    try:
+        issues_content = read_file(issues_path)
+        issues_data = json.loads(issues_content)
+        issues_list = issues_data.get("issues", [])
+
+        # Clear existing tasks and load from issues.json
+        state.tasks = []
+        for issue in issues_list:
+            # Determine initial stage based on dependencies
+            deps = issue.get("dependencies", [])
+            initial_stage = TaskStage.READY if not deps else TaskStage.BACKLOG
+
+            task = TaskRef(
+                issue_number=issue.get("order", 0),
+                stage=initial_stage,
+                title=issue.get("title", "Untitled"),
+                dependencies=deps,
+                estimated_size=issue.get("estimated_size", "medium"),
+            )
+            state.tasks.append(task)
+
+        console.print(f"[dim]Loaded {len(state.tasks)} tasks from issues.json[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to load issues: {e}")
+        raise typer.Exit(1)
+
+    # Update phase to READY_TO_IMPLEMENT
+    state.update_phase(FeaturePhase.READY_TO_IMPLEMENT)
+    store.save(state)
+
+    console.print(f"[green]Issues greenlighted![/green]")
+    console.print(f"[dim]Phase:[/dim] {_format_phase(state.phase)}")
+    console.print(f"\n[cyan]Next step:[/cyan] Run implementation with:")
+    console.print(f"  [cyan]swarm-attack run {feature_id}[/cyan]")
+
+
+@app.command()
+def issues(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature ID to create issues for.",
+    ),
+) -> None:
+    """
+    Create GitHub issues from an approved spec.
+
+    Reads the spec-final.md and generates implementable GitHub issues
+    with titles, descriptions, acceptance criteria, and dependencies.
+    """
+    from swarm_attack.agents import IssueCreatorAgent, IssueValidatorAgent
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+
+    store = get_store(config)
+
+    # Check feature exists
+    state = store.load(feature_id)
+    if state is None:
+        console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
+        console.print(f"  Create it with: [cyan]swarm-attack init {feature_id}[/cyan]")
+        raise typer.Exit(1)
+
+    # Check spec-final.md exists
+    spec_path = config.specs_path / feature_id / "spec-final.md"
+    if not spec_path.exists():
+        console.print(f"[red]Error:[/red] Approved spec not found at {spec_path}")
+        console.print("  Run 'swarm-attack approve {feature_id}' first to approve the spec.")
+        raise typer.Exit(1)
+
+    # Check phase
+    if state.phase != FeaturePhase.SPEC_APPROVED:
+        console.print(
+            f"[yellow]Warning:[/yellow] Feature is in phase '{_format_phase(state.phase)}', "
+            f"expected SPEC_APPROVED."
+        )
+        console.print("  Proceeding anyway...")
+
+    console.print(f"[cyan]Creating issues for:[/cyan] {feature_id}")
+    console.print(f"[dim]Spec:[/dim] {spec_path}")
+    console.print()
+
+    # Update phase to ISSUES_CREATING
+    state.update_phase(FeaturePhase.ISSUES_CREATING)
+    store.save(state)
+
+    # Run IssueCreatorAgent
+    issue_creator = IssueCreatorAgent(config, state_store=store)
+
+    with console.status("[yellow]Creating issues from spec...[/yellow]"):
+        creator_result = issue_creator.run({"feature_id": feature_id})
+
+    if not creator_result.success:
+        console.print(
+            Panel(
+                f"[red]Issue creation failed.[/red]\n\n"
+                f"Error: {creator_result.errors[0] if creator_result.errors else 'Unknown error'}\n"
+                f"Cost: {_format_cost(creator_result.cost_usd)}",
+                title="Issue Creation Failed",
+                border_style="red",
+            )
+        )
+        state.update_phase(FeaturePhase.BLOCKED)
+        store.save(state)
+        raise typer.Exit(1)
+
+    issues_count = creator_result.output.get("count", 0)
+    console.print(f"[green]Created {issues_count} issues[/green]")
+
+    # Update phase to ISSUES_VALIDATING
+    state.update_phase(FeaturePhase.ISSUES_VALIDATING)
+    store.save(state)
+
+    # Run IssueValidatorAgent
+    issue_validator = IssueValidatorAgent(config, state_store=store)
+
+    with console.status("[yellow]Validating issues...[/yellow]"):
+        validator_result = issue_validator.run({"feature_id": feature_id})
+
+    total_cost = creator_result.cost_usd + validator_result.cost_usd
+
+    if not validator_result.success:
+        console.print(
+            Panel(
+                f"[red]Issue validation failed.[/red]\n\n"
+                f"Error: {validator_result.errors[0] if validator_result.errors else 'Unknown error'}\n"
+                f"Cost: {_format_cost(total_cost)}",
+                title="Issue Validation Failed",
+                border_style="red",
+            )
+        )
+        state.update_phase(FeaturePhase.BLOCKED)
+        store.save(state)
+        raise typer.Exit(1)
+
+    # Update phase to ISSUES_NEED_REVIEW
+    state.update_phase(FeaturePhase.ISSUES_NEED_REVIEW)
+    state.add_cost(total_cost, "ISSUES")
+    store.save(state)
+
+    # Display results
+    is_valid = validator_result.output.get("valid", False)
+    summary = validator_result.output.get("summary", "")
+    problems = validator_result.output.get("problems", [])
+
+    if is_valid:
+        console.print(
+            Panel(
+                f"[green]Issues created and validated successfully![/green]\n\n"
+                f"Issues: {issues_count}\n"
+                f"Cost: {_format_cost(total_cost)}\n\n"
+                f"[cyan]Next step:[/cyan] Review issues at:\n"
+                f"  specs/{feature_id}/issues.json\n\n"
+                f"Then greenlight with:\n"
+                f"  [cyan]swarm-attack greenlight {feature_id}[/cyan]",
+                title="Issues Ready",
+                border_style="green",
+            )
+        )
+    else:
+        # Show validation problems
+        problem_lines = "\n".join(
+            f"  - [{p.get('severity', 'warning')}] Issue #{p.get('issue_order', '?')}: {p.get('description', 'Unknown')}"
+            for p in problems[:5]  # Show first 5 problems
+        )
+        if len(problems) > 5:
+            problem_lines += f"\n  ... and {len(problems) - 5} more"
+
+        console.print(
+            Panel(
+                f"[yellow]Issues created but have validation warnings.[/yellow]\n\n"
+                f"Issues: {issues_count}\n"
+                f"Summary: {summary}\n"
+                f"Cost: {_format_cost(total_cost)}\n\n"
+                f"Problems:\n{problem_lines}\n\n"
+                f"[cyan]Next step:[/cyan] Review issues at:\n"
+                f"  specs/{feature_id}/issues.json\n\n"
+                f"Then greenlight with:\n"
+                f"  [cyan]swarm-attack greenlight {feature_id}[/cyan]",
+                title="Issues Need Review",
+                border_style="yellow",
+            )
+        )
+
+
+@app.command()
 def next(
     feature_id: str = typer.Argument(
         ...,
@@ -717,13 +1180,13 @@ def next(
     # Add suggested next command
     command_suggestions = {
         ActionType.AWAIT_PRD: f"Create PRD at .claude/prds/{feature_id}.md",
-        ActionType.RUN_SPEC_PIPELINE: f"feature-swarm run {feature_id}",
-        ActionType.AWAIT_SPEC_APPROVAL: f"feature-swarm approve {feature_id}",
-        ActionType.RUN_ISSUE_PIPELINE: "(Issue pipeline not yet implemented)",
-        ActionType.AWAIT_ISSUE_GREENLIGHT: f"feature-swarm greenlight {feature_id}",
-        ActionType.SELECT_ISSUE: f"(Implementation agents not yet implemented)",
-        ActionType.RESUME_SESSION: f"(Implementation agents not yet implemented)",
-        ActionType.RUN_IMPLEMENTATION: f"(Implementation agents not yet implemented)",
+        ActionType.RUN_SPEC_PIPELINE: f"swarm-attack run {feature_id}",
+        ActionType.AWAIT_SPEC_APPROVAL: f"swarm-attack approve {feature_id}",
+        ActionType.RUN_ISSUE_PIPELINE: f"swarm-attack issues {feature_id}",
+        ActionType.AWAIT_ISSUE_GREENLIGHT: f"swarm-attack greenlight {feature_id}",
+        ActionType.SELECT_ISSUE: f"swarm-attack run {feature_id}",
+        ActionType.RESUME_SESSION: f"swarm-attack run {feature_id}",
+        ActionType.RUN_IMPLEMENTATION: f"swarm-attack run {feature_id}",
         ActionType.COMPLETE: "All done!",
         ActionType.AWAIT_HUMAN_HELP: "Review the feature status and resolve blockers",
     }
@@ -909,19 +1372,24 @@ def recover(
     Run recovery flow only - check for interrupted sessions and blocked issues.
 
     This command checks for:
-    1. Interrupted sessions that need recovery
-    2. Blocked issues that may need attention
+    1. Spec pipeline blocked states (timeout after success)
+    2. Interrupted sessions that need recovery
+    3. Blocked issues that may need attention
 
     Use this to manually trigger recovery without running the full smart CLI.
     """
     from swarm_attack.cli_recovery import (
         check_blocked_issues,
         check_interrupted_sessions,
+        check_spec_pipeline_blocked,
         display_blocked_issues,
         display_recovery_options,
+        display_spec_recovery_options,
         handle_backup_restart,
         handle_resume,
         handle_skip,
+        handle_spec_retry,
+        handle_spec_unblock,
         offer_blocked_issue_retry,
     )
     from swarm_attack.session_manager import SessionManager
@@ -937,6 +1405,38 @@ def recover(
     if state is None:
         console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
         raise typer.Exit(1)
+
+    # Check for spec pipeline blocked state first
+    if state.phase == FeaturePhase.BLOCKED:
+        spec_recovery = check_spec_pipeline_blocked(feature_id, config, store)
+
+        if spec_recovery and spec_recovery.get("files_found", {}).get("spec_draft"):
+            console.print(f"[yellow]Feature is blocked - checking spec pipeline state...[/yellow]\n")
+
+            choice = display_spec_recovery_options(spec_recovery, config)
+
+            if choice == "unblock":
+                result = handle_spec_unblock(feature_id, config, store)
+                if result["success"]:
+                    console.print(f"\n[green]Feature unblocked![/green]")
+                    console.print(f"  Phase: {result['old_phase']} → {result['new_phase']}")
+                    console.print(f"\n[cyan]Next step:[/cyan] swarm-attack approve {feature_id}")
+                else:
+                    console.print(f"\n[red]Failed to unblock:[/red] {result.get('error')}")
+                return
+
+            elif choice == "retry":
+                result = handle_spec_retry(feature_id, config, store)
+                if result["success"]:
+                    console.print(f"\n[yellow]Feature reset to PRD_READY.[/yellow]")
+                    console.print(f"\n[cyan]Next step:[/cyan] {result['next_step']}")
+                else:
+                    console.print(f"\n[red]Failed to reset:[/red] {result.get('error')}")
+                return
+
+            elif choice == "skip":
+                console.print("\n[dim]Feature left in BLOCKED state.[/dim]")
+                return
 
     # Check for interrupted sessions
     interrupted = check_interrupted_sessions(feature_id, config, store)
@@ -981,6 +1481,121 @@ def recover(
                 console.print(f"[green]Issue #{task.issue_number} marked as ready.[/green]")
     else:
         console.print("[green]No blocked issues found.[/green]")
+
+
+@app.command()
+def unblock(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature ID to unblock.",
+    ),
+    phase: str = typer.Option(
+        None,
+        "--phase",
+        "-p",
+        help="Target phase to set (e.g., PRD_READY, SPEC_NEEDS_APPROVAL). If not specified, auto-detects based on files.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force unblock without verification checks.",
+    ),
+) -> None:
+    """
+    Unblock a feature that is stuck in BLOCKED state.
+
+    This command analyzes the feature's files to determine the appropriate
+    recovery action. It handles cases like:
+    - Spec pipeline timeout after successful completion
+    - Failed spec debate that needs retry
+    - Implementation issues that need attention
+
+    Use --phase to force a specific target phase, or let the command
+    auto-detect based on file analysis.
+    """
+    from swarm_attack.cli_recovery import (
+        check_spec_pipeline_blocked,
+        handle_spec_retry,
+        handle_spec_unblock,
+    )
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+
+    store = get_store(config)
+
+    # Check feature exists
+    state = store.load(feature_id)
+    if state is None:
+        console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
+        raise typer.Exit(1)
+
+    # Check if feature is actually blocked
+    if state.phase != FeaturePhase.BLOCKED:
+        console.print(f"[yellow]Feature is not blocked.[/yellow]")
+        console.print(f"  Current phase: {_format_phase(state.phase)}")
+        if not force:
+            raise typer.Exit(0)
+
+    # If phase specified, use it directly
+    if phase:
+        phase_upper = phase.upper()
+        result = handle_spec_unblock(feature_id, config, store, phase_upper)
+
+        if result["success"]:
+            console.print(f"[green]Feature unblocked![/green]")
+            console.print(f"  Phase: {result['old_phase']} → {result['new_phase']}")
+        else:
+            console.print(f"[red]Failed to unblock:[/red] {result.get('error')}")
+            raise typer.Exit(1)
+        return
+
+    # Auto-detect appropriate phase based on file analysis
+    spec_recovery = check_spec_pipeline_blocked(feature_id, config, store)
+
+    if spec_recovery is None:
+        console.print(f"[red]Error:[/red] Could not analyze feature state.")
+        raise typer.Exit(1)
+
+    # Display analysis
+    console.print(Panel(
+        f"[bold]Feature:[/bold] {feature_id}\n"
+        f"[bold]Analysis:[/bold] {spec_recovery['reason']}\n"
+        f"[bold]Can recover:[/bold] {'Yes' if spec_recovery['can_recover'] else 'No'}\n"
+        f"[bold]Recommended:[/bold] {spec_recovery.get('recommended_action', 'Unknown')}",
+        title="Feature Analysis",
+        border_style="cyan",
+    ))
+
+    if spec_recovery["can_recover"]:
+        # Files indicate success - unblock to SPEC_NEEDS_APPROVAL
+        result = handle_spec_unblock(feature_id, config, store, "SPEC_NEEDS_APPROVAL")
+
+        if result["success"]:
+            console.print(f"\n[green]Feature unblocked![/green]")
+            console.print(f"  Phase: {result['old_phase']} → {result['new_phase']}")
+            console.print(f"\n[cyan]Next step:[/cyan] swarm-attack approve {feature_id}")
+        else:
+            console.print(f"\n[red]Failed to unblock:[/red] {result.get('error')}")
+            raise typer.Exit(1)
+
+    elif spec_recovery.get("recommended_action") == "retry_spec_pipeline":
+        # Reset to PRD_READY to allow retry
+        result = handle_spec_retry(feature_id, config, store)
+
+        if result["success"]:
+            console.print(f"\n[yellow]Feature reset to PRD_READY.[/yellow]")
+            console.print(f"\n[cyan]Next step:[/cyan] {result['next_step']}")
+        else:
+            console.print(f"\n[red]Failed to reset:[/red] {result.get('error')}")
+            raise typer.Exit(1)
+
+    else:
+        console.print(f"\n[yellow]Could not determine automatic recovery action.[/yellow]")
+        console.print(f"  Use --phase to manually specify target phase:")
+        console.print(f"    swarm-attack unblock {feature_id} --phase PRD_READY")
+        console.print(f"    swarm-attack unblock {feature_id} --phase SPEC_NEEDS_APPROVAL")
 
 
 # Entry point for the CLI

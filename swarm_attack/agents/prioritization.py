@@ -92,76 +92,116 @@ class PrioritizationAgent(BaseAgent):
 
         return score
 
+    def check_dependencies(
+        self, task: TaskRef, state: RunState
+    ) -> tuple[bool, Optional[str], Optional[int]]:
+        """
+        Check if a task's dependencies allow it to proceed.
+
+        A task can proceed if all dependencies are DONE.
+        A task is permanently blocked if any dependency is BLOCKED or SKIPPED.
+        A task is temporarily blocked if dependencies are still in progress.
+
+        Args:
+            task: The task to check.
+            state: Current run state containing all tasks.
+
+        Returns:
+            Tuple of (can_proceed, block_reason, blocking_issue_number)
+            - can_proceed: True if all dependencies are satisfied
+            - block_reason: None if can proceed, otherwise "blocked", "skipped", "incomplete", or "missing"
+            - blocking_issue_number: The issue number causing the block (if any)
+        """
+        task_stages = {t.issue_number: t.stage for t in state.tasks}
+
+        for dep_issue_number in task.dependencies:
+            dep_stage = task_stages.get(dep_issue_number)
+
+            if dep_stage is None:
+                # Dependency doesn't exist
+                return False, "missing", dep_issue_number
+            elif dep_stage == TaskStage.BLOCKED:
+                # Dependency is permanently blocked - this task can never succeed
+                return False, "blocked", dep_issue_number
+            elif dep_stage == TaskStage.SKIPPED:
+                # Dependency was skipped - this task can never succeed
+                return False, "skipped", dep_issue_number
+            elif dep_stage != TaskStage.DONE:
+                # Dependency exists but is not done yet (still in progress)
+                return False, "incomplete", dep_issue_number
+
+        return True, None, None
+
     def filter_unblocked(
         self, tasks: list[TaskRef], state: RunState
-    ) -> list[TaskRef]:
+    ) -> tuple[list[TaskRef], list[tuple[TaskRef, str, int]]]:
         """
         Filter out tasks that are blocked by incomplete dependencies.
-
-        A task is blocked if any of its dependencies are not in DONE stage.
 
         Args:
             tasks: List of tasks to filter.
             state: Current run state containing all tasks.
 
         Returns:
-            List of unblocked tasks.
+            Tuple of (unblocked_tasks, permanently_blocked_tasks)
+            - unblocked_tasks: Tasks ready to work on
+            - permanently_blocked_tasks: List of (task, reason, blocking_issue) for tasks
+              that can never succeed due to blocked/skipped dependencies
         """
-        # Build a map of task status by issue number
-        task_stages = {t.issue_number: t.stage for t in state.tasks}
-
         unblocked = []
+        permanently_blocked = []
+
         for task in tasks:
-            is_blocked = False
+            can_proceed, block_reason, blocking_issue = self.check_dependencies(task, state)
 
-            for dep_issue_number in task.dependencies:
-                # Check if dependency exists and is DONE
-                dep_stage = task_stages.get(dep_issue_number)
-
-                if dep_stage is None:
-                    # Dependency doesn't exist - treat as blocked
-                    is_blocked = True
-                    break
-                elif dep_stage != TaskStage.DONE:
-                    # Dependency exists but is not done
-                    is_blocked = True
-                    break
-
-            if not is_blocked:
+            if can_proceed:
                 unblocked.append(task)
+            elif block_reason in ("blocked", "skipped"):
+                # This task can never succeed - its dependency failed
+                permanently_blocked.append((task, block_reason, blocking_issue))
+            # "incomplete" and "missing" are temporary - task stays in BACKLOG/READY
 
-        return unblocked
+        return unblocked, permanently_blocked
 
-    def get_next_issue(self, state: RunState) -> Optional[TaskRef]:
+    def get_next_issue(
+        self, state: RunState
+    ) -> tuple[Optional[TaskRef], list[tuple[TaskRef, str, int]]]:
         """
         Get the next issue to work on.
 
-        Filters to READY tasks, removes blocked ones, scores the rest,
-        and returns the highest-scoring task.
+        Filters to READY/BACKLOG tasks, removes blocked ones, scores the rest,
+        and returns the highest-scoring task. Also returns tasks that should
+        be marked as SKIPPED due to permanently blocked dependencies.
 
         Args:
             state: Current run state with all tasks.
 
         Returns:
-            Highest priority TaskRef, or None if no tasks are available.
+            Tuple of (selected_task, tasks_to_skip)
+            - selected_task: Highest priority TaskRef, or None if no tasks available
+            - tasks_to_skip: List of (task, reason, blocking_issue) for tasks that
+              should be marked SKIPPED due to blocked/skipped dependencies
         """
-        # Get only READY tasks
-        ready_tasks = [t for t in state.tasks if t.stage == TaskStage.READY]
+        # Get READY and BACKLOG tasks (BACKLOG may become ready if deps are done)
+        candidate_tasks = [
+            t for t in state.tasks
+            if t.stage in (TaskStage.READY, TaskStage.BACKLOG)
+        ]
 
-        if not ready_tasks:
-            return None
+        if not candidate_tasks:
+            return None, []
 
-        # Filter out blocked tasks
-        unblocked = self.filter_unblocked(ready_tasks, state)
+        # Filter out blocked tasks and identify permanently blocked ones
+        unblocked, permanently_blocked = self.filter_unblocked(candidate_tasks, state)
 
         if not unblocked:
-            return None
+            return None, permanently_blocked
 
         # Score and sort
         scored = [(task, self.score(task)) for task in unblocked]
         scored.sort(key=lambda x: x[1], reverse=True)
 
-        return scored[0][0]
+        return scored[0][0], permanently_blocked
 
     def run(self, context: dict[str, Any]) -> AgentResult:
         """
@@ -174,7 +214,7 @@ class PrioritizationAgent(BaseAgent):
         Returns:
             AgentResult with:
                 - success: True if prioritization completed
-                - output: Dict with selected_issue and scored_candidates
+                - output: Dict with selected_issue, scored_candidates, and tasks_to_skip
                 - errors: List of any errors
         """
         state = context.get("state")
@@ -186,11 +226,14 @@ class PrioritizationAgent(BaseAgent):
         self._log("prioritization_start", {"feature_id": state.feature_id})
         self.checkpoint("started")
 
-        # Get READY tasks
-        ready_tasks = [t for t in state.tasks if t.stage == TaskStage.READY]
+        # Get candidate tasks (READY and BACKLOG)
+        candidate_tasks = [
+            t for t in state.tasks
+            if t.stage in (TaskStage.READY, TaskStage.BACKLOG)
+        ]
 
-        # Filter unblocked
-        unblocked = self.filter_unblocked(ready_tasks, state)
+        # Filter unblocked and identify permanently blocked
+        unblocked, permanently_blocked = self.filter_unblocked(candidate_tasks, state)
 
         # Score all unblocked tasks
         scored_candidates = []
@@ -218,21 +261,39 @@ class PrioritizationAgent(BaseAgent):
                     selected_issue = task
                     break
 
+        # Build list of tasks to skip (due to blocked dependencies)
+        tasks_to_skip = [
+            {
+                "issue_number": task.issue_number,
+                "title": task.title,
+                "reason": reason,
+                "blocking_issue": blocking_issue,
+            }
+            for task, reason, blocking_issue in permanently_blocked
+        ]
+
         self.checkpoint("complete")
 
         # Build output
         output = {
             "selected_issue": selected_issue,
             "scored_candidates": scored_candidates,
-            "total_ready": len(ready_tasks),
+            "tasks_to_skip": tasks_to_skip,
+            "total_candidates": len(candidate_tasks),
             "total_unblocked": len(unblocked),
+            "total_permanently_blocked": len(permanently_blocked),
         }
 
         if selected_issue is None:
             output["message"] = "No tasks available for work"
             self._log(
                 "prioritization_complete",
-                {"feature_id": state.feature_id, "selected": None, "reason": "no_tasks"},
+                {
+                    "feature_id": state.feature_id,
+                    "selected": None,
+                    "reason": "no_tasks",
+                    "tasks_to_skip": len(tasks_to_skip),
+                },
             )
         else:
             self._log(
@@ -241,7 +302,21 @@ class PrioritizationAgent(BaseAgent):
                     "feature_id": state.feature_id,
                     "selected_issue": selected_issue.issue_number,
                     "score": scored_candidates[0]["score"],
+                    "tasks_to_skip": len(tasks_to_skip),
                 },
+            )
+
+        # Log any tasks being skipped
+        for skip_info in tasks_to_skip:
+            self._log(
+                "task_skipped_dependency_blocked",
+                {
+                    "feature_id": state.feature_id,
+                    "issue_number": skip_info["issue_number"],
+                    "reason": skip_info["reason"],
+                    "blocking_issue": skip_info["blocking_issue"],
+                },
+                level="warning",
             )
 
         return AgentResult.success_result(output=output)

@@ -121,13 +121,19 @@ Title: {issue.get('title', 'Unknown')}
 
 Generate comprehensive unit tests for the issue above.
 
+CRITICAL TDD RULES - MUST FOLLOW:
+1. Tests MUST use Path.cwd() to check real project files, NOT tmp_path
+2. Tests MUST FAIL initially before the Coder implements the code
+3. DO NOT create fixtures that write files then assert they exist - that's self-mocking
+4. Import from real module paths (lib.*, src.*) that the Coder will create
+
 Requirements:
 1. Write pytest-style test code
 2. Cover all acceptance criteria from the issue body
 3. Include positive and negative test cases
 4. Use descriptive test function names
 5. Add docstrings explaining what each test verifies
-6. Import any necessary fixtures or modules
+6. Use Path.cwd() for file existence checks, NOT tmp_path
 7. Structure tests logically (can use test classes if appropriate)
 
 Output ONLY the Python test code. Do not include explanations outside of code comments.
@@ -158,6 +164,73 @@ If you need to explain anything, do so in docstrings or comments within the code
         pattern = r"^\s*(?:async\s+)?def\s+(test_\w+)\s*\("
         matches = re.findall(pattern, code, re.MULTILINE)
         return len(matches)
+
+    def _validate_tests_for_self_mocking(self, code: str) -> list[str]:
+        """
+        Validate generated tests for self-mocking anti-patterns.
+
+        Self-mocking tests create their own fixtures (e.g., write files to tmp_path)
+        and then assert those fixtures exist. These tests always pass and break TDD.
+
+        Returns list of warnings found.
+        """
+        warnings = []
+        lines = code.split('\n')
+
+        # Track if we see tmp_path usage combined with write operations and existence checks
+        has_tmp_path = "tmp_path" in code
+        has_write_text = ".write_text(" in code
+        has_mkdir = ".mkdir(" in code
+        has_exists_check = ".exists()" in code or ".is_dir()" in code or ".is_file()" in code
+
+        # Pattern 1: tmp_path + write_text/mkdir + exists assertion = self-mocking
+        if has_tmp_path and (has_write_text or has_mkdir) and has_exists_check:
+            warnings.append(
+                "SELF-MOCKING DETECTED: Tests use tmp_path to create files/directories, "
+                "then assert they exist. This always passes and breaks TDD. "
+                "Tests should check REAL project paths using Path.cwd(), not tmp_path fixtures."
+            )
+
+        # Pattern 2: Check for missing real path usage
+        # Good tests should use Path.cwd() to check real project files
+        has_path_cwd = "Path.cwd()" in code or "Path(__file__)" in code
+        has_real_imports = (
+            "from lib." in code or
+            "from src." in code or
+            "import lib." in code or
+            "import src." in code
+        )
+
+        # If no real paths and no real imports, tests might not be testing implementation
+        if not has_path_cwd and not has_real_imports:
+            # Check if tests are purely unit tests on passed-in data (which is OK)
+            # vs tests that should be checking file existence (which need Path.cwd())
+            file_check_indicators = [
+                "exists()", "is_dir()", "is_file()",
+                "pubspec", "main.dart", ".yaml", ".dart"
+            ]
+            if any(indicator in code for indicator in file_check_indicators):
+                warnings.append(
+                    "NO REAL PATH USAGE: Tests check file existence but don't use Path.cwd() "
+                    "or import from real module paths. Tests should verify files exist at "
+                    "actual project locations, not in temporary fixtures."
+                )
+
+        # Pattern 3: Count ratio of tmp_path methods vs test methods
+        # High tmp_path usage is a red flag
+        tmp_path_def_count = len(re.findall(r'def\s+test_\w+\s*\([^)]*tmp_path', code))
+        total_test_count = self._count_tests(code)
+
+        if total_test_count > 0 and tmp_path_def_count > 0:
+            tmp_path_ratio = tmp_path_def_count / total_test_count
+            if tmp_path_ratio > 0.5:
+                warnings.append(
+                    f"HIGH tmp_path USAGE: {tmp_path_def_count}/{total_test_count} tests "
+                    f"({tmp_path_ratio:.0%}) use tmp_path fixtures. For TDD to work, tests "
+                    "should fail initially by checking real implementation paths, not temp fixtures."
+                )
+
+        return warnings
 
     def run(self, context: dict[str, Any]) -> AgentResult:
         """
@@ -239,7 +312,8 @@ If you need to explain anything, do so in docstrings or comments within the code
         try:
             result = self.llm.run(
                 prompt,
-                allowed_tools=["Read", "Glob"],
+                allowed_tools=[],  # No tools - all context is in prompt, just generate code
+                max_turns=1,  # Single turn - output code directly
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:
@@ -255,7 +329,41 @@ If you need to explain anything, do so in docstrings or comments within the code
 
         # Extract test code from response
         test_code = self._extract_code(result.text)
+
+        # Validate that we got actual test code (Fix 6B)
+        if not test_code.strip():
+            error = "Claude did not output test code. Response may have been empty or consumed by tool use."
+            self._log("test_writer_error", {"error": error, "result_text_len": len(result.text)}, level="error")
+            return AgentResult.failure_result(error, cost_usd=cost)
+
         tests_generated = self._count_tests(test_code)
+
+        if tests_generated == 0:
+            error = f"No test functions found in generated code ({len(test_code)} chars). Expected 'def test_*' functions."
+            self._log("test_writer_error", {"error": error}, level="error")
+            return AgentResult.failure_result(error, cost_usd=cost)
+
+        # Validate tests for self-mocking anti-patterns (Bug 7 fix)
+        validation_warnings = self._validate_tests_for_self_mocking(test_code)
+        if validation_warnings:
+            self._log("test_writer_warnings", {
+                "warnings": validation_warnings,
+                "tests_generated": tests_generated,
+            }, level="warning")
+
+            # Check if self-mocking is severe (more than 50% of tests use tmp_path)
+            # In that case, fail and force regeneration
+            self_mock_detected = any("SELF-MOCKING DETECTED" in w for w in validation_warnings)
+            high_tmp_path = any("HIGH tmp_path USAGE" in w for w in validation_warnings)
+
+            if self_mock_detected or high_tmp_path:
+                error = (
+                    "Tests appear to be self-mocking (creating fixtures then asserting they exist). "
+                    "This breaks TDD - tests must FAIL initially until Coder implements the code. "
+                    f"Warnings: {'; '.join(validation_warnings)}"
+                )
+                self._log("test_writer_error", {"error": error}, level="error")
+                return AgentResult.failure_result(error, cost_usd=cost)
 
         # Determine test file path
         test_path_str = context.get("test_path")

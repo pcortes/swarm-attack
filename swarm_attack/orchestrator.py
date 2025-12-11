@@ -19,8 +19,10 @@ This module orchestrates:
 
 from __future__ import annotations
 
+import json
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from swarm_attack.agents import (
@@ -100,6 +102,11 @@ class Orchestrator:
         critic: Optional[SpecCriticAgent] = None,
         moderator: Optional[SpecModeratorAgent] = None,
         state_store: Optional[StateStore] = None,
+        # Implementation agents (optional, auto-created if not provided)
+        prioritization: Optional[PrioritizationAgent] = None,
+        test_writer: Optional[TestWriterAgent] = None,
+        coder: Optional[CoderAgent] = None,
+        verifier: Optional[VerifierAgent] = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -111,6 +118,10 @@ class Orchestrator:
             critic: Optional SpecCriticAgent (created if not provided).
             moderator: Optional SpecModeratorAgent (created if not provided).
             state_store: Optional state store for persistence.
+            prioritization: Optional PrioritizationAgent (created if not provided).
+            test_writer: Optional TestWriterAgent (created if not provided).
+            coder: Optional CoderAgent (created if not provided).
+            verifier: Optional VerifierAgent (created if not provided).
         """
         self.config = config
         self.logger = logger
@@ -121,12 +132,12 @@ class Orchestrator:
         self._critic = critic or SpecCriticAgent(config, logger)
         self._moderator = moderator or SpecModeratorAgent(config, logger)
 
-        # Issue session agents (lazily initialized)
+        # Issue session agents (auto-created if not provided)
         self._session_manager: Optional[SessionManager] = None
-        self._prioritization: Optional[PrioritizationAgent] = None
-        self._test_writer: Optional[TestWriterAgent] = None
-        self._coder: Optional[CoderAgent] = None
-        self._verifier: Optional[VerifierAgent] = None
+        self._prioritization = prioritization or PrioritizationAgent(config, logger)
+        self._test_writer = test_writer or TestWriterAgent(config, logger)
+        self._coder = coder or CoderAgent(config, logger)
+        self._verifier = verifier or VerifierAgent(config, logger)
         self._github_client: Optional[GitHubClient] = None
 
     @property
@@ -225,6 +236,57 @@ class Orchestrator:
             if state:
                 state.add_cost(cost_usd, phase_name)
                 self._state_store.save(state)
+
+    def _check_spec_files_indicate_success(self, feature_id: str) -> tuple[bool, dict[str, float]]:
+        """
+        Check if spec files on disk indicate the debate actually succeeded.
+
+        This handles the case where Claude times out AFTER completing work
+        but before the response is returned. The files may already be written
+        with successful results even though we got a timeout error.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            Tuple of (success_indicated, scores_dict).
+            success_indicated is True if rubric shows ready_for_approval=true
+            and all scores meet thresholds.
+        """
+        spec_dir = Path(self.config.specs_path) / feature_id
+        rubric_path = spec_dir / "spec-rubric.json"
+        spec_path = spec_dir / "spec-draft.md"
+
+        # Check if both files exist
+        if not rubric_path.exists() or not spec_path.exists():
+            return False, {}
+
+        try:
+            with open(rubric_path) as f:
+                rubric = json.load(f)
+
+            # Check for explicit ready_for_approval flag
+            if rubric.get("ready_for_approval", False):
+                scores = rubric.get("current_scores", {})
+                thresholds = self.config.spec_debate.rubric_thresholds
+
+                # Verify all scores meet thresholds
+                all_pass = all(
+                    scores.get(dim, 0.0) >= threshold
+                    for dim, threshold in thresholds.items()
+                )
+
+                if all_pass:
+                    self._log(
+                        "spec_files_indicate_success",
+                        {"feature_id": feature_id, "scores": scores},
+                    )
+                    return True, scores
+
+        except (json.JSONDecodeError, IOError, KeyError):
+            pass
+
+        return False, {}
 
     def run_spec_pipeline(self, feature_id: str) -> PipelineResult:
         """
@@ -368,6 +430,30 @@ class Orchestrator:
                 total_cost += moderator_result.cost_usd
 
                 if not moderator_result.success:
+                    # Check if spec files indicate success despite the error
+                    # This handles timeout after Claude completed work but before response
+                    files_ok, file_scores = self._check_spec_files_indicate_success(feature_id)
+
+                    if files_ok:
+                        self._log(
+                            "moderator_timeout_recovered",
+                            {
+                                "feature_id": feature_id,
+                                "recovered_from": "file_check",
+                                "scores": file_scores,
+                            },
+                        )
+                        self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                        self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                        return PipelineResult(
+                            status="success",
+                            feature_id=feature_id,
+                            rounds_completed=round_num,
+                            final_scores=file_scores,
+                            total_cost_usd=total_cost,
+                        )
+
+                    # Genuine failure - no recovery possible
                     self._log(
                         "moderator_failure",
                         {"feature_id": feature_id, "error": moderator_result.errors},
@@ -407,9 +493,35 @@ class Orchestrator:
     # Issue Session Orchestration
     # =========================================================================
 
+    def _mark_task_skipped(
+        self, feature_id: str, issue_number: int, reason: str, blocking_issue: int
+    ) -> None:
+        """Mark task as SKIPPED in state with reason."""
+        if self._state_store:
+            state = self._state_store.load(feature_id)
+            if state:
+                for task in state.tasks:
+                    if task.issue_number == issue_number:
+                        task.stage = TaskStage.SKIPPED
+                        break
+                self._state_store.save(state)
+                self._log(
+                    "task_marked_skipped",
+                    {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "reason": reason,
+                        "blocking_issue": blocking_issue,
+                    },
+                    level="warning",
+                )
+
     def _select_issue(self, feature_id: str) -> Optional[int]:
         """
         Select the next issue to work on using PrioritizationAgent.
+
+        Also handles marking tasks as SKIPPED if their dependencies are
+        permanently blocked.
 
         Args:
             feature_id: The feature identifier.
@@ -429,16 +541,61 @@ class Orchestrator:
             self._prioritization.reset()
             result = self._prioritization.run({"state": state})
             if result.success and result.output:
+                # First, mark any tasks that should be skipped
+                tasks_to_skip = result.output.get("tasks_to_skip", [])
+                for skip_info in tasks_to_skip:
+                    self._mark_task_skipped(
+                        feature_id,
+                        skip_info["issue_number"],
+                        skip_info["reason"],
+                        skip_info["blocking_issue"],
+                    )
+
+                # Then return the selected issue
                 selected = result.output.get("selected_issue")
                 if selected:
                     return selected.issue_number
         return None
+
+    def _get_regression_test_files(self, feature_id: str) -> list[str]:
+        """
+        Get test files from DONE issues only for regression checking.
+
+        This prevents cascading failures where BLOCKED issues cause
+        subsequent issues to fail regression even when their own tests pass.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of test file paths from DONE issues.
+        """
+        if self._state_store is None:
+            return []
+
+        state = self._state_store.load(feature_id)
+        if state is None:
+            return []
+
+        test_files = []
+        tests_dir = Path(self.config.repo_root) / "tests" / "generated" / feature_id
+
+        for task in state.tasks:
+            # Only include tests from DONE issues
+            if task.stage == TaskStage.DONE:
+                test_file = tests_dir / f"test_issue_{task.issue_number}.py"
+                if test_file.exists():
+                    test_files.append(str(test_file))
+
+        return test_files
 
     def _run_implementation_cycle(
         self,
         feature_id: str,
         issue_number: int,
         session_id: str,
+        retry_number: int = 0,
+        previous_failures: Optional[list[dict[str, Any]]] = None,
     ) -> tuple[bool, AgentResult, float]:
         """
         Run one test_writer → coder → verifier cycle.
@@ -447,13 +604,26 @@ class Orchestrator:
             feature_id: The feature identifier.
             issue_number: The issue to implement.
             session_id: Current session ID for checkpoints.
+            retry_number: Current retry attempt (0 = first attempt).
+            previous_failures: Failure details from previous verifier run.
 
         Returns:
             Tuple of (success, verifier_result, total_cost).
         """
+        # Get test files from DONE issues only for regression check
+        # This prevents BLOCKED issues from causing cascading failures
+        # Pass empty list if no DONE issues (disables regression) vs None (run all)
+        regression_test_files = self._get_regression_test_files(feature_id)
+
         context = {
             "feature_id": feature_id,
             "issue_number": issue_number,
+            # Pass the list as-is (even if empty) to run targeted regression
+            # Empty list means no regression tests, None would run all tests
+            "regression_test_files": regression_test_files,
+            # NEW: Pass retry context to coder
+            "retry_number": retry_number,
+            "test_failures": previous_failures or [],
         }
         total_cost = 0.0
 
@@ -550,16 +720,64 @@ class Orchestrator:
                         break
                 self._state_store.save(state)
 
-    def _mark_task_blocked(self, feature_id: str, issue_number: int) -> None:
-        """Mark task as BLOCKED in state."""
+    def _post_github_comment(self, issue_number: int, comment: str) -> bool:
+        """Post a comment to a GitHub issue.
+
+        Args:
+            issue_number: The GitHub issue number.
+            comment: The comment body (markdown supported).
+
+        Returns:
+            True if comment was posted successfully, False otherwise.
+        """
+        try:
+            result = subprocess.run(
+                ["gh", "issue", "comment", str(issue_number), "--body", comment],
+                cwd=self.config.repo_root,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return result.returncode == 0
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            # gh CLI not available or failed - not critical
+            return False
+
+    def _mark_task_blocked(
+        self, feature_id: str, issue_number: int, reason: Optional[str] = None
+    ) -> None:
+        """Mark task as BLOCKED in state with optional reason.
+
+        Also posts a comment to the GitHub issue explaining why it's blocked.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number to mark as blocked.
+            reason: Optional error message explaining why the task is blocked.
+        """
         if self._state_store:
             state = self._state_store.load(feature_id)
             if state:
                 for task in state.tasks:
                     if task.issue_number == issue_number:
                         task.stage = TaskStage.BLOCKED
+                        task.blocked_reason = reason
                         break
                 self._state_store.save(state)
+
+        # Post comment to GitHub issue
+        if reason:
+            comment = f"""## 🚫 Implementation Blocked
+
+**Reason:** {reason}
+
+**Next Steps:**
+1. Review the error above and fix the root cause
+2. Run `swarm-attack run {feature_id} --issue {issue_number}` to retry
+
+---
+*🤖 Posted by swarm-attack*"""
+            self._post_github_comment(issue_number, comment)
 
     def run_issue_session(
         self,
@@ -706,10 +924,16 @@ class Orchestrator:
             success = False
             verifier_result: Optional[AgentResult] = None
             attempt = 0
+            # Track failures from previous run to pass to coder on retry
+            previous_failures: list[dict[str, Any]] = []
 
             while attempt <= max_retries:
                 cycle_success, verifier_result, cycle_cost = self._run_implementation_cycle(
-                    feature_id, issue_number, session_id
+                    feature_id,
+                    issue_number,
+                    session_id,
+                    retry_number=attempt,
+                    previous_failures=previous_failures,
                 )
                 total_cost += cycle_cost
 
@@ -745,6 +969,14 @@ class Orchestrator:
                         error=f"Coder failed: {verifier_result.errors[0] if verifier_result.errors else 'Unknown error'}",
                     )
 
+                # Extract failures from verifier result for next retry
+                if verifier_result and verifier_result.output:
+                    previous_failures = verifier_result.output.get("failures", [])
+                    # Also check regression failures if issue tests passed but regression failed
+                    if not previous_failures:
+                        regression_check = verifier_result.output.get("regression_check") or {}
+                        previous_failures = regression_check.get("failures", [])
+
                 # Verifier failed - retry if we haven't exceeded max_retries
                 attempt += 1
                 if attempt <= max_retries:
@@ -752,6 +984,7 @@ class Orchestrator:
                         "feature_id": feature_id,
                         "issue_number": issue_number,
                         "retry": attempt,
+                        "failures_to_fix": len(previous_failures),
                     })
                 else:
                     # We've exceeded max retries
@@ -764,6 +997,19 @@ class Orchestrator:
                 tests_failed = verifier_result.output.get("tests_failed", 0)
 
             # Step 8-9: Handle success or blocked
+            if success:
+                # SAFETY CHECK: Verify tests actually pass before marking DONE
+                # This prevents issues being marked DONE if verifier had a bug
+                if tests_failed > 0:
+                    self._log("issue_session_false_positive", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "tests_failed": tests_failed,
+                        "tests_passed": tests_passed,
+                        "warning": "Verifier reported success but tests_failed > 0",
+                    }, level="warning")
+                    success = False  # Override - don't mark DONE with failing tests
+
             if success:
                 # Create commit
                 commit_hash = self._create_commit(
@@ -811,8 +1057,18 @@ class Orchestrator:
                 )
 
             else:
-                # Max retries exceeded - mark blocked
-                self._mark_task_blocked(feature_id, issue_number)
+                # Max retries exceeded - build error message first
+                error_msg = "Max retries exceeded"
+                if verifier_result and verifier_result.errors:
+                    error_msg = f"{error_msg}: {verifier_result.errors[0]}"
+                elif verifier_result and verifier_result.output:
+                    regression = verifier_result.output.get("regression_check", {})
+                    if regression and not regression.get("passed", True):
+                        failed_count = regression.get("failed_count", 0)
+                        error_msg = f"Regression detected: {failed_count} tests failed in full suite"
+
+                # Mark blocked with reason
+                self._mark_task_blocked(feature_id, issue_number, reason=error_msg)
 
                 # Update cost in state
                 self._update_cost(feature_id, total_cost, "IMPLEMENTATION")
@@ -821,14 +1077,6 @@ class Orchestrator:
                 if self._session_manager:
                     self._session_manager.end_session(session_id, "failed")
                     self._session_manager.release_issue(feature_id, issue_number)
-
-                error_msg = "Max retries exceeded"
-                if verifier_result and verifier_result.errors:
-                    error_msg = f"{error_msg}: {verifier_result.errors[0]}"
-                elif verifier_result and verifier_result.output:
-                    regression = verifier_result.output.get("regression_check", {})
-                    if regression and not regression.get("passed", True):
-                        error_msg = "Regression detected in test suite"
 
                 self._log("issue_session_blocked", {
                     "feature_id": feature_id,

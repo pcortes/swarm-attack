@@ -61,10 +61,13 @@ swarm-attack init my-feature   # Creates .claude/prds/my-feature.md
 # Edit the PRD with your requirements
 ```
 
-### 3. Run the pipeline
+### 3. Run the full pipeline
 ```bash
-swarm-attack run my-feature    # Generates spec through debate pipeline
+swarm-attack run my-feature      # Generate spec through debate pipeline
 swarm-attack approve my-feature  # Approve the spec
+swarm-attack issues my-feature   # Create GitHub issues from spec
+swarm-attack greenlight my-feature  # Enable implementation
+swarm-attack run my-feature      # Implement issues (auto-selects next)
 ```
 
 ### 4. Check status
@@ -80,10 +83,15 @@ swarm-attack status my-feature # Detailed feature status
 | `swarm-attack status` | Show all features dashboard |
 | `swarm-attack status <feature>` | Show detailed feature status |
 | `swarm-attack init <feature>` | Create PRD template |
-| `swarm-attack run <feature>` | Run spec debate pipeline |
-| `swarm-attack smart <feature>` | Interactive mode with recovery |
+| `swarm-attack run <feature>` | Run pipeline (spec or implementation based on phase) |
+| `swarm-attack run <feature> --issue N` | Run specific issue implementation |
 | `swarm-attack approve <feature>` | Approve spec for implementation |
 | `swarm-attack reject <feature>` | Reject spec with feedback |
+| `swarm-attack issues <feature>` | Create GitHub issues from approved spec |
+| `swarm-attack greenlight <feature>` | Enable implementation phase |
+| `swarm-attack smart <feature>` | Interactive mode with recovery |
+| `swarm-attack recover <feature>` | Recover from blocked/interrupted state |
+| `swarm-attack unblock <feature>` | Unblock a stuck feature |
 | `swarm-attack setup` | Initialize project with config |
 
 ## Configuration
@@ -155,6 +163,23 @@ your-project/
                    ▼
               Stalemate (manual intervention)
 ```
+
+## Recovery & Troubleshooting
+
+If a feature gets stuck in BLOCKED state (e.g., due to timeout after successful completion):
+
+```bash
+# Auto-detect and recover
+swarm-attack unblock my-feature
+
+# Or use interactive recovery
+swarm-attack recover my-feature
+
+# Force a specific phase
+swarm-attack unblock my-feature --phase SPEC_NEEDS_APPROVAL
+```
+
+The `unblock` command analyzes spec files on disk to determine if the debate actually succeeded despite the timeout, and automatically transitions to the correct phase.
 
 ## License
 

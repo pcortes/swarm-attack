@@ -222,10 +222,15 @@ swarm-attack reject user-authentication --reason "Need more detail on token refr
 | `swarm-attack status` | Dashboard of all features |
 | `swarm-attack status <feature>` | Detailed feature status |
 | `swarm-attack init <feature>` | Create new feature + PRD template |
-| `swarm-attack run <feature>` | Run spec debate pipeline |
+| `swarm-attack run <feature>` | Run pipeline (spec or implementation based on phase) |
+| `swarm-attack run <feature> --issue N` | Run specific issue implementation |
 | `swarm-attack approve <feature>` | Approve spec for implementation |
 | `swarm-attack reject <feature>` | Reject spec with feedback |
+| `swarm-attack issues <feature>` | Create GitHub issues from approved spec |
+| `swarm-attack greenlight <feature>` | Enable implementation phase |
 | `swarm-attack smart <feature>` | Interactive mode with recovery |
+| `swarm-attack recover <feature>` | Recover from blocked state |
+| `swarm-attack unblock <feature>` | Unblock a stuck feature |
 | `swarm-attack --help` | Show all commands |
 
 ---
@@ -257,10 +262,62 @@ swarm-attack reject user-authentication --reason "Need more detail on token refr
 │       ↓                                                         │
 │  3. swarm-attack approve   You review and approve               │
 │       ↓                                                         │
-│  4. (Coming soon)          Issues created, code written         │
+│  4. swarm-attack issues    Creates GitHub issues from spec      │
+│       ↓                                                         │
+│  5. swarm-attack greenlight  Enables implementation phase       │
+│       ↓                                                         │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  IMPLEMENTATION (automatic, per issue)                   │   │
+│  │  ┌────────────┐   ┌────────┐   ┌──────────┐            │   │
+│  │  │ TestWriter │ → │ Coder  │ → │ Verifier │            │   │
+│  │  │  (Claude)  │   │(Claude)│   │ (pytest) │            │   │
+│  │  └────────────┘   └────────┘   └────┬─────┘            │   │
+│  │                                      │                  │   │
+│  │          Tests fail? ────────────────┘                  │   │
+│  │               │         (retry with failure feedback)   │   │
+│  │          Tests pass                                     │   │
+│  │               ↓                                         │   │
+│  │         Issue marked DONE                               │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│       ↓                                                         │
+│  6. swarm-attack run       Repeat for each issue                │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 6b. How the Retry Feedback Loop Works
+
+When tests fail during implementation, the system automatically retries with **targeted feedback**:
+
+1. **Verifier** parses pytest output to extract specific failures:
+   - Test name and class
+   - File and line number
+   - Exact assertion error message
+
+2. **Orchestrator** passes this to Coder on retry:
+   - Which tests failed and why
+   - The existing implementation code
+   - Retry attempt number
+
+3. **Coder** receives a prompt like:
+   ```
+   ⚠️ RETRY ATTEMPT #2
+
+   TEST FAILURES FROM PREVIOUS RUN:
+   1. test_has_scroll_controller (line 124)
+      Error: AssertionError: Widget must use ScrollController
+
+   YOUR PREVIOUS IMPLEMENTATION:
+   [existing code shown here]
+
+   Focus on fixing THESE SPECIFIC failures. Do not rewrite working code.
+   ```
+
+4. **Result**: Coder makes targeted fixes instead of rewriting everything.
+
+This typically resolves issues in 1-2 retries instead of failing after 3 blind attempts.
 
 ---
 
@@ -327,6 +384,23 @@ swarm-attack status my-feature
 # Try smart mode for interactive recovery
 swarm-attack smart my-feature
 ```
+
+### Feature stuck in BLOCKED state
+```bash
+# Auto-detect and recover (recommended)
+swarm-attack unblock my-feature
+
+# Or use interactive recovery with options
+swarm-attack recover my-feature
+
+# Force a specific phase if needed
+swarm-attack unblock my-feature --phase PRD_READY
+swarm-attack unblock my-feature --phase SPEC_NEEDS_APPROVAL
+```
+
+The `unblock` command checks if the spec files on disk show that the debate
+actually completed successfully (e.g., timeout occurred after Claude finished
+writing files). If so, it automatically transitions to the correct phase.
 
 ---
 

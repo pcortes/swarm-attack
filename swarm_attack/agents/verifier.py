@@ -62,14 +62,16 @@ class VerifierAgent(BaseAgent):
         test_path: Optional[Path] = None,
         timeout: Optional[int] = None,
         run_all: bool = False,
+        test_files: Optional[list[Path]] = None,
     ) -> tuple[int, str]:
         """
         Run pytest on the specified test file or full test suite.
 
         Args:
-            test_path: Path to the test file to run. Ignored if run_all=True.
+            test_path: Path to the test file to run. Ignored if run_all=True or test_files provided.
             timeout: Optional timeout in seconds.
             run_all: If True, run full test suite for regression detection.
+            test_files: Optional list of specific test files to run for regression check.
 
         Returns:
             Tuple of (exit_code, combined_output).
@@ -81,7 +83,10 @@ class VerifierAgent(BaseAgent):
         timeout = timeout or self._test_timeout
 
         # Build pytest command
-        if run_all:
+        if test_files:
+            # Run specific test files (for targeted regression check of DONE issues only)
+            cmd = ["pytest", "-v", "--tb=short"] + [str(f) for f in test_files]
+        elif run_all:
             # Run full test suite for regression detection
             cmd = ["pytest", "-v", "--tb=short", "-q"]
         else:
@@ -106,6 +111,84 @@ class VerifierAgent(BaseAgent):
 
         except subprocess.TimeoutExpired as e:
             raise TimeoutError(f"Test timed out after {timeout} seconds") from e
+
+    def _parse_pytest_failures(self, output: str) -> list[dict[str, Any]]:
+        """
+        Parse pytest output for detailed failure information.
+
+        Extracts test name, file, line number, and error message for each
+        failing test. This information is crucial for CoderAgent to understand
+        exactly what needs to be fixed on retry.
+
+        Args:
+            output: Raw pytest output.
+
+        Returns:
+            List of failure dictionaries:
+                - test: Test function name
+                - class: Test class name (if any)
+                - file: Test file path
+                - line: Line number where assertion failed
+                - error: Full error message
+                - short_message: Brief description of the failure
+        """
+        failures = []
+
+        if not output.strip():
+            return failures
+
+        # Pattern for short summary line:
+        # FAILED tests/path/file.py::TestClass::test_name - Error message
+        summary_pattern = r'FAILED\s+([\w/._-]+)::(\w+)::(\w+)\s+-\s+(.+)'
+
+        # Find all FAILED lines in short summary
+        for match in re.finditer(summary_pattern, output):
+            file_path, test_class, test_name, error_msg = match.groups()
+
+            # Try to find line number from traceback
+            # Look for the file:line pattern in the traceback section
+            line_num = None
+            traceback_pattern = rf'{re.escape(file_path)}:(\d+)'
+            line_match = re.search(traceback_pattern, output)
+            if line_match:
+                line_num = int(line_match.group(1))
+
+            failures.append({
+                "test": test_name,
+                "class": test_class,
+                "file": file_path,
+                "line": line_num,
+                "error": error_msg.strip(),
+                "short_message": error_msg.strip()[:100],
+            })
+
+        # If no matches with class, try pattern without class:
+        # FAILED tests/path/file.py::test_name - Error message
+        if not failures:
+            no_class_pattern = r'FAILED\s+([\w/._-]+)::(\w+)\s+-\s+(.+)'
+            for match in re.finditer(no_class_pattern, output):
+                file_path, test_name, error_msg = match.groups()
+
+                # Skip if this looks like a class pattern we missed
+                if '::' in file_path:
+                    continue
+
+                line_num = None
+                traceback_pattern = rf'{re.escape(file_path)}:(\d+)'
+                line_match = re.search(traceback_pattern, output)
+                if line_match:
+                    line_num = int(line_match.group(1))
+
+                failures.append({
+                    "test": test_name,
+                    "class": None,
+                    "file": file_path,
+                    "line": line_num,
+                    "error": error_msg.strip(),
+                    "short_message": error_msg.strip()[:100],
+                })
+
+        return failures
 
     def _parse_pytest_output(self, output: str) -> dict[str, Any]:
         """
@@ -314,6 +397,8 @@ class VerifierAgent(BaseAgent):
                 - test_path: Optional path to test file (defaults to standard location)
                 - implementation_files: Optional list of files created by CoderAgent
                 - check_regressions: Whether to run full test suite (default: True)
+                - regression_test_files: Optional list of test file paths to use for regression
+                                         (only tests from DONE issues, not BLOCKED)
                 - analyze_failures: Whether to use LLM for failure analysis (default: False)
 
         Returns:
@@ -334,6 +419,7 @@ class VerifierAgent(BaseAgent):
 
         check_regressions = context.get("check_regressions", True)
         analyze_failures = context.get("analyze_failures", False)
+        regression_test_files = context.get("regression_test_files")  # List of Path objects or None
 
         self._log("verifier_start", {
             "feature_id": feature_id,
@@ -380,6 +466,9 @@ class VerifierAgent(BaseAgent):
         parsed = self._parse_pytest_output(output)
         issue_tests_passed = exit_code == 0 and parsed["tests_failed"] == 0
 
+        # Parse detailed failure information for CoderAgent on retry
+        issue_failures = self._parse_pytest_failures(output) if not issue_tests_passed else []
+
         # Build initial result output
         result_output = {
             "feature_id": feature_id,
@@ -390,6 +479,8 @@ class VerifierAgent(BaseAgent):
             "test_output": output,
             "duration_seconds": parsed["duration_seconds"],
             "regression_check": None,
+            # NEW: Structured failure data for CoderAgent retry
+            "failures": issue_failures,
         }
 
         # Step 2: Run regression check if issue tests passed and enabled
@@ -398,23 +489,57 @@ class VerifierAgent(BaseAgent):
             self._log("verifier_regression_check", {
                 "feature_id": feature_id,
                 "issue_number": issue_number,
+                "targeted_regression": regression_test_files is not None,
+                "regression_file_count": len(regression_test_files) if regression_test_files else "all",
             })
 
             try:
-                regression_exit_code, regression_output = self._run_pytest(run_all=True)
-                regression_parsed = self._parse_pytest_output(regression_output)
-                regression_passed = regression_exit_code == 0 and regression_parsed["tests_failed"] == 0
+                # If specific test files provided (from DONE issues only), use those
+                # Empty list means no DONE issues yet - skip regression check
+                # None means fall back to running all tests
+                regression_skipped = False
 
-                result_output["regression_check"] = {
-                    "tests_run": regression_parsed["tests_run"],
-                    "tests_passed": regression_parsed["tests_passed"],
-                    "tests_failed": regression_parsed["tests_failed"],
-                    "duration_seconds": regression_parsed["duration_seconds"],
-                    "passed": regression_passed,
-                }
+                if regression_test_files is not None and len(regression_test_files) == 0:
+                    # No DONE issues yet - skip regression check entirely
+                    self._log("verifier_regression_skip", {
+                        "reason": "No DONE issues to check regression against",
+                    })
+                    regression_passed = True
+                    regression_skipped = True
+                    result_output["regression_check"] = {
+                        "skipped": True,
+                        "reason": "No DONE issues",
+                        "passed": True,
+                    }
+                elif regression_test_files is not None:
+                    # Run targeted regression on DONE issues only
+                    regression_exit_code, regression_output = self._run_pytest(
+                        test_files=[Path(f) for f in regression_test_files]
+                    )
+                else:
+                    # Fall back to running all tests
+                    regression_exit_code, regression_output = self._run_pytest(run_all=True)
 
-                if not regression_passed:
-                    result_output["regression_output"] = regression_output
+                # Only parse results if we actually ran tests
+                if not regression_skipped:
+                    regression_parsed = self._parse_pytest_output(regression_output)
+                    regression_passed = regression_exit_code == 0 and regression_parsed["tests_failed"] == 0
+
+                    # Parse regression failures for debugging
+                    regression_failures = self._parse_pytest_failures(regression_output) if not regression_passed else []
+
+                    result_output["regression_check"] = {
+                        "tests_run": regression_parsed["tests_run"],
+                        "tests_passed": regression_parsed["tests_passed"],
+                        "tests_failed": regression_parsed["tests_failed"],
+                        "duration_seconds": regression_parsed["duration_seconds"],
+                        "passed": regression_passed,
+                        # NEW: Structured regression failure data
+                        "failures": regression_failures,
+                    }
+
+                    if not regression_passed:
+                        result_output["regression_output"] = regression_output
 
             except TimeoutError as e:
                 self._log("verifier_regression_timeout", {"error": str(e)}, level="warning")

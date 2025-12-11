@@ -84,7 +84,10 @@ class IssueCreatorAgent(BaseAgent):
 
 Generate GitHub issues from the engineering specification above.
 
-Return ONLY valid JSON (no markdown code fence, no extra text) with this structure:
+IMPORTANT: You MUST output the JSON directly as your final response. Do not use any tools to write files.
+Just analyze the spec and print the JSON to stdout.
+
+Output ONLY valid JSON (no markdown code fence, no extra text, no explanation) with this structure:
 
 {{
   "feature_id": "{feature_id}",
@@ -108,6 +111,8 @@ Requirements:
 4. Size: small (~1-2 hours), medium (~half day), large (~1+ day)
 5. Include relevant labels (enhancement, bug, backend, frontend, api, database, etc.)
 6. Body should include Description, Acceptance Criteria, and any relevant context
+
+Remember: Print the JSON directly. Do not write to files. Do not wrap in markdown code blocks.
 """
 
     def _parse_json_response(self, text: str) -> dict[str, Any]:
@@ -202,9 +207,13 @@ Requirements:
         prompt = self._build_prompt(feature_id, spec_content)
 
         try:
+            # Don't allow any tools - spec content is already in prompt
+            # and we want Claude to output JSON directly
+            # Use max_turns=1 to ensure single-turn response
             result = self.llm.run(
                 prompt,
-                allowed_tools=["Read", "Glob"],
+                allowed_tools=[],
+                max_turns=1,
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:

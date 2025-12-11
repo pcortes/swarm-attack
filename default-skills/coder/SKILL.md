@@ -3,7 +3,7 @@ name: coder
 description: >
   Implement production code that makes tests pass. Follows TDD principles
   by reading existing tests and generating implementation to satisfy them.
-allowed-tools: Read,Glob,Write,Edit
+allowed-tools: Read,Glob
 ---
 
 # Coder Skill
@@ -110,15 +110,19 @@ Before outputting, verify:
 
 ---
 
-## Output Format
+## CRITICAL: Output Format
 
-Output implementation files with clear markers. Each file MUST be preceded by exactly:
+You MUST output implementation files using text markers. DO NOT use Write or Edit tools.
+
+Each file MUST be preceded by exactly:
 
 ```
-# FILE: path/to/module.py
+# FILE: path/to/module.ext
 ```
 
-Example output:
+The orchestrator will parse your text output and write the files. If you use Write/Edit tools instead, the orchestrator cannot track what files you created.
+
+### Python Example:
 
 ```
 # FILE: src/auth/signup.py
@@ -126,19 +130,6 @@ Example output:
 from src.auth.validators import validate_email, validate_password
 
 def signup(email: str, password: str) -> dict:
-    """
-    Register a new user with email and password.
-
-    Args:
-        email: User's email address.
-        password: User's password.
-
-    Returns:
-        dict with email and success status.
-
-    Raises:
-        ValueError: If email format is invalid or password is too weak.
-    """
     validate_email(email)
     validate_password(password)
     return {"email": email, "success": True}
@@ -147,17 +138,76 @@ def signup(email: str, password: str) -> dict:
 """Validation utilities for authentication."""
 
 def validate_email(email: str) -> None:
-    """Validate email format. Raises ValueError if invalid."""
     if "@" not in email or "." not in email.split("@")[-1]:
         raise ValueError("Invalid email format")
 
 def validate_password(password: str) -> None:
-    """Validate password strength. Raises ValueError if too weak."""
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
 
 # FILE: src/auth/__init__.py
 """Authentication package."""
+```
+
+### Flutter/Dart Example:
+
+For Flutter projects, create `.dart` files in the `lib/` directory:
+
+```
+# FILE: lib/services/speech_recognition_service.dart
+import 'package:speech_to_text/speech_to_text.dart';
+
+class SpeechRecognitionService {
+  final SpeechToText _speech = SpeechToText();
+  bool _isListening = false;
+
+  bool get isListening => _isListening;
+
+  Future<void> startListening({
+    required Function(String) onResult,
+    required Function() onDone,
+  }) async {
+    _isListening = true;
+    await _speech.listen(
+      onResult: (result) => onResult(result.recognizedWords),
+    );
+  }
+
+  Future<void> stopListening() async {
+    _isListening = false;
+    await _speech.stop();
+  }
+}
+
+# FILE: lib/controllers/transcription_controller.dart
+import 'package:flutter/foundation.dart';
+import '../services/speech_recognition_service.dart';
+
+class TranscriptionController extends ChangeNotifier {
+  final SpeechRecognitionService _service;
+  String _transcription = '';
+  bool _isListening = false;
+
+  TranscriptionController(this._service);
+
+  String get transcription => _transcription;
+  bool get isListening => _isListening;
+
+  Future<void> startListening() async {
+    _isListening = true;
+    notifyListeners();
+    await _service.startListening(
+      onResult: (text) {
+        _transcription = text;
+        notifyListeners();
+      },
+      onDone: () {
+        _isListening = false;
+        notifyListeners();
+      },
+    );
+  }
+}
 ```
 
 ---
@@ -264,6 +314,100 @@ def test_uppercase(input, expected):
 def uppercase(s: str) -> str:
     return s.upper()
 ```
+
+### Pattern 7: Flutter/Dart File Existence Tests
+
+When Python tests check for Dart file existence using `Path.cwd()`:
+
+**Test:**
+```python
+def test_service_file_exists(self):
+    service_path = Path.cwd() / "lib" / "services" / "speech_service.dart"
+    assert service_path.exists(), "speech_service.dart must exist"
+
+def test_service_has_start_method(self):
+    service_path = Path.cwd() / "lib" / "services" / "speech_service.dart"
+    content = service_path.read_text()
+    assert "startListening" in content, "Service must have startListening method"
+```
+
+**Implementation:**
+```
+# FILE: lib/services/speech_service.dart
+class SpeechService {
+  bool _isListening = false;
+
+  bool get isListening => _isListening;
+
+  Future<void> startListening() async {
+    _isListening = true;
+    // Implementation
+  }
+
+  Future<void> stopListening() async {
+    _isListening = false;
+  }
+}
+```
+
+### Pattern 8: Flutter pubspec.yaml Tests
+
+**Test:**
+```python
+def test_pubspec_has_dependencies(self):
+    pubspec_path = Path.cwd() / "pubspec.yaml"
+    with open(pubspec_path, 'r') as f:
+        pubspec = yaml.safe_load(f)
+    assert 'speech_to_text' in pubspec['dependencies']
+```
+
+**Implementation:**
+```
+# FILE: pubspec.yaml
+name: transcription_app
+description: Real-time speech transcription app
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  speech_to_text: ^6.6.0
+  provider: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+```
+
+### Pattern 9: Flutter Directory Structure Tests
+
+**Test:**
+```python
+def test_lib_directory_structure(self):
+    lib_path = Path.cwd() / "lib"
+    required_dirs = ['screens', 'controllers', 'services', 'models']
+    for dir_name in required_dirs:
+        dir_path = lib_path / dir_name
+        assert dir_path.is_dir(), f"lib/{dir_name}/ should exist"
+```
+
+**Implementation:**
+Create the directories with placeholder files:
+```
+# FILE: lib/screens/.gitkeep
+
+# FILE: lib/controllers/.gitkeep
+
+# FILE: lib/services/.gitkeep
+
+# FILE: lib/models/.gitkeep
+```
+
+Or create actual implementation files in those directories.
 
 ---
 

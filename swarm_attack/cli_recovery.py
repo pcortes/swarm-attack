@@ -389,12 +389,13 @@ def handle_skip(
     feature_id = session.feature_id
     issue_number = session.issue_number
 
-    # Step 1: Mark issue as BLOCKED in state
+    # Step 1: Mark issue as BLOCKED in state with reason
     state = state_store.load(feature_id)
     if state:
         for task in state.tasks:
             if task.issue_number == issue_number:
                 task.stage = TaskStage.BLOCKED
+                task.blocked_reason = "User skipped during recovery"
                 break
         state_store.save(state)
 
@@ -629,6 +630,283 @@ def format_actionable_steps(suggested_actions: list[str]) -> str:
         lines.append(f"  {i}. {action}")
 
     return "\n".join(lines)
+
+
+# =============================================================================
+# Spec Pipeline Recovery
+# =============================================================================
+
+
+def check_spec_pipeline_blocked(
+    feature_id: str,
+    config: SwarmConfig,
+    state_store: StateStore,
+) -> Optional[dict[str, Any]]:
+    """
+    Check if a feature is blocked in spec pipeline phase and can be recovered.
+
+    This handles the case where the spec debate completed successfully but
+    the process timed out before updating the state. The files on disk
+    may show success even though state says BLOCKED.
+
+    Args:
+        feature_id: The feature identifier.
+        config: SwarmConfig with paths.
+        state_store: StateStore for loading feature state.
+
+    Returns:
+        Recovery info dict if recoverable, None otherwise.
+        Dict contains: can_recover, reason, scores, recommended_action
+    """
+    import json
+    from pathlib import Path
+    from swarm_attack.models import FeaturePhase
+
+    state = state_store.load(feature_id)
+    if state is None:
+        return None
+
+    # Only check features in BLOCKED phase
+    if state.phase != FeaturePhase.BLOCKED:
+        return None
+
+    # Check if spec files exist and indicate success
+    spec_dir = Path(config.specs_path) / feature_id
+    rubric_path = spec_dir / "spec-rubric.json"
+    spec_path = spec_dir / "spec-draft.md"
+    review_path = spec_dir / "spec-review.json"
+
+    result = {
+        "feature_id": feature_id,
+        "can_recover": False,
+        "reason": "Unknown",
+        "scores": {},
+        "recommended_action": None,
+        "files_found": {
+            "spec_draft": spec_path.exists(),
+            "spec_rubric": rubric_path.exists(),
+            "spec_review": review_path.exists(),
+        },
+    }
+
+    # If no spec files exist, this wasn't a spec pipeline timeout
+    if not spec_path.exists():
+        result["reason"] = "No spec files found - not a spec pipeline issue"
+        return result
+
+    # Check rubric for ready_for_approval flag
+    if rubric_path.exists():
+        try:
+            with open(rubric_path) as f:
+                rubric = json.load(f)
+
+            if rubric.get("ready_for_approval", False):
+                scores = rubric.get("current_scores", {})
+                thresholds = config.spec_debate.rubric_thresholds
+
+                # Verify all scores meet thresholds
+                all_pass = all(
+                    scores.get(dim, 0.0) >= threshold
+                    for dim, threshold in thresholds.items()
+                )
+
+                if all_pass:
+                    result["can_recover"] = True
+                    result["reason"] = "Spec debate completed successfully but state wasn't updated"
+                    result["scores"] = scores
+                    result["recommended_action"] = "unblock_to_spec_needs_approval"
+                    return result
+                else:
+                    result["reason"] = f"Rubric shows ready_for_approval but scores don't meet thresholds: {scores}"
+                    result["scores"] = scores
+            else:
+                # Check if debate was in progress
+                if rubric.get("round", 0) > 0:
+                    result["reason"] = f"Spec debate was in progress (round {rubric.get('round')})"
+                    result["scores"] = rubric.get("current_scores", {})
+                    result["recommended_action"] = "retry_spec_pipeline"
+                else:
+                    result["reason"] = "Spec debate did not complete"
+
+        except (json.JSONDecodeError, IOError) as e:
+            result["reason"] = f"Could not read rubric file: {e}"
+
+    # Check review file as fallback
+    elif review_path.exists():
+        try:
+            with open(review_path) as f:
+                review = json.load(f)
+
+            scores = review.get("scores", {})
+            result["scores"] = scores
+            result["reason"] = "Spec was reviewed but moderator didn't run or failed"
+            result["recommended_action"] = "retry_spec_pipeline"
+
+        except (json.JSONDecodeError, IOError):
+            result["reason"] = "Spec exists but review file is corrupted"
+            result["recommended_action"] = "retry_spec_pipeline"
+
+    else:
+        result["reason"] = "Spec draft exists but no rubric or review - debate may have failed early"
+        result["recommended_action"] = "retry_spec_pipeline"
+
+    return result
+
+
+def display_spec_recovery_options(
+    recovery_info: dict[str, Any],
+    config: SwarmConfig,
+) -> str:
+    """
+    Display spec pipeline recovery options and get user choice.
+
+    Args:
+        recovery_info: Recovery info from check_spec_pipeline_blocked.
+        config: SwarmConfig.
+
+    Returns:
+        User's choice: "unblock", "retry", or "skip"
+    """
+    feature_id = recovery_info["feature_id"]
+    can_recover = recovery_info["can_recover"]
+    reason = recovery_info["reason"]
+    scores = recovery_info["scores"]
+    recommended = recovery_info.get("recommended_action")
+
+    # Build panel content
+    info_lines = [
+        f"[bold]Feature:[/bold] {feature_id}",
+        f"[bold]Status:[/bold] BLOCKED",
+        "",
+        f"[bold]Analysis:[/bold] {reason}",
+    ]
+
+    if scores:
+        score_str = ", ".join(f"{k}: {v:.2f}" for k, v in scores.items())
+        info_lines.append(f"[bold]Scores:[/bold] {score_str}")
+
+    files = recovery_info.get("files_found", {})
+    files_str = ", ".join(f"{k}={'✓' if v else '✗'}" for k, v in files.items())
+    info_lines.append(f"[bold]Files:[/bold] {files_str}")
+
+    info_lines.extend([
+        "",
+        "[bold]Recovery Options:[/bold]",
+    ])
+
+    if can_recover:
+        info_lines.append("[1] Unblock - Set phase to SPEC_NEEDS_APPROVAL (Recommended)")
+    else:
+        info_lines.append("[1] Unblock - Force set phase to SPEC_NEEDS_APPROVAL")
+
+    info_lines.extend([
+        "[2] Retry - Reset to PRD_READY and re-run spec pipeline",
+        "[3] Skip - Leave as BLOCKED",
+    ])
+
+    console.print(Panel(
+        "\n".join(info_lines),
+        title="🔧 Spec Pipeline Recovery",
+        border_style="yellow" if can_recover else "red",
+    ))
+
+    # Default based on recommendation
+    default = "1" if can_recover else "2"
+
+    choice = Prompt.ask(
+        "Select an option",
+        choices=["1", "2", "3"],
+        default=default,
+    )
+
+    choice_map = {
+        "1": "unblock",
+        "2": "retry",
+        "3": "skip",
+    }
+
+    return choice_map.get(choice, "skip")
+
+
+def handle_spec_unblock(
+    feature_id: str,
+    config: SwarmConfig,
+    state_store: StateStore,
+    target_phase: str = "SPEC_NEEDS_APPROVAL",
+) -> dict[str, Any]:
+    """
+    Unblock a feature from spec pipeline BLOCKED state.
+
+    Args:
+        feature_id: The feature identifier.
+        config: SwarmConfig.
+        state_store: StateStore.
+        target_phase: Phase to transition to.
+
+    Returns:
+        Result dictionary with unblock status.
+    """
+    from swarm_attack.models import FeaturePhase
+
+    state = state_store.load(feature_id)
+    if state is None:
+        return {"success": False, "error": f"Feature '{feature_id}' not found"}
+
+    phase_map = {
+        "SPEC_NEEDS_APPROVAL": FeaturePhase.SPEC_NEEDS_APPROVAL,
+        "PRD_READY": FeaturePhase.PRD_READY,
+        "SPEC_APPROVED": FeaturePhase.SPEC_APPROVED,
+    }
+
+    new_phase = phase_map.get(target_phase)
+    if new_phase is None:
+        return {"success": False, "error": f"Invalid target phase: {target_phase}"}
+
+    old_phase = state.phase
+    state.update_phase(new_phase)
+    state_store.save(state)
+
+    return {
+        "success": True,
+        "feature_id": feature_id,
+        "old_phase": old_phase.name,
+        "new_phase": new_phase.name,
+    }
+
+
+def handle_spec_retry(
+    feature_id: str,
+    config: SwarmConfig,
+    state_store: StateStore,
+) -> dict[str, Any]:
+    """
+    Reset feature to PRD_READY to allow re-running spec pipeline.
+
+    Args:
+        feature_id: The feature identifier.
+        config: SwarmConfig.
+        state_store: StateStore.
+
+    Returns:
+        Result dictionary with retry status.
+    """
+    from swarm_attack.models import FeaturePhase
+
+    state = state_store.load(feature_id)
+    if state is None:
+        return {"success": False, "error": f"Feature '{feature_id}' not found"}
+
+    old_phase = state.phase
+    state.update_phase(FeaturePhase.PRD_READY)
+    state_store.save(state)
+
+    return {
+        "success": True,
+        "feature_id": feature_id,
+        "old_phase": old_phase.name,
+        "new_phase": "PRD_READY",
+        "next_step": f"swarm-attack run {feature_id}",
+    }
 
 
 # =============================================================================

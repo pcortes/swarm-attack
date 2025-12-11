@@ -262,6 +262,18 @@ python -m swarm_attack run <feature-id>
 python -m swarm_attack run <feature-id> --issue 123
 ```
 
+### The Retry Feedback Loop
+
+When tests fail, the system automatically retries with **targeted feedback**:
+
+1. **Verifier** extracts specific failure details from pytest output
+2. **Coder** receives on retry:
+   - Which tests failed with exact error messages
+   - The existing implementation to iterate on
+   - Instructions to make targeted fixes, not rewrites
+
+This typically resolves issues in 1-2 retries instead of 3 blind attempts.
+
 ### What to Look For
 
 **During implementation:**
@@ -343,6 +355,23 @@ ls .claude/skills/
 2. Review the recovery agent's analysis
 3. Manually fix the issue or update the spec
 
+### Issue: "Feature stuck in BLOCKED after spec debate"
+**Cause:** The spec debate may have completed successfully but the process timed out before updating the state.
+
+**Fix:**
+```bash
+# Auto-detect and recover
+swarm-attack unblock my-feature
+
+# Or use interactive recovery
+swarm-attack recover my-feature
+
+# Force a specific phase if auto-detect fails
+swarm-attack unblock my-feature --phase SPEC_NEEDS_APPROVAL
+```
+
+The `unblock` command analyzes the spec files on disk. If `spec-rubric.json` shows `ready_for_approval: true` and all scores meet thresholds, it automatically transitions to `SPEC_NEEDS_APPROVAL`.
+
 ---
 
 ## Cost Tracking
@@ -391,17 +420,23 @@ python -m swarm_attack status <feature-id>
 
 ```bash
 # Full workflow
-python -m swarm_attack spec my-feature     # Generate spec
-python -m swarm_attack approve my-feature  # Approve spec
-python -m swarm_attack issues my-feature   # Create issues
-python -m swarm_attack greenlight my-feature  # Start implementation
-python -m swarm_attack run my-feature      # Implement issues
-python -m swarm_attack status my-feature   # Check progress
+swarm-attack init my-feature               # Create feature + PRD template
+swarm-attack run my-feature                # Generate spec through debate
+swarm-attack approve my-feature            # Approve spec
+swarm-attack issues my-feature             # Create issues from spec
+swarm-attack greenlight my-feature         # Enable implementation phase
+swarm-attack run my-feature                # Implement next available issue
+swarm-attack run my-feature --issue 3      # Implement specific issue
+swarm-attack status my-feature             # Check progress
+
+# Recovery commands
+swarm-attack recover my-feature            # Interactive recovery flow
+swarm-attack unblock my-feature            # Auto-detect and unblock
+swarm-attack unblock my-feature --phase PRD_READY  # Force specific phase
 
 # Useful commands
-python -m swarm_attack --help              # Show all commands
-python -m swarm_attack list                # List all features
-python -m swarm_attack sessions my-feature # Show session history
+swarm-attack --help                        # Show all commands
+swarm-attack status                        # List all features
 ```
 
 ---

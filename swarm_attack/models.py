@@ -69,6 +69,7 @@ class TaskStage(Enum):
     # Completion
     DONE = auto()                    # Complete and verified
     BLOCKED = auto()                 # Needs human help
+    SKIPPED = auto()                 # Skipped due to blocked dependency
 
 
 @dataclass
@@ -108,6 +109,7 @@ class TaskRef:
     estimated_size: str = "medium"   # "small", "medium", "large"
     business_value_score: float = 0.5  # 0-1, higher is more valuable
     technical_risk_score: float = 0.5  # 0-1, higher is riskier
+    blocked_reason: Optional[str] = None  # Why this task is blocked (error message)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -267,6 +269,11 @@ class RunState:
     def blocked_tasks(self) -> list[TaskRef]:
         """Get all blocked tasks."""
         return self.get_tasks_by_stage(TaskStage.BLOCKED)
+
+    @property
+    def skipped_tasks(self) -> list[TaskRef]:
+        """Get all skipped tasks (blocked due to dependency failure)."""
+        return self.get_tasks_by_stage(TaskStage.SKIPPED)
 
 
 # JSON encoder for custom types

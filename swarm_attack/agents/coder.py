@@ -110,14 +110,72 @@ class CoderAgent(BaseAgent):
 
         return modules
 
+    def _extract_expected_directories(self, test_content: str) -> list[str]:
+        """
+        Extract directory paths from is_dir() assertions in tests.
+
+        Looks for patterns like:
+        - models_path = Path.cwd() / "lib" / "models" followed by models_path.is_dir()
+        - Path.cwd() / "lib" / "models" directly with is_dir()
+
+        Args:
+            test_content: Content of the test file.
+
+        Returns:
+            List of directory paths (e.g., ["lib/models", "lib/widgets"]).
+        """
+        directories = set()
+
+        # Pattern 1: Find variable definitions like:
+        # models_path = Path.cwd() / "lib" / "models"
+        # These are typically followed by .is_dir() assertions elsewhere
+        var_def_pattern = r'(\w+_path)\s*=\s*Path\.cwd\(\)\s*/\s*"lib"\s*/\s*"([^"]+)"'
+        for match in re.finditer(var_def_pattern, test_content):
+            var_name = match.group(1)
+            dirname = match.group(2)
+            # Only if it's used with is_dir() somewhere
+            if f"{var_name}.is_dir()" in test_content and '.' not in dirname:
+                directories.add(f"lib/{dirname}")
+
+        # Pattern 2: Direct Path.cwd() / "lib" / "dirname" with is_dir() on same line
+        direct_pattern = r'Path\.cwd\(\)\s*/\s*"lib"\s*/\s*"([^"]+)"[^.]*\.is_dir\(\)'
+        for match in re.finditer(direct_pattern, test_content):
+            dirname = match.group(1)
+            if '.' not in dirname:
+                directories.add(f"lib/{dirname}")
+
+        # Pattern 3: Look for common Flutter directory patterns in test names
+        flutter_dirs = ["screens", "controllers", "services", "models", "widgets"]
+        for dir_name in flutter_dirs:
+            # Look for explicit directory tests like test_lib_models_directory_exists
+            if f"test_lib_{dir_name}_directory" in test_content.lower() or \
+               f"test_{dir_name}_directory" in test_content.lower():
+                directories.add(f"lib/{dir_name}")
+
+        return sorted(directories)
+
+    def _ensure_directories_exist(self, test_content: str) -> dict[str, str]:
+        """
+        Create .gitkeep files for directories expected by tests.
+
+        Returns:
+            Dictionary mapping file paths to content (empty for .gitkeep).
+        """
+        directories = self._extract_expected_directories(test_content)
+        files = {}
+        for dir_path in directories:
+            gitkeep_path = f"{dir_path}/.gitkeep"
+            files[gitkeep_path] = ""
+        return files
+
     def _parse_file_outputs(self, llm_response: str) -> dict[str, str]:
         """
         Parse LLM response into file path -> content mapping.
 
-        Supports multiple formats:
-        - # FILE: path/to/file.py followed by content
-        - #FILE: path/to/file.py (no space)
-        - Code fences with path comments: # path/to/file.py
+        Supports multiple formats and languages (Python, Dart, TypeScript, etc.):
+        - # FILE: path/to/file.ext followed by content (preferred)
+        - #FILE: path/to/file.ext (no space)
+        - Code fences with path comments: # path/to/file.py or // path/to/file.dart
 
         Args:
             llm_response: Raw response from LLM.
@@ -128,10 +186,13 @@ class CoderAgent(BaseAgent):
         files: dict[str, str] = {}
 
         if not llm_response.strip():
+            self._log("coder_parse_warning", {
+                "warning": "Empty LLM response",
+            }, level="warning")
             return files
 
-        # Pattern 1: # FILE: path/to/file.py followed by content until next FILE or end
-        # Handles both "# FILE:" and "#FILE:" formats
+        # Pattern 1: # FILE: path/to/file.ext followed by content until next FILE or end
+        # Handles both "# FILE:" and "#FILE:" formats - works for ALL languages
         file_marker_pattern = r"#\s*FILE:\s*([^\n]+)\n([\s\S]*?)(?=#\s*FILE:|$)"
         matches = re.findall(file_marker_pattern, llm_response, re.IGNORECASE)
 
@@ -143,12 +204,10 @@ class CoderAgent(BaseAgent):
                     files[path] = content
             return files
 
-        # Pattern 2: Code fence with path comment at the start
-        # ```python
-        # # path/to/file.py
-        # content
-        # ```
-        fence_pattern = r"```(?:python)?\s*\n#\s*([^\n]+\.py)\s*\n([\s\S]*?)```"
+        # Pattern 2: Code fence with path comment at the start (multi-language)
+        # Supports: ```dart\n// path.dart\n OR ```python\n# path.py\n
+        # Comment markers: # (Python/Shell/Ruby) or // (Dart/JS/TS/C/Go/Rust)
+        fence_pattern = r"```(?:\w+)?\s*\n(?:#|//)\s*([^\n]+\.\w+)\s*\n([\s\S]*?)```"
         fence_matches = re.findall(fence_pattern, llm_response)
 
         if fence_matches:
@@ -160,25 +219,131 @@ class CoderAgent(BaseAgent):
             return files
 
         # Pattern 3: Plain code fence extraction (fallback)
-        # Try to extract from standard code fences
-        code_fence_pattern = r"```(?:python)?\s*([\s\S]*?)\s*```"
+        # Try to extract from standard code fences with any language
+        code_fence_pattern = r"```(?:\w+)?\s*([\s\S]*?)\s*```"
         code_matches = re.findall(code_fence_pattern, llm_response)
 
         if code_matches:
             # Look for path comment in the first line of each block
             for content in code_matches:
                 lines = content.strip().split("\n")
-                if lines and lines[0].strip().startswith("#"):
+                if lines:
                     first_line = lines[0].strip()
                     # Check if first line looks like a path comment
-                    path_match = re.match(r"#\s*(\S+\.py)\s*$", first_line)
+                    # Supports # (Python) or // (Dart/JS/C) comment styles
+                    # Matches any file extension (.py, .dart, .ts, .yaml, etc.)
+                    path_match = re.match(r"(?:#|//)\s*(\S+\.\w+)\s*$", first_line)
                     if path_match:
                         path = path_match.group(1)
                         file_content = "\n".join(lines[1:]).strip()
                         if path and file_content:
                             files[path] = file_content
 
+        # Log warning if no files were parsed
+        if not files:
+            preview = llm_response[:500] if len(llm_response) > 500 else llm_response
+            self._log("coder_parse_warning", {
+                "warning": "No files parsed from LLM response",
+                "response_length": len(llm_response),
+                "response_preview": preview,
+            }, level="warning")
+
         return files
+
+    def _detect_project_type(self, spec_content: str, test_content: str) -> dict[str, str]:
+        """Detect project type from spec and test content."""
+        combined = spec_content.lower() + test_content.lower()
+
+        if "flutter" in combined or ".dart" in combined or "pubspec.yaml" in combined:
+            return {
+                "type": "Flutter/Dart",
+                "source_dir": "lib/",
+                "file_ext": ".dart",
+                "structure": "lib/screens/, lib/controllers/, lib/services/, lib/models/, lib/widgets/",
+            }
+        elif "package.json" in combined or "node" in combined or ".ts" in combined:
+            return {
+                "type": "Node.js/TypeScript",
+                "source_dir": "src/",
+                "file_ext": ".ts",
+                "structure": "src/",
+            }
+        else:
+            return {
+                "type": "Python",
+                "source_dir": "src/",
+                "file_ext": ".py",
+                "structure": "src/",
+            }
+
+    def _format_test_failures(self, failures: list[dict[str, Any]]) -> str:
+        """
+        Format test failures for inclusion in the prompt.
+
+        Args:
+            failures: List of failure dictionaries from VerifierAgent.
+
+        Returns:
+            Formatted string describing the failures.
+        """
+        if not failures:
+            return ""
+
+        lines = ["## ⚠️ TEST FAILURES FROM PREVIOUS RUN", ""]
+        lines.append(f"**{len(failures)} test(s) failed.** You must fix these specific issues:")
+        lines.append("")
+
+        for i, failure in enumerate(failures, 1):
+            test_name = failure.get("test", "unknown")
+            test_class = failure.get("class", "")
+            file_path = failure.get("file", "unknown")
+            line_num = failure.get("line", "?")
+            error_msg = failure.get("error", "Unknown error")
+
+            full_test_name = f"{test_class}::{test_name}" if test_class else test_name
+
+            lines.append(f"### Failure {i}: `{full_test_name}`")
+            lines.append(f"**File:** `{file_path}` line {line_num}")
+            lines.append(f"**Error:** {error_msg}")
+            lines.append("")
+
+        lines.append("**IMPORTANT:** Focus on fixing THESE SPECIFIC failures. Do not rewrite working code.")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_existing_implementation(self, existing: dict[str, str]) -> str:
+        """
+        Format existing implementation files for inclusion in the prompt.
+
+        Args:
+            existing: Dictionary mapping file paths to their contents.
+
+        Returns:
+            Formatted string showing existing implementation.
+        """
+        if not existing:
+            return ""
+
+        lines = ["## 📁 YOUR PREVIOUS IMPLEMENTATION", ""]
+        lines.append("You already wrote the following code. **Iterate on it, don't rewrite from scratch.**")
+        lines.append("Only modify what's needed to fix the failing tests.")
+        lines.append("")
+
+        for path, content in existing.items():
+            # Truncate very long files to avoid token limits
+            truncated = content[:5000] if len(content) > 5000 else content
+            was_truncated = len(content) > 5000
+
+            lines.append(f"### `{path}`")
+            lines.append("```")
+            lines.append(truncated)
+            if was_truncated:
+                lines.append("... (truncated)")
+            lines.append("```")
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _build_prompt(
         self,
@@ -187,11 +352,30 @@ class CoderAgent(BaseAgent):
         spec_content: str,
         test_content: str,
         expected_modules: list[str],
+        retry_number: int = 0,
+        test_failures: Optional[list[dict[str, Any]]] = None,
+        existing_implementation: Optional[dict[str, str]] = None,
     ) -> str:
         """Build the full prompt for Claude."""
         skill_prompt = self._load_skill_prompt()
 
         modules_str = "\n".join(f"- {m}" for m in expected_modules) if expected_modules else "- (Infer from test imports)"
+
+        # Detect project type for better context
+        project_info = self._detect_project_type(spec_content, test_content)
+
+        # Build failure and existing implementation sections (for retries)
+        failures_section = self._format_test_failures(test_failures or [])
+        existing_section = self._format_existing_implementation(existing_implementation or {})
+
+        # Retry context
+        retry_context = ""
+        if retry_number > 0:
+            retry_context = f"""
+**⚠️ RETRY ATTEMPT #{retry_number}**
+This is NOT your first attempt. Your previous implementation had failing tests.
+Review the failures below and make TARGETED fixes. DO NOT rewrite everything.
+"""
 
         return f"""{skill_prompt}
 
@@ -200,6 +384,16 @@ class CoderAgent(BaseAgent):
 ## Context for This Task
 
 **Feature ID:** {feature_id}
+{retry_context}
+
+**Project Type:** {project_info['type']}
+**Source Directory:** {project_info['source_dir']}
+**File Extension:** {project_info['file_ext']}
+**Directory Structure:** {project_info['structure']}
+
+{failures_section}
+
+{existing_section}
 
 **Issue to Implement:**
 
@@ -231,18 +425,125 @@ Title: {issue.get('title', 'Unknown')}
 
 Implement production code that makes ALL tests in the test file pass.
 
+CRITICAL REQUIREMENTS:
+1. Output files using `# FILE: path/to/file.ext` markers (use correct extension for project type)
+2. DO NOT use Write or Edit tools - output code as text only
+3. Create files in {project_info['source_dir']} directory structure
+4. Analyze tests to understand what files and content they expect
+5. If tests check Path.cwd() / "path", create files at that exact path
+
+IMPORTANT - Read the tests carefully for ALL path assertions:
+- Look for `Path.cwd() / "path" / "to" / "dir"` -> create corresponding directory with .gitkeep
+- For EVERY directory existence test, create a .gitkeep file in that directory
+- For EVERY file existence test, create that file with appropriate content
+
 Requirements:
 1. Analyze the test file to understand expected behavior
-2. Create the modules that tests import from
-3. Implement all functions/classes that tests expect
-4. Handle all edge cases that tests check for
-5. Follow existing code patterns in the spec
+2. Create ALL files and directories that tests check for
+3. For directory existence tests, create a .gitkeep file in that directory
+4. Implement all functions/classes that tests expect
+5. Handle all edge cases that tests check for
+6. Follow existing code patterns in the spec
 
 Output Format:
-- Use `# FILE: path/to/file.py` markers for each file
+- Use `# FILE: path/to/file.ext` markers for each file
 - Output ONLY implementation code, no explanations
 - Create all necessary files to make tests pass
+- For directories, output `# FILE: path/to/dir/.gitkeep` with empty content
+
+CRITICAL: Your output MUST start with `# FILE:` markers. Examples:
+
+Python Example:
+# FILE: src/services/processor.py
+class Processor:
+    def process(self, data):
+        return data.upper()
+
+# FILE: src/models/__init__.py
+from .user import User
+
+Flutter/Dart Example:
+# FILE: lib/services/my_service.dart
+class MyService {{
+  bool _active = false;
+  bool get isActive => _active;
+}}
+
+DO NOT use code fences (```). DO NOT add explanatory text before the files.
+Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 """
+
+    def _extract_implementation_paths_from_tests(self, test_content: str) -> list[str]:
+        """
+        Extract expected file paths from test content.
+
+        Looks for patterns like:
+        - Path.cwd() / "lib" / "widgets" / "transcription_display.dart"
+        - Path.cwd() / "lib" / "models" / "transcription_state.dart"
+
+        Returns list of relative file paths.
+        """
+        paths = []
+
+        # Pattern: Path.cwd() / "lib" / "..." / "filename.ext"
+        # Capture all path segments after Path.cwd()
+        pattern = r'Path\.cwd\(\)\s*/\s*"([^"]+)"(?:\s*/\s*"([^"]+)")*'
+
+        # More specific pattern for file paths (ends with .dart, .py, etc.)
+        file_pattern = r'Path\.cwd\(\)\s*/\s*"([^"]+)"\s*/\s*"([^"]+)"\s*/\s*"([^"]+\.\w+)"'
+        for match in re.finditer(file_pattern, test_content):
+            path = "/".join(match.groups())
+            if path not in paths:
+                paths.append(path)
+
+        # Also try 2-segment paths
+        two_segment_pattern = r'Path\.cwd\(\)\s*/\s*"([^"]+)"\s*/\s*"([^"]+\.\w+)"'
+        for match in re.finditer(two_segment_pattern, test_content):
+            path = "/".join(match.groups())
+            if path not in paths:
+                paths.append(path)
+
+        return paths
+
+    def _read_existing_implementation(
+        self, test_content: str, expected_modules: list[str]
+    ) -> dict[str, str]:
+        """
+        Read existing implementation files that the coder previously created.
+
+        Args:
+            test_content: Test file content to extract expected paths.
+            expected_modules: Module paths from test imports.
+
+        Returns:
+            Dictionary mapping file paths to their contents.
+        """
+        existing: dict[str, str] = {}
+
+        # Collect all potential file paths
+        paths_to_check = set()
+
+        # From test imports (expected_modules)
+        for module in expected_modules:
+            paths_to_check.add(module)
+
+        # From test assertions (Path.cwd() / "lib" / ... patterns)
+        for path in self._extract_implementation_paths_from_tests(test_content):
+            paths_to_check.add(path)
+
+        # Read each file if it exists
+        for rel_path in paths_to_check:
+            full_path = Path(self.config.repo_root) / rel_path
+            if file_exists(full_path):
+                try:
+                    content = read_file(full_path)
+                    # Only include non-empty files that aren't .gitkeep
+                    if content.strip() and not rel_path.endswith(".gitkeep"):
+                        existing[rel_path] = content
+                except Exception:
+                    pass  # Skip files we can't read
+
+        return existing
 
     def run(self, context: dict[str, Any]) -> AgentResult:
         """
@@ -253,6 +554,8 @@ Output Format:
                 - feature_id: The feature identifier (required)
                 - issue_number: The issue order number (required)
                 - test_path: Optional path to test file (defaults to standard location)
+                - retry_number: Retry attempt number (0 = first attempt)
+                - test_failures: List of failure details from previous verifier run
 
         Returns:
             AgentResult with:
@@ -269,9 +572,15 @@ Output Format:
         if issue_number is None:
             return AgentResult.failure_result("Missing required context: issue_number")
 
+        # NEW: Extract retry context
+        retry_number = context.get("retry_number", 0)
+        test_failures = context.get("test_failures", [])
+
         self._log("coder_start", {
             "feature_id": feature_id,
             "issue_number": issue_number,
+            "retry_number": retry_number,
+            "failure_count": len(test_failures),
         })
         self.checkpoint("started")
 
@@ -342,15 +651,36 @@ Output Format:
             self._log("coder_error", {"error": str(e)}, level="error")
             return AgentResult.failure_result(str(e))
 
+        # NEW: Read existing implementation on retry
+        existing_implementation: dict[str, str] = {}
+        if retry_number > 0:
+            existing_implementation = self._read_existing_implementation(
+                test_content, expected_modules
+            )
+            self._log("coder_existing_impl", {
+                "retry_number": retry_number,
+                "existing_files": list(existing_implementation.keys()),
+            })
+
         # Build prompt and invoke Claude
         prompt = self._build_prompt(
-            feature_id, issue, spec_content, test_content, expected_modules
+            feature_id,
+            issue,
+            spec_content,
+            test_content,
+            expected_modules,
+            retry_number=retry_number,
+            test_failures=test_failures,
+            existing_implementation=existing_implementation,
         )
 
         try:
+            # No tools - all context is in prompt, just generate code with # FILE: markers
+            # Using Write/Edit tools causes result.text to be empty, breaking file parsing
             result = self.llm.run(
                 prompt,
-                allowed_tools=["Read", "Glob", "Write", "Edit"],
+                allowed_tools=[],
+                max_turns=1,
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:
@@ -366,6 +696,12 @@ Output Format:
 
         # Parse file outputs from response
         files = self._parse_file_outputs(result.text)
+
+        # Ensure all directories expected by tests exist (creates .gitkeep files)
+        directory_files = self._ensure_directories_exist(test_content)
+        for dir_file, content in directory_files.items():
+            if dir_file not in files:
+                files[dir_file] = content
 
         # Write implementation files
         files_created: list[str] = []
