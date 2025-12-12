@@ -132,6 +132,17 @@ class GitConfig:
 
 
 @dataclass
+class BugBashConfig:
+    """Bug Bash pipeline configuration."""
+    max_cost_per_bug_usd: float = 10.0         # Maximum cost for a single bug investigation
+    max_reproduction_attempts: int = 3          # Max attempts to reproduce a bug
+    min_test_cases: int = 2                     # Minimum test cases required in fix plan
+    require_approval: bool = True               # Require human approval before fix (ALWAYS True)
+    auto_commit_fixes: bool = False             # Auto-commit fixes after verification
+    bugs_dir: str = ".swarm/bugs"              # Where to store bug state
+
+
+@dataclass
 class SwarmConfig:
     """
     Main configuration for Feature Swarm.
@@ -154,6 +165,7 @@ class SwarmConfig:
     sessions: SessionConfig = field(default_factory=SessionConfig)
     tests: TestRunnerConfig = field(default_factory=lambda: TestRunnerConfig(command=""))
     git: GitConfig = field(default_factory=GitConfig)
+    bug_bash: BugBashConfig = field(default_factory=BugBashConfig)
 
     def __post_init__(self) -> None:
         """Convert paths to absolute paths based on repo_root."""
@@ -325,6 +337,18 @@ def _parse_git_config(data: dict[str, Any]) -> GitConfig:
     )
 
 
+def _parse_bug_bash_config(data: dict[str, Any]) -> BugBashConfig:
+    """Parse bug bash configuration from dict."""
+    return BugBashConfig(
+        max_cost_per_bug_usd=data.get("max_cost_per_bug_usd", 10.0),
+        max_reproduction_attempts=data.get("max_reproduction_attempts", 3),
+        min_test_cases=data.get("min_test_cases", 2),
+        require_approval=True,  # Always require approval - cannot be disabled
+        auto_commit_fixes=data.get("auto_commit_fixes", False),
+        bugs_dir=data.get("bugs_dir", ".swarm/bugs")
+    )
+
+
 def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     """
     Load configuration from config.yaml.
@@ -375,6 +399,7 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     session_config = _parse_session_config(data.get("sessions", {}))
     tests_config = _parse_tests_config(data.get("tests", {}))
     git_config = _parse_git_config(data.get("git", {}))
+    bug_bash_config = _parse_bug_bash_config(data.get("bug_bash", {}))
 
     return SwarmConfig(
         repo_root=data.get("repo_root", "."),
@@ -390,6 +415,7 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
         sessions=session_config,
         tests=tests_config,
         git=git_config,
+        bug_bash=bug_bash_config,
     )
 
 

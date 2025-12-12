@@ -1,0 +1,1448 @@
+# Engineering Spec: Bug Bash
+
+## 1. Overview
+
+Bug Bash is a standalone bug investigation and fix planning pipeline for the swarm-attack CLI. This system helps developers investigate bugs, identify root causes, plan fixes, and optionally implement them after human approval.
+
+### 1.1 Pipeline Flow
+
+```
+Bug Report → Reproduction → Root Cause Analysis → Fix Plan → [Approval Gate] → Implementation → Verification
+```
+
+### 1.2 Key Principles
+
+1. **Analysis before action**: Deep investigation before any code changes
+2. **Human approval gate**: No implementation without explicit approval
+3. **Evidence-based**: Every conclusion backed by code references and test output
+4. **Standalone**: Works independently of the feature pipeline
+5. **Incremental**: Can stop at any phase (research only, analysis only, plan only)
+
+### 1.3 Scope
+
+**In Scope:**
+- Bug report intake from description, test path, or GitHub issue
+- Automated reproduction and evidence gathering
+- Root cause analysis with execution tracing
+- Fix plan generation with test cases
+- Human approval workflow
+- Fix implementation and verification
+
+**Out of Scope:**
+- Automated bug detection (requires explicit report)
+- Cross-repository bug tracking
+- Integration with external issue trackers beyond GitHub
+
+---
+
+## 2. Requirements Traceability Matrix
+
+| PRD Requirement | Spec Section | Validation Method |
+|-----------------|--------------|-------------------|
+| Analysis before action | 3.1 State Machine | Unit test: verify phase transitions |
+| Human approval gate | 3.1.2 Approval Gate | Integration test: block implementation without approval |
+| Evidence-based conclusions | 4.1 Bug Researcher | Output validation: require non-empty evidence fields |
+| Standalone operation | 5.1 BugOrchestrator | Unit test: no feature pipeline dependencies |
+| Incremental execution | 3.3 Stop-At Behavior | Integration test: verify partial execution |
+| External bug report intake | 6.1 bug init | CLI test: all input sources |
+| Test failure investigation | 4.1 Bug Researcher | Agent test: test path handling |
+| Production incident support | 4.2 Root Cause Analyzer | Agent test: stack trace analysis |
+| State persistence | 5.3 BugStateStore | Unit test: serialization round-trip |
+
+---
+
+## 3. State Machine & Phase Transitions
+
+### 3.1 BugPhase State Diagram
+
+```
+                    ┌──────────────────────────────────────────────────────────┐
+                    │                                                          │
+                    ▼                                                          │
+┌─────────┐    ┌────────────┐    ┌────────────┐    ┌──────────┐              │
+│ CREATED │───▶│REPRODUCING │───▶│ REPRODUCED │───▶│ANALYZING │              │
+└─────────┘    └────────────┘    └────────────┘    └──────────┘              │
+                    │                                    │                    │
+                    │                                    ▼                    │
+                    │                              ┌──────────┐              │
+                    │                              │ ANALYZED │              │
+                    │                              └──────────┘              │
+                    │                                    │                    │
+                    ▼                                    ▼                    │
+           ┌────────────────┐                     ┌──────────┐              │
+           │NOT_REPRODUCIBLE│                     │ PLANNING │              │
+           └────────────────┘                     └──────────┘              │
+                    │                                    │                    │
+                    │                                    ▼                    │
+                    │                              ┌─────────┐               │
+                    │                              │ PLANNED │               │
+                    │                              └─────────┘               │
+                    │                                    │                    │
+                    │                    ┌───────────────┼───────────────┐   │
+                    │                    │               │               │   │
+                    │                    ▼               ▼               │   │
+                    │              ┌──────────┐   ┌──────────┐          │   │
+                    │              │ APPROVED │   │ WONT_FIX │          │   │
+                    │              └──────────┘   └──────────┘          │   │
+                    │                    │                               │   │
+                    │                    ▼                               │   │
+                    │           ┌──────────────┐                        │   │
+                    │           │IMPLEMENTING  │                        │   │
+                    │           └──────────────┘                        │   │
+                    │                    │                               │   │
+                    │                    ▼                               │   │
+                    │             ┌───────────┐                         │   │
+                    │             │ VERIFYING │                         │   │
+                    │             └───────────┘                         │   │
+                    │                    │                               │   │
+                    │          ┌─────────┴─────────┐                    │   │
+                    │          │                   │                    │   │
+                    │          ▼                   ▼                    │   │
+                    │     ┌─────────┐        ┌─────────┐               │   │
+                    │     │  FIXED  │        │ BLOCKED │───────────────┘   │
+                    │     └─────────┘        └─────────┘                   │
+                    │                                                      │
+                    └──────────────────────────────────────────────────────┘
+                                      (BLOCKED can retry)
+```
+
+### 3.1.1 Valid Phase Transitions
+
+| From Phase | To Phase | Trigger | Validation |
+|------------|----------|---------|------------|
+| CREATED | REPRODUCING | `bug analyze` called | Bug exists in state store |
+| REPRODUCING | REPRODUCED | Bug confirmed | `reproduction.confirmed == true` |
+| REPRODUCING | NOT_REPRODUCIBLE | Bug not confirmed | `reproduction.confirmed == false` |
+| REPRODUCED | ANALYZING | Auto-transition | Reproduction complete |
+| ANALYZING | ANALYZED | Root cause found | `root_cause.root_cause_file` non-empty |
+| ANALYZED | PLANNING | Auto-transition | Analysis complete |
+| PLANNING | PLANNED | Fix plan ready | `fix_plan.changes` non-empty |
+| PLANNED | APPROVED | `bug approve` called | Human confirmation |
+| PLANNED | WONT_FIX | `bug reject` called | Reason provided |
+| APPROVED | IMPLEMENTING | `bug fix` called | Approval exists |
+| IMPLEMENTING | VERIFYING | Changes applied | All files written |
+| VERIFYING | FIXED | Tests pass | `tests_failed == 0` |
+| VERIFYING | BLOCKED | Tests fail | `tests_failed > 0` |
+| BLOCKED | REPRODUCING | Retry investigation | Manual trigger |
+| NOT_REPRODUCIBLE | WONT_FIX | Close bug | Manual trigger |
+
+### 3.1.2 Approval Gate Enforcement
+
+The approval gate is a hard requirement before implementation:
+
+```python
+def implement_fix(self, bug_id: str) -> BugState:
+    state = self._load_state(bug_id)
+    
+    # CRITICAL: Approval gate check
+    if state.phase != BugPhase.APPROVED:
+        raise ApprovalRequiredError(
+            f"Bug must be APPROVED before implementation. "
+            f"Current phase: {state.phase}. "
+            f"Run: swarm-attack bug approve {bug_id}"
+        )
+    
+    if state.approved_at is None or state.approved_by is None:
+        raise ApprovalRequiredError(
+            f"Approval metadata missing. State may be corrupted."
+        )
+```
+
+### 3.2 Phase Transition Logging
+
+Every phase transition must be logged:
+
+```python
+@dataclass
+class PhaseTransition:
+    from_phase: BugPhase
+    to_phase: BugPhase
+    timestamp: datetime
+    trigger: str  # "auto", "user_command", "agent_output"
+    metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+### 3.3 Stop-At Behavior
+
+The `--stop-at` flag controls pipeline execution:
+
+| Stop-At Value | Phases Executed | Final State |
+|---------------|-----------------|-------------|
+| `reproduce` | REPRODUCING | REPRODUCED or NOT_REPRODUCIBLE |
+| `analyze` | REPRODUCING, ANALYZING | ANALYZED |
+| (none) | All phases | PLANNED |
+
+---
+
+## 4. Agent Specifications
+
+### 4.1 Bug Researcher Agent
+
+**Purpose**: Confirm the bug exists and gather evidence for analysis.
+
+**Input Contract**:
+```python
+@dataclass
+class BugResearcherInput:
+    bug_id: str
+    report: BugReport
+    max_attempts: int = 3  # From config
+    timeout_seconds: int = 300  # From config
+```
+
+**Output Contract**:
+```python
+@dataclass
+class ReproductionResult:
+    confirmed: bool                        # Required: was bug reproduced?
+    reproduction_steps: list[str]          # Required: at least 1 step
+    test_output: Optional[str] = None      # Captured test output
+    error_message: Optional[str] = None    # Captured error
+    stack_trace: Optional[str] = None      # Captured stack trace
+    affected_files: list[str] = field(default_factory=list)  # At least 1 if confirmed
+    related_code_snippets: dict[str, str] = field(default_factory=dict)
+    confidence: Literal["high", "medium", "low"] = "medium"
+    notes: str = ""
+    attempts: int = 1                      # Number of reproduction attempts
+    environment: dict[str, str] = field(default_factory=dict)  # Python version, OS, etc.
+```
+
+**Validation Rules**:
+- If `confirmed == True`: `affected_files` must have at least 1 entry
+- If `confirmed == True`: `reproduction_steps` must have at least 1 step
+- `confidence` must be one of: "high", "medium", "low"
+
+**Allowed Tools**: Read, Glob, Grep, Bash
+
+**Behavior Specification**:
+
+1. **Test Path Provided**:
+   ```bash
+   # Run test up to max_attempts times
+   pytest {test_path} -v --tb=long 2>&1
+   ```
+   - Capture full output including stack traces
+   - Record exit code (0 = pass, non-zero = fail)
+
+2. **No Test Path**:
+   - Search for related test files using Glob
+   - Attempt to create minimal reproduction script
+   - Run reproduction script
+
+3. **Evidence Gathering**:
+   - Extract file paths from stack traces
+   - Read affected files to gather code snippets
+   - Check `git log --oneline -10` for recent changes
+
+**Error Handling**:
+- Timeout: Mark as NOT_REPRODUCIBLE with note "Reproduction timed out after {timeout}s"
+- Test not found: Mark as NOT_REPRODUCIBLE with note "Test path not found: {path}"
+- Command failure: Retry up to max_attempts, then mark NOT_REPRODUCIBLE
+
+---
+
+### 4.2 Root Cause Analyzer Agent
+
+**Purpose**: Trace execution to find exactly where and why the bug occurs.
+
+**Input Contract**:
+```python
+@dataclass
+class RootCauseAnalyzerInput:
+    bug_id: str
+    report: BugReport
+    reproduction: ReproductionResult
+    timeout_seconds: int = 300
+```
+
+**Output Contract**:
+```python
+@dataclass
+class RootCauseAnalysis:
+    summary: str                           # Required: one-line summary (max 100 chars)
+    execution_trace: list[str]             # Required: at least 3 steps
+    root_cause_file: str                   # Required: absolute or relative path
+    root_cause_line: Optional[int] = None  # Line number if identified
+    root_cause_code: str = ""              # Required: the problematic code snippet
+    root_cause_explanation: str = ""       # Required: why this causes the bug
+    why_not_caught: str = ""               # Required: why tests missed it
+    confidence: Literal["high", "medium", "low"] = "medium"
+    alternative_hypotheses: list[str] = field(default_factory=list)
+```
+
+**Validation Rules**:
+- `summary` max length: 100 characters
+- `execution_trace` minimum length: 3 steps
+- `root_cause_file` must exist (validated by agent)
+- `root_cause_code` and `root_cause_explanation` must be non-empty
+
+**Allowed Tools**: Read, Glob, Grep (no Bash - read-only analysis)
+
+**Behavior Specification**:
+
+1. **Stack Trace Analysis**:
+   - Parse stack trace to extract call chain
+   - Read each file in the call chain
+   - Identify the frame where behavior diverges from expected
+
+2. **Data Flow Tracing**:
+   - Track variable transformations through call chain
+   - Identify where data becomes corrupted/invalid
+
+3. **Hypothesis Testing**:
+   - Form hypothesis based on evidence
+   - Search for confirming/refuting evidence
+   - Document alternative hypotheses considered
+
+---
+
+### 4.3 Fix Planner Agent
+
+**Purpose**: Design a minimal, safe fix for the identified root cause.
+
+**Input Contract**:
+```python
+@dataclass
+class FixPlannerInput:
+    bug_id: str
+    report: BugReport
+    reproduction: ReproductionResult
+    root_cause: RootCauseAnalysis
+    timeout_seconds: int = 300
+    min_test_cases: int = 2  # From config
+```
+
+**Output Contract**:
+```python
+@dataclass
+class FileChange:
+    file_path: str                         # Required: path to file
+    change_type: Literal["modify", "create", "delete"]  # Required
+    current_code: Optional[str] = None     # Required for "modify"
+    proposed_code: Optional[str] = None    # Required for "modify" and "create"
+    explanation: str = ""                  # Required: why this change
+
+@dataclass
+class TestCase:
+    name: str                              # Required: test function name
+    description: str                       # Required: what it tests
+    test_code: str                         # Required: the actual test code
+    category: Literal["regression", "edge_case", "integration"] = "regression"
+
+@dataclass
+class FixPlan:
+    summary: str                           # Required: one-line summary
+    changes: list[FileChange]              # Required: at least 1 change
+    test_cases: list[TestCase]             # Required: at least min_test_cases
+    risk_level: Literal["low", "medium", "high"] = "low"
+    risk_explanation: str = ""             # Required
+    scope: str = ""                        # e.g., "2 files, ~10 lines"
+    side_effects: list[str] = field(default_factory=list)
+    rollback_plan: str = ""                # Required
+    estimated_effort: str = ""             # e.g., "15 minutes"
+```
+
+**Validation Rules**:
+- `changes` must have at least 1 entry
+- `test_cases` must have at least `min_test_cases` entries
+- For "modify" changes: `current_code` must be non-empty
+- For "modify" and "create" changes: `proposed_code` must be non-empty
+- `rollback_plan` must be non-empty
+
+**Allowed Tools**: Read, Glob, Grep (no Bash - planning only)
+
+**Risk Level Criteria**:
+
+| Risk Level | Criteria |
+|------------|----------|
+| LOW | Single file, additive change, isolated function, good test coverage |
+| MEDIUM | 2-3 files, modifying existing logic, shared utility, some test coverage |
+| HIGH | 4+ files, core component, many callers, complex state, limited tests |
+
+---
+
+### 4.4 Agent Interaction Sequence
+
+```
+┌─────────┐     ┌───────────────┐     ┌───────────────────┐     ┌─────────────┐
+│  User   │     │BugOrchestrator│     │   BugResearcher   │     │RootCauseAna │
+└────┬────┘     └───────┬───────┘     └─────────┬─────────┘     └──────┬──────┘
+     │                  │                       │                      │
+     │ bug analyze id   │                       │                      │
+     │─────────────────▶│                       │                      │
+     │                  │                       │                      │
+     │                  │ load_state(id)        │                      │
+     │                  │──────────────────────▶│                      │
+     │                  │                       │                      │
+     │                  │ BugResearcherInput    │                      │
+     │                  │──────────────────────▶│                      │
+     │                  │                       │                      │
+     │                  │                       │ run reproduction     │
+     │                  │                       │ (up to 3 attempts)   │
+     │                  │                       │                      │
+     │                  │ ReproductionResult    │                      │
+     │                  │◀──────────────────────│                      │
+     │                  │                       │                      │
+     │                  │ save_state()          │                      │
+     │                  │ write reproduction.md │                      │
+     │                  │                       │                      │
+     │                  │ [if confirmed]        │                      │
+     │                  │ RootCauseInput        │                      │
+     │                  │─────────────────────────────────────────────▶│
+     │                  │                       │                      │
+     │                  │                       │      trace execution │
+     │                  │                       │      form hypotheses │
+     │                  │                       │                      │
+     │                  │ RootCauseAnalysis     │                      │
+     │                  │◀─────────────────────────────────────────────│
+     │                  │                       │                      │
+     │                  │ save_state()          │                      │
+     │                  │ write root-cause.md   │                      │
+     │                  │                       │                      │
+     │                  │ [continue to FixPlanner...]                  │
+```
+
+---
+
+## 5. Core Components
+
+### 5.1 BugOrchestrator
+
+**Purpose**: Coordinate the bug investigation pipeline.
+
+**Interface**:
+```python
+class BugOrchestrator:
+    def __init__(self, config: SwarmConfig):
+        """Initialize with configuration."""
+        
+    def create_bug(
+        self,
+        description: str,
+        bug_id: Optional[str] = None,
+        test_path: Optional[str] = None,
+        github_issue: Optional[int] = None,
+        error_message: Optional[str] = None,
+        stack_trace: Optional[str] = None,
+    ) -> BugState:
+        """Create a new bug investigation. Returns initial state."""
+        
+    def run_investigation(
+        self,
+        bug_id: str,
+        stop_at: Optional[Literal["reproduce", "analyze"]] = None,
+    ) -> BugState:
+        """Run the investigation pipeline. Returns final state."""
+        
+    def approve(self, bug_id: str, approved_by: str = "user") -> BugState:
+        """Approve a fix plan for implementation."""
+        
+    def reject(self, bug_id: str, reason: str) -> BugState:
+        """Reject a bug as won't fix."""
+        
+    def implement_fix(self, bug_id: str, dry_run: bool = False) -> BugState:
+        """Implement the approved fix. Returns final state."""
+        
+    def get_state(self, bug_id: str) -> BugState:
+        """Get current state of a bug investigation."""
+        
+    def list_bugs(
+        self,
+        phase: Optional[BugPhase] = None,
+        limit: int = 50,
+    ) -> list[BugState]:
+        """List bug investigations, optionally filtered by phase."""
+```
+
+**Error Handling**:
+```python
+class BugNotFoundError(Exception):
+    """Raised when bug_id does not exist."""
+
+class InvalidPhaseError(Exception):
+    """Raised when operation is invalid for current phase."""
+
+class ApprovalRequiredError(Exception):
+    """Raised when implementation attempted without approval."""
+
+class AgentError(Exception):
+    """Raised when an agent fails."""
+    agent_name: str
+    original_error: Exception
+```
+
+**Retry Logic**:
+```python
+def _run_agent_with_retry(
+    self,
+    agent: BaseAgent,
+    input_data: Any,
+    max_retries: int = 2,
+    backoff_seconds: float = 5.0,
+) -> Any:
+    """Run agent with exponential backoff retry."""
+    for attempt in range(max_retries + 1):
+        try:
+            return agent.run(input_data)
+        except AgentError as e:
+            if attempt == max_retries:
+                raise
+            sleep_time = backoff_seconds * (2 ** attempt)
+            time.sleep(sleep_time)
+            self._log_retry(agent.name, attempt + 1, sleep_time)
+```
+
+### 5.2 Cost Tracking
+
+Cost is tracked per-agent and aggregated:
+
+```python
+@dataclass
+class AgentCost:
+    agent_name: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    timestamp: datetime
+
+@dataclass
+class BugState:
+    # ... other fields ...
+    costs: list[AgentCost] = field(default_factory=list)
+    
+    @property
+    def total_cost_usd(self) -> float:
+        return sum(c.cost_usd for c in self.costs)
+```
+
+### 5.3 BugStateStore
+
+**Purpose**: Persist bug investigation state to disk.
+
+**Interface**:
+```python
+class BugStateStore:
+    def __init__(self, base_path: Path = Path(".swarm/bugs")):
+        """Initialize with base storage path."""
+        
+    def save(self, state: BugState) -> None:
+        """Save state to disk. Creates directory if needed."""
+        
+    def load(self, bug_id: str) -> BugState:
+        """Load state from disk. Raises BugNotFoundError if not found."""
+        
+    def exists(self, bug_id: str) -> bool:
+        """Check if bug exists."""
+        
+    def list_all(self, phase: Optional[BugPhase] = None) -> list[str]:
+        """List all bug IDs, optionally filtered by phase."""
+        
+    def delete(self, bug_id: str) -> None:
+        """Delete a bug investigation."""
+```
+
+**File Locking**:
+```python
+def save(self, state: BugState) -> None:
+    path = self._state_path(state.bug_id)
+    lock_path = path.with_suffix(".lock")
+    
+    with FileLock(lock_path, timeout=10):
+        # Write to temp file first
+        temp_path = path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(state.to_dict(), indent=2))
+        
+        # Atomic rename
+        temp_path.rename(path)
+```
+
+**State Versioning**:
+```python
+STATE_VERSION = 1
+
+def _migrate_state(self, data: dict) -> dict:
+    """Migrate state from older versions."""
+    version = data.get("version", 0)
+    
+    if version < 1:
+        # Migration from v0 to v1
+        data["costs"] = []
+        data["version"] = 1
+    
+    return data
+```
+
+### 5.4 File Storage Structure
+
+```
+.swarm/bugs/{bug_id}/
+├── state.json              # BugState serialized (source of truth)
+├── state.json.lock         # Lock file for concurrent access
+├── report.md               # Human-readable bug report
+├── reproduction.md         # Reproduction results (written after REPRODUCED)
+├── root-cause-analysis.md  # Root cause analysis (written after ANALYZED)
+├── fix-plan.md            # Proposed fix plan (written after PLANNED)
+├── test-cases.py          # Generated test code (written after PLANNED)
+└── history/
+    └── phase_transitions.jsonl  # Append-only transition log
+```
+
+---
+
+## 6. CLI Commands
+
+### 6.1 `swarm-attack bug init`
+
+**Purpose**: Initialize a new bug investigation.
+
+**Usage**:
+```bash
+swarm-attack bug init <description> [OPTIONS]
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| description | string | Yes | Description of the bug |
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --id | string | auto-generated | Custom bug ID (slug format) |
+| --test | string | None | Path to failing test |
+| --github-issue | int | None | GitHub issue number |
+| --error | string | None | Error message |
+| --stack-trace | string | None | Stack trace (use @file to read from file) |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Invalid arguments |
+| 2 | Bug ID already exists |
+
+**Output Format**:
+```
+Created bug investigation: {bug_id}
+Location: .swarm/bugs/{bug_id}/
+
+Next steps:
+  swarm-attack bug analyze {bug_id}
+```
+
+**Examples**:
+```bash
+# From description only
+swarm-attack bug init "Login fails with special characters"
+
+# With test path
+swarm-attack bug init "Test failure" --test tests/test_auth.py::test_login
+
+# With GitHub issue
+swarm-attack bug init "Issue from user" --github-issue 123
+
+# With custom ID and error
+swarm-attack bug init "Password bug" --id pwd-special-chars --error "Invalid credentials"
+
+# With stack trace from file
+swarm-attack bug init "Crash on startup" --stack-trace @/tmp/traceback.txt
+```
+
+---
+
+### 6.2 `swarm-attack bug analyze`
+
+**Purpose**: Run the bug investigation pipeline.
+
+**Usage**:
+```bash
+swarm-attack bug analyze <bug_id> [OPTIONS]
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| bug_id | string | Yes | Bug ID to analyze |
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --stop-at | string | None | Stop at phase: "reproduce" or "analyze" |
+| --retry | flag | False | Retry from current phase (for BLOCKED bugs) |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success (reached target phase) |
+| 1 | Bug not found |
+| 2 | Invalid phase for operation |
+| 3 | Bug not reproducible |
+| 4 | Agent failure |
+
+**Output Format**:
+```
+Analyzing bug: {bug_id}
+
+[1/3] Reproducing...
+      ✓ Confirmed (high confidence)
+      Evidence: 2 files, 1 stack trace
+
+[2/3] Analyzing root cause...
+      ✓ Found: src/utils/sanitize.py:23
+      Cause: Regex strips valid password characters
+
+[3/3] Planning fix...
+      ✓ 2 files, 3 test cases
+      Risk: LOW
+
+Total cost: $0.18
+
+Next steps:
+  swarm-attack bug status {bug_id}   # Review details
+  swarm-attack bug approve {bug_id}  # Approve fix plan
+```
+
+**Error Output**:
+```
+Analyzing bug: {bug_id}
+
+[1/3] Reproducing...
+      ✗ Could not reproduce after 3 attempts
+
+Bug marked as NOT_REPRODUCIBLE.
+Review: .swarm/bugs/{bug_id}/reproduction.md
+```
+
+---
+
+### 6.3 `swarm-attack bug status`
+
+**Purpose**: Display bug investigation status.
+
+**Usage**:
+```bash
+swarm-attack bug status [bug_id] [OPTIONS]
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| bug_id | string | No | Bug ID (omit to list all) |
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --json | flag | False | Output as JSON |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Bug not found |
+
+**Output Format (single bug)**:
+```
+╭───────────────────── Bug: login-special-chars ─────────────────────╮
+│ Phase: PLANNED (awaiting approval)                                  │
+│ Created: 2025-12-10 14:30:00                                       │
+│ Cost: $0.18                                                        │
+│                                                                    │
+│ Reproduction: CONFIRMED (high confidence)                          │
+│   Steps: 3                                                         │
+│   Affected files: 2                                                │
+│                                                                    │
+│ Root Cause: src/utils/sanitize.py:23                              │
+│   Regex [^a-zA-Z0-9] strips password special characters            │
+│   Confidence: high                                                 │
+│                                                                    │
+│ Fix Plan:                                                          │
+│   Summary: Add field_type parameter to sanitize()                  │
+│   Files: 2 changes                                                 │
+│   Tests: 3 new test cases                                          │
+│   Risk: LOW                                                        │
+│                                                                    │
+│ Next: swarm-attack bug approve login-special-chars                │
+╰────────────────────────────────────────────────────────────────────╯
+```
+
+**Output Format (list all)**:
+```
+╭────────────────────────── Bug Investigations ──────────────────────────╮
+│ ID                    Phase           Created        Cost    Next      │
+├────────────────────────────────────────────────────────────────────────┤
+│ login-special-chars   PLANNED         2025-12-10    $0.18   approve   │
+│ api-timeout           ANALYZING       2025-12-10    $0.12   (running) │
+│ cache-miss            FIXED           2025-12-09    $0.25   -         │
+╰────────────────────────────────────────────────────────────────────────╯
+
+3 bugs found. Use `swarm-attack bug status <id>` for details.
+```
+
+**JSON Output**:
+```json
+{
+  "bug_id": "login-special-chars",
+  "phase": "PLANNED",
+  "created_at": "2025-12-10T14:30:00Z",
+  "cost_usd": 0.18,
+  "reproduction": {
+    "confirmed": true,
+    "confidence": "high"
+  },
+  "root_cause": {
+    "file": "src/utils/sanitize.py",
+    "line": 23,
+    "summary": "Regex strips password special characters"
+  },
+  "fix_plan": {
+    "files_changed": 2,
+    "test_cases": 3,
+    "risk_level": "low"
+  }
+}
+```
+
+---
+
+### 6.4 `swarm-attack bug approve`
+
+**Purpose**: Approve a fix plan for implementation.
+
+**Usage**:
+```bash
+swarm-attack bug approve <bug_id>
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| bug_id | string | Yes | Bug ID to approve |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Bug not found |
+| 2 | Bug not in PLANNED phase |
+
+**Output Format**:
+```
+Approving fix plan for: {bug_id}
+
+Summary: Add field_type parameter to sanitize()
+Risk: LOW
+Changes: 2 files
+Tests: 3 new test cases
+
+✓ Fix plan approved!
+
+Next steps:
+  swarm-attack bug fix {bug_id}
+  swarm-attack bug fix {bug_id} --dry-run  # Preview changes
+```
+
+**Behavior**:
+1. Verify bug is in PLANNED phase
+2. Record `approved_by` (current user or "cli")
+3. Record `approved_at` timestamp
+4. Transition to APPROVED phase
+5. Log transition to history
+
+---
+
+### 6.5 `swarm-attack bug fix`
+
+**Purpose**: Implement the approved fix.
+
+**Usage**:
+```bash
+swarm-attack bug fix <bug_id> [OPTIONS]
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| bug_id | string | Yes | Bug ID to fix |
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --dry-run | flag | False | Preview changes without applying |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success (bug fixed) |
+| 1 | Bug not found |
+| 2 | Bug not approved |
+| 3 | Implementation failed |
+| 4 | Verification failed |
+
+**Output Format (success)**:
+```
+Implementing fix for: {bug_id}
+
+Applying changes...
+  ✓ Modified: src/utils/sanitize.py
+  ✓ Modified: src/auth/validate.py
+
+Writing test cases...
+  ✓ Added: tests/test_sanitize_password.py
+
+Running verification...
+  ✓ test_login_with_special_characters_succeeds PASSED
+  ✓ test_sanitize_preserves_password_chars PASSED
+  ✓ test_sanitize_text_still_strips PASSED
+
+All tests passed!
+
+✓ Bug fixed!
+```
+
+**Output Format (dry-run)**:
+```
+Dry run for: {bug_id}
+
+Would modify: src/utils/sanitize.py
+  - def sanitize(value):
+  + def sanitize(value, field_type='text'):
+  +     if field_type == 'password':
+  +         return value
+
+Would modify: src/auth/validate.py
+  (diff shown)
+
+Would add tests: tests/test_sanitize_password.py
+  (test code shown)
+
+No changes applied. Run without --dry-run to apply.
+```
+
+**Output Format (failure)**:
+```
+Implementing fix for: {bug_id}
+
+Applying changes...
+  ✓ Modified: src/utils/sanitize.py
+  ✓ Modified: src/auth/validate.py
+
+Writing test cases...
+  ✓ Added: tests/test_sanitize_password.py
+
+Running verification...
+  ✗ test_login_with_special_characters_succeeds FAILED
+    AssertionError: Expected success=True, got success=False
+  ✓ test_sanitize_preserves_password_chars PASSED
+  ✓ test_sanitize_text_still_strips PASSED
+
+1 test failed.
+
+Bug marked as BLOCKED.
+Reason: Verification failed - 1 of 3 tests failed
+
+Changes have been applied. To rollback:
+  git checkout -- src/utils/sanitize.py src/auth/validate.py
+```
+
+---
+
+### 6.6 `swarm-attack bug list`
+
+**Purpose**: List all bug investigations.
+
+**Usage**:
+```bash
+swarm-attack bug list [OPTIONS]
+```
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --phase | string | None | Filter by phase |
+| --limit | int | 50 | Maximum results |
+| --json | flag | False | Output as JSON |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+
+**Examples**:
+```bash
+swarm-attack bug list
+swarm-attack bug list --phase planned
+swarm-attack bug list --limit 10 --json
+```
+
+---
+
+### 6.7 `swarm-attack bug reject`
+
+**Purpose**: Reject a bug as won't fix.
+
+**Usage**:
+```bash
+swarm-attack bug reject <bug_id> --reason <reason>
+```
+
+**Arguments**:
+| Argument | Type | Required | Description |
+|----------|------|----------|-------------|
+| bug_id | string | Yes | Bug ID to reject |
+
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| --reason | string | Yes (required) | Reason for rejection |
+
+**Exit Codes**:
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Bug not found |
+| 2 | Missing reason |
+
+---
+
+## 7. Configuration
+
+### 7.1 Configuration Schema
+
+Add to `config.yaml`:
+
+```yaml
+bug_bash:
+  # Reproduction settings
+  max_reproduction_attempts: 3       # Number of times to retry reproduction
+  reproduction_timeout_seconds: 300  # Timeout for reproduction phase
+  
+  # Analysis settings
+  max_analysis_attempts: 2           # Number of times to retry analysis
+  analysis_timeout_seconds: 300      # Timeout for root cause analysis
+  
+  # Planning settings
+  planning_timeout_seconds: 300      # Timeout for fix planning
+  min_test_cases: 2                  # Minimum test cases required in fix plan
+  
+  # Approval settings
+  auto_approve_low_risk: false       # If true, auto-approve LOW risk fixes
+  require_approval_reason: false     # If true, require reason when approving
+  
+  # Storage settings
+  storage_path: ".swarm/bugs"        # Base path for bug storage
+  
+  # Agent settings
+  agent_model: "claude-sonnet-4-20250514"  # Model for agents
+  agent_temperature: 0.2             # Temperature for agent calls
+```
+
+### 7.2 Configuration Validation
+
+```python
+@dataclass
+class BugBashConfig:
+    max_reproduction_attempts: int = 3
+    reproduction_timeout_seconds: int = 300
+    max_analysis_attempts: int = 2
+    analysis_timeout_seconds: int = 300
+    planning_timeout_seconds: int = 300
+    min_test_cases: int = 2
+    auto_approve_low_risk: bool = False
+    require_approval_reason: bool = False
+    storage_path: str = ".swarm/bugs"
+    agent_model: str = "claude-sonnet-4-20250514"
+    agent_temperature: float = 0.2
+    
+    def __post_init__(self):
+        if self.max_reproduction_attempts < 1:
+            raise ValueError("max_reproduction_attempts must be >= 1")
+        if self.reproduction_timeout_seconds < 30:
+            raise ValueError("reproduction_timeout_seconds must be >= 30")
+        if self.min_test_cases < 1:
+            raise ValueError("min_test_cases must be >= 1")
+        if not 0 <= self.agent_temperature <= 1:
+            raise ValueError("agent_temperature must be between 0 and 1")
+```
+
+### 7.3 Environment Variable Overrides
+
+| Config Key | Environment Variable | Example |
+|------------|---------------------|---------|
+| max_reproduction_attempts | SWARM_BUG_MAX_REPRO_ATTEMPTS | 5 |
+| auto_approve_low_risk | SWARM_BUG_AUTO_APPROVE_LOW | true |
+| storage_path | SWARM_BUG_STORAGE_PATH | /tmp/bugs |
+| agent_model | SWARM_BUG_AGENT_MODEL | claude-opus-4-20250514 |
+
+### 7.4 Configuration Effect on Behavior
+
+| Setting | Effect When Changed |
+|---------|---------------------|
+| `auto_approve_low_risk: true` | Skips approval gate for LOW risk fixes, transitions directly PLANNED → IMPLEMENTING |
+| `max_reproduction_attempts: 5` | Bug Researcher will try up to 5 times before marking NOT_REPRODUCIBLE |
+| `min_test_cases: 3` | Fix Planner must generate at least 3 test cases or validation fails |
+| `reproduction_timeout_seconds: 600` | Each reproduction attempt can run up to 10 minutes |
+
+---
+
+## 8. Risk Analysis & Mitigations
+
+### 8.1 Identified Risks
+
+| Risk | Severity | Likelihood | Impact | Mitigation |
+|------|----------|------------|--------|------------|
+| Partial state corruption | High | Low | Data loss | Atomic writes with temp files, file locking |
+| Cost overrun on complex bugs | Medium | Medium | Budget exceeded | Per-phase cost limits, total cost cap |
+| Agent produces invalid output | Medium | Medium | Pipeline stuck | JSON schema validation, retry with feedback |
+| Concurrent access conflicts | Medium | Low | State corruption | File locking with timeout |
+| Approval bypass | High | Low | Unauthorized changes | Hard-coded phase check, approval metadata validation |
+| Test pollution from fix | Medium | Medium | False positives | Run tests in isolation, verify pre-existing tests still pass |
+
+### 8.2 Mitigation Details
+
+#### 8.2.1 Partial State Corruption
+
+```python
+def save_state_atomic(self, state: BugState) -> None:
+    """Atomic state save with corruption recovery."""
+    state_path = self._state_path(state.bug_id)
+    temp_path = state_path.with_suffix(".tmp")
+    backup_path = state_path.with_suffix(".bak")
+    
+    try:
+        # Write to temp
+        temp_path.write_text(json.dumps(state.to_dict(), indent=2))
+        
+        # Validate temp file
+        loaded = json.loads(temp_path.read_text())
+        BugState.from_dict(loaded)  # Validate schema
+        
+        # Backup existing
+        if state_path.exists():
+            shutil.copy2(state_path, backup_path)
+        
+        # Atomic rename
+        temp_path.rename(state_path)
+        
+        # Remove backup on success
+        backup_path.unlink(missing_ok=True)
+        
+    except Exception as e:
+        # Restore from backup if available
+        if backup_path.exists():
+            backup_path.rename(state_path)
+        raise StateCorruptionError(f"Failed to save state: {e}")
+```
+
+#### 8.2.2 Cost Limits
+
+```python
+MAX_PHASE_COST_USD = 0.50
+MAX_TOTAL_COST_USD = 2.00
+
+def _check_cost_limits(self, state: BugState) -> None:
+    if state.total_cost_usd > MAX_TOTAL_COST_USD:
+        raise CostLimitExceeded(
+            f"Total cost ${state.total_cost_usd:.2f} exceeds limit ${MAX_TOTAL_COST_USD:.2f}"
+        )
+```
+
+#### 8.2.3 Approval Audit Log
+
+```python
+@dataclass
+class ApprovalRecord:
+    bug_id: str
+    approved_by: str
+    approved_at: datetime
+    fix_plan_hash: str  # SHA256 of fix plan JSON
+    
+def approve(self, bug_id: str, approved_by: str) -> BugState:
+    state = self._load_state(bug_id)
+    
+    # Record approval with audit trail
+    approval = ApprovalRecord(
+        bug_id=bug_id,
+        approved_by=approved_by,
+        approved_at=datetime.utcnow(),
+        fix_plan_hash=hashlib.sha256(
+            json.dumps(state.fix_plan.to_dict()).encode()
+        ).hexdigest()
+    )
+    
+    state.approval_record = approval
+    state.phase = BugPhase.APPROVED
+    
+    # Append to audit log
+    self._append_audit_log(approval)
+    
+    self._save_state(state)
+    return state
+```
+
+---
+
+## 9. Testing Strategy
+
+### 9.1 Unit Tests
+
+| Component | Test Cases | Coverage Target |
+|-----------|------------|-----------------|
+| BugStateStore | save/load round-trip, concurrent access, corruption recovery | 90% |
+| BugOrchestrator | phase transitions, approval gate, error handling | 85% |
+| Data models | serialization, validation, defaults | 95% |
+| Config | validation, env overrides, defaults | 90% |
+
+### 9.2 Integration Tests
+
+| Scenario | Description | Validation |
+|----------|-------------|------------|
+| Happy path | init → analyze → approve → fix | All phases complete, bug FIXED |
+| Not reproducible | Bug cannot be reproduced | State is NOT_REPRODUCIBLE |
+| Stop at reproduce | --stop-at reproduce | State is REPRODUCED, no root cause |
+| Stop at analyze | --stop-at analyze | State is ANALYZED, no fix plan |
+| Approval required | Attempt fix without approval | ApprovalRequiredError raised |
+| Blocked on test failure | Verification fails | State is BLOCKED with reason |
+| Retry from blocked | Retry blocked bug | Restarts from REPRODUCING |
+
+### 9.3 End-to-End Tests
+
+| Test | Setup | Expected Outcome |
+|------|-------|------------------|
+| Full pipeline | Create bug with known test failure | Bug fixed, tests pass |
+| Real GitHub issue | Bug with --github-issue | Issue info captured in report |
+| Cost tracking | Run full pipeline | Costs recorded per phase |
+
+### 9.4 Agent Tests
+
+| Agent | Test | Validation |
+|-------|------|------------|
+| Bug Researcher | Known failing test | ReproductionResult.confirmed == True |
+| Bug Researcher | Non-existent test | ReproductionResult.confirmed == False |
+| Root Cause Analyzer | Stack trace with clear cause | root_cause_file points to correct file |
+| Fix Planner | Simple bug | At least min_test_cases tests generated |
+
+---
+
+## 10. Implementation Order
+
+1. **Phase 1: Data Models** (`bug_models.py`)
+   - BugPhase enum
+   - All dataclasses with validation
+   - Serialization methods
+
+2. **Phase 2: State Storage** (`bug_state_store.py`)
+   - File-based storage
+   - Atomic writes with locking
+   - State versioning
+
+3. **Phase 3: Bug Researcher** (`agents/bug_researcher.py`, `default-skills/bug-researcher/SKILL.md`)
+   - Skill prompt
+   - Agent wrapper
+   - Output validation
+
+4. **Phase 4: Root Cause Analyzer** (`agents/root_cause_analyzer.py`, `default-skills/root-cause-analyzer/SKILL.md`)
+   - Skill prompt
+   - Agent wrapper
+   - Output validation
+
+5. **Phase 5: Fix Planner** (`agents/fix_planner.py`, `default-skills/fix-planner/SKILL.md`)
+   - Skill prompt
+   - Agent wrapper
+   - Output validation
+
+6. **Phase 6: BugOrchestrator** (`bug_orchestrator.py`)
+   - Pipeline coordination
+   - Error handling
+   - Retry logic
+
+7. **Phase 7: CLI Commands** (`cli.py`)
+   - All bug subcommands
+   - Output formatting
+   - Error messages
+
+8. **Phase 8: Report Generation**
+   - Markdown report templates
+   - Report writing utilities
+
+9. **Phase 9: Integration**
+   - Wire up to existing Coder/Verifier
+   - Configuration loading
+
+10. **Phase 10: Testing**
+    - Unit tests
+    - Integration tests
+    - End-to-end tests
+
+11. **Phase 11: Documentation**
+    - User guide
+    - Developer guide
+
+---
+
+## 11. Success Criteria
+
+| Criterion | Metric | Target |
+|-----------|--------|--------|
+| CLI functionality | All commands work | 100% pass |
+| Agent accuracy | Correct root cause identified | 80% on test set |
+| Approval enforcement | No bypass possible | 100% enforcement |
+| State persistence | Round-trip integrity | 100% |
+| Test coverage | Line coverage | 80% |
+| Performance | Full pipeline time | < 5 minutes |
+| Cost | Average pipeline cost | < $0.50 |
+
+---
+
+## 12. Data Models (Complete Reference)
+
+```python
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Optional, Literal, Any
+
+class BugPhase(Enum):
+    """Phases of bug investigation."""
+    CREATED = "created"
+    REPRODUCING = "reproducing"
+    REPRODUCED = "reproduced"
+    NOT_REPRODUCIBLE = "not_reproducible"
+    ANALYZING = "analyzing"
+    ANALYZED = "analyzed"
+    PLANNING = "planning"
+    PLANNED = "planned"
+    APPROVED = "approved"
+    IMPLEMENTING = "implementing"
+    VERIFYING = "verifying"
+    FIXED = "fixed"
+    WONT_FIX = "wont_fix"
+    BLOCKED = "blocked"
+
+@dataclass
+class BugReport:
+    """Initial bug report from user."""
+    description: str
+    test_path: Optional[str] = None
+    github_issue: Optional[int] = None
+    error_message: Optional[str] = None
+    stack_trace: Optional[str] = None
+    steps_to_reproduce: list[str] = field(default_factory=list)
+
+@dataclass
+class ReproductionResult:
+    """Output from Bug Researcher agent."""
+    confirmed: bool
+    reproduction_steps: list[str]
+    test_output: Optional[str] = None
+    error_message: Optional[str] = None
+    stack_trace: Optional[str] = None
+    affected_files: list[str] = field(default_factory=list)
+    related_code_snippets: dict[str, str] = field(default_factory=dict)
+    confidence: Literal["high", "medium", "low"] = "medium"
+    notes: str = ""
+    attempts: int = 1
+    environment: dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class RootCauseAnalysis:
+    """Output from Root Cause Analyzer agent."""
+    summary: str
+    execution_trace: list[str]
+    root_cause_file: str
+    root_cause_line: Optional[int] = None
+    root_cause_code: str = ""
+    root_cause_explanation: str = ""
+    why_not_caught: str = ""
+    confidence: Literal["high", "medium", "low"] = "medium"
+    alternative_hypotheses: list[str] = field(default_factory=list)
+
+@dataclass
+class FileChange:
+    """A single file change in the fix plan."""
+    file_path: str
+    change_type: Literal["modify", "create", "delete"]
+    current_code: Optional[str] = None
+    proposed_code: Optional[str] = None
+    explanation: str = ""
+
+@dataclass
+class TestCase:
+    """A test case to verify the fix."""
+    name: str
+    description: str
+    test_code: str
+    category: Literal["regression", "edge_case", "integration"] = "regression"
+
+@dataclass
+class FixPlan:
+    """Output from Fix Planner agent."""
+    summary: str
+    changes: list[FileChange]
+    test_cases: list[TestCase]
+    risk_level: Literal["low", "medium", "high"] = "low"
+    risk_explanation: str = ""
+    scope: str = ""
+    side_effects: list[str] = field(default_factory=list)
+    rollback_plan: str = ""
+    estimated_effort: str = ""
+
+@dataclass
+class ImplementationResult:
+    """Output from fix implementation."""
+    success: bool
+    files_changed: list[str]
+    tests_passed: int
+    tests_failed: int
+    commit_hash: Optional[str] = None
+    error: Optional[str] = None
+
+@dataclass
+class AgentCost:
+    """Cost tracking for a single agent run."""
+    agent_name: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    timestamp: datetime
+
+@dataclass
+class PhaseTransition:
+    """Record of a phase transition."""
+    from_phase: BugPhase
+    to_phase: BugPhase
+    timestamp: datetime
+    trigger: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class ApprovalRecord:
+    """Audit record for approval."""
+    approved_by: str
+    approved_at: datetime
+    fix_plan_hash: str
+
+@dataclass
+class BugState:
+    """Complete state of a bug investigation."""
+    bug_id: str
+    phase: BugPhase
+    created_at: datetime
+    updated_at: datetime
+    report: BugReport
+    
+    reproduction: Optional[ReproductionResult] = None
+    root_cause: Optional[RootCauseAnalysis] = None
+    fix_plan: Optional[FixPlan] = None
+    implementation: Optional[ImplementationResult] = None
+    
+    costs: list[AgentCost] = field(default_factory=list)
+    transitions: list[PhaseTransition] = field(default_factory=list)
+    approval_record: Optional[ApprovalRecord] = None
+    blocked_reason: Optional[str] = None
+    notes: list[str] = field(default_factory=list)
+    version: int = 1
+    
+    @property
+    def total_cost_usd(self) -> float:
+        return sum(c.cost_usd for c in self.costs)
+```

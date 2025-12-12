@@ -1,0 +1,51 @@
+{
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/specs/bug-bash/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/bug-bash.md",
+  "reviewed_at": "2025-12-11T23:12:09.062769Z",
+  "scores": {
+    "clarity": 0.45,
+    "coverage": 0.25,
+    "architecture": 0.2,
+    "risk": 0.15
+  },
+  "issues": [
+    {
+      "severity": "critical",
+      "dimension": "coverage",
+      "location": "specs/BUG_BASH_SPEC.md:1",
+      "description": "The document reads almost identically to the PRD and never adds spec-level detail such as concrete user flows, acceptance criteria, or how requirements will be validated, so developers still have to guess what to build.",
+      "suggestion": "Rewrite the spec to translate each PRD requirement into implementable behaviors (state transitions, I/O contracts, success metrics) and include a traceability matrix that ties requirements to design decisions and validation steps."
+    },
+    {
+      "severity": "critical",
+      "dimension": "architecture",
+      "location": "specs/BUG_BASH_SPEC.md:206",
+      "description": "Agent and BugOrchestrator sections list components but omit the interaction contracts (method signatures, sequencing, parallelism, retry/backoff rules, persistence locking), leaving the core workflow architecture undefined.",
+      "suggestion": "Define detailed sequence/state diagrams that show how BugResearcher, RootCauseAnalyzer, FixPlanner, Coder, and Verifier interact via BugState, including API contracts, error propagation, and how paused/resumed investigations are handled."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "clarity",
+      "location": "specs/BUG_BASH_SPEC.md:519",
+      "description": "CLI command descriptions only restate command names and happy-path behavior; they lack option schemas, sample inputs/outputs, exit codes, and error-handling requirements, which will cause inconsistent CLI UX.",
+      "suggestion": "For each `swarm-attack bug` subcommand, document required/optional flags, example invocations, structured output format, exit statuses, and how commands behave when phases are skipped or state files are missing."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "risk",
+      "location": "specs/BUG_BASH_SPEC.md:1025",
+      "description": "No risk analysis or testing strategy is provided even though the feature coordinates multiple agents, approvals, and filesystem writes; there are no mitigations for partial failures, cost overruns, or corrupted state.",
+      "suggestion": "Add a risk section that identifies operational, data-consistency, and cost risks, then specify mitigations (e.g., retries, state versioning, approval audit logs) plus a verification plan covering unit, integration, and end-to-end cases for the pipeline."
+    },
+    {
+      "severity": "minor",
+      "dimension": "coverage",
+      "location": "specs/BUG_BASH_SPEC.md:939",
+      "description": "Configuration table lists knob names but never states where these values live, how they are validated, or how they affect behavior (e.g., what happens when `auto_approve_low_risk` is true), so the implementation path is ambiguous.",
+      "suggestion": "Augment the configuration section with source-of-truth details (config file schema, env overrides), validation rules, defaults, and a short explanation of how each setting alters the orchestrator or agents."
+    }
+  ],
+  "summary": "The current document mirrors the PRD without translating it into an implementable design, so engineers still lack concrete requirements, architectural contracts, or risk/test guidance for the Bug Bash system.",
+  "recommendation": "REJECT",
+  "pass_threshold_met": false
+}

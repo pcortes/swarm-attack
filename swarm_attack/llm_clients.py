@@ -188,6 +188,20 @@ class ClaudeCliRunner:
             # Parse the JSON output
             data = self._parse_output(proc.stdout)
 
+            # Check for Claude CLI error subtypes (e.g., max_turns exceeded)
+            subtype = data.get("subtype", "")
+            if subtype.startswith("error_"):
+                self._log("claude_invocation_error_subtype", {
+                    "subtype": subtype,
+                    "num_turns": data.get("num_turns", 0),
+                    "cost_usd": data.get("total_cost_usd", 0.0),
+                }, level="error")
+                raise ClaudeInvocationError(
+                    f"Claude CLI returned error: {subtype}",
+                    stderr=f"subtype={subtype}, num_turns={data.get('num_turns', 0)}",
+                    returncode=0,  # CLI succeeded but Claude hit a limit
+                )
+
             result = ClaudeResult(
                 text=data.get("result", ""),
                 total_cost_usd=data.get("total_cost_usd", 0.0),

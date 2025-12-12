@@ -1,0 +1,24 @@
+# Feature Swarm Configuration for bug-bash debate
+repo_root: "."
+specs_dir: "specs"
+swarm_dir: ".swarm"
+
+github:
+  repo: "philipjcortes/swarm-attack"
+
+claude:
+  binary: "claude"
+  max_turns: 6
+  timeout_seconds: 300
+
+codex:
+  timeout_seconds: 900  # 15 minutes - allow max reasoning effort on large specs
+
+spec_debate:
+  max_rounds: 3
+
+tests:
+  command: "pytest"
+
+git:
+  base_branch: "main"
