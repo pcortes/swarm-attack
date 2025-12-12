@@ -471,6 +471,239 @@ class ApprovalRecord:
         )
 
 
+# =========================================================================
+# Debate Layer Models
+# =========================================================================
+
+
+@dataclass
+class DebateIssue:
+    """
+    An issue identified during debate review.
+
+    Captures what's wrong and how to fix it.
+    """
+
+    severity: Literal["critical", "moderate", "minor"]
+    description: str
+    suggestion: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DebateIssue:
+        """Create from dictionary."""
+        return cls(**data)
+
+
+@dataclass
+class RootCauseDebateResult:
+    """
+    Result from a root cause debate round.
+
+    Contains scores, issues, and decision on whether to continue.
+    """
+
+    round_number: int
+    scores: dict[str, float]  # evidence_quality, hypothesis_correctness, completeness, alternative_consideration
+    issues: list[DebateIssue] = field(default_factory=list)
+    improvements: list[str] = field(default_factory=list)
+    recommendation: str = "REVISE"  # APPROVE or REVISE
+    continue_debate: bool = True
+    timestamp: str = ""
+    critic_cost_usd: float = 0.0
+    moderator_cost_usd: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Set timestamp if not provided."""
+        if not self.timestamp:
+            self.timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @property
+    def total_cost_usd(self) -> float:
+        """Total cost for this debate round."""
+        return self.critic_cost_usd + self.moderator_cost_usd
+
+    @property
+    def average_score(self) -> float:
+        """Average of all rubric scores."""
+        if not self.scores:
+            return 0.0
+        return sum(self.scores.values()) / len(self.scores)
+
+    @property
+    def critical_issue_count(self) -> int:
+        """Count of critical issues."""
+        return sum(1 for i in self.issues if i.severity == "critical")
+
+    @property
+    def moderate_issue_count(self) -> int:
+        """Count of moderate issues."""
+        return sum(1 for i in self.issues if i.severity == "moderate")
+
+    def meets_thresholds(self, thresholds: dict[str, float]) -> bool:
+        """Check if all scores meet or exceed thresholds."""
+        for key, threshold in thresholds.items():
+            if self.scores.get(key, 0.0) < threshold:
+                return False
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "round_number": self.round_number,
+            "scores": self.scores,
+            "issues": [i.to_dict() for i in self.issues],
+            "improvements": self.improvements,
+            "recommendation": self.recommendation,
+            "continue_debate": self.continue_debate,
+            "timestamp": self.timestamp,
+            "critic_cost_usd": self.critic_cost_usd,
+            "moderator_cost_usd": self.moderator_cost_usd,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RootCauseDebateResult:
+        """Create from dictionary."""
+        data = data.copy()
+        data["issues"] = [
+            DebateIssue.from_dict(i) if isinstance(i, dict) else i
+            for i in data.get("issues", [])
+        ]
+        return cls(**data)
+
+
+@dataclass
+class FixPlanDebateResult:
+    """
+    Result from a fix plan debate round.
+
+    Contains scores, issues, and decision on whether to continue.
+    """
+
+    round_number: int
+    scores: dict[str, float]  # correctness, completeness, risk_assessment, test_coverage, side_effect_analysis
+    issues: list[DebateIssue] = field(default_factory=list)
+    improvements: list[str] = field(default_factory=list)
+    recommendation: str = "REVISE"  # APPROVE or REVISE
+    continue_debate: bool = True
+    timestamp: str = ""
+    critic_cost_usd: float = 0.0
+    moderator_cost_usd: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Set timestamp if not provided."""
+        if not self.timestamp:
+            self.timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    @property
+    def total_cost_usd(self) -> float:
+        """Total cost for this debate round."""
+        return self.critic_cost_usd + self.moderator_cost_usd
+
+    @property
+    def average_score(self) -> float:
+        """Average of all rubric scores."""
+        if not self.scores:
+            return 0.0
+        return sum(self.scores.values()) / len(self.scores)
+
+    @property
+    def critical_issue_count(self) -> int:
+        """Count of critical issues."""
+        return sum(1 for i in self.issues if i.severity == "critical")
+
+    @property
+    def moderate_issue_count(self) -> int:
+        """Count of moderate issues."""
+        return sum(1 for i in self.issues if i.severity == "moderate")
+
+    def meets_thresholds(self, thresholds: dict[str, float]) -> bool:
+        """Check if all scores meet or exceed thresholds."""
+        for key, threshold in thresholds.items():
+            if self.scores.get(key, 0.0) < threshold:
+                return False
+        return True
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "round_number": self.round_number,
+            "scores": self.scores,
+            "issues": [i.to_dict() for i in self.issues],
+            "improvements": self.improvements,
+            "recommendation": self.recommendation,
+            "continue_debate": self.continue_debate,
+            "timestamp": self.timestamp,
+            "critic_cost_usd": self.critic_cost_usd,
+            "moderator_cost_usd": self.moderator_cost_usd,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FixPlanDebateResult:
+        """Create from dictionary."""
+        data = data.copy()
+        data["issues"] = [
+            DebateIssue.from_dict(i) if isinstance(i, dict) else i
+            for i in data.get("issues", [])
+        ]
+        return cls(**data)
+
+
+@dataclass
+class DebateHistory:
+    """
+    Complete history of debate rounds for a bug.
+
+    Tracks all root cause and fix plan debate rounds.
+    """
+
+    root_cause_rounds: list[RootCauseDebateResult] = field(default_factory=list)
+    fix_plan_rounds: list[FixPlanDebateResult] = field(default_factory=list)
+
+    @property
+    def total_cost_usd(self) -> float:
+        """Total cost across all debate rounds."""
+        rc_cost = sum(r.total_cost_usd for r in self.root_cause_rounds)
+        fp_cost = sum(r.total_cost_usd for r in self.fix_plan_rounds)
+        return rc_cost + fp_cost
+
+    @property
+    def root_cause_final_scores(self) -> dict[str, float]:
+        """Final scores from root cause debate (last round)."""
+        if not self.root_cause_rounds:
+            return {}
+        return self.root_cause_rounds[-1].scores
+
+    @property
+    def fix_plan_final_scores(self) -> dict[str, float]:
+        """Final scores from fix plan debate (last round)."""
+        if not self.fix_plan_rounds:
+            return {}
+        return self.fix_plan_rounds[-1].scores
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "root_cause_rounds": [r.to_dict() for r in self.root_cause_rounds],
+            "fix_plan_rounds": [r.to_dict() for r in self.fix_plan_rounds],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DebateHistory:
+        """Create from dictionary."""
+        return cls(
+            root_cause_rounds=[
+                RootCauseDebateResult.from_dict(r) for r in data.get("root_cause_rounds", [])
+            ],
+            fix_plan_rounds=[
+                FixPlanDebateResult.from_dict(r) for r in data.get("fix_plan_rounds", [])
+            ],
+        )
+
+
 @dataclass
 class BugState:
     """
@@ -494,6 +727,7 @@ class BugState:
     costs: list[AgentCost] = field(default_factory=list)
     transitions: list[PhaseTransition] = field(default_factory=list)
     approval_record: Optional[ApprovalRecord] = None
+    debate_history: Optional[DebateHistory] = None
     blocked_reason: Optional[str] = None
     rejection_reason: Optional[str] = None
     notes: list[str] = field(default_factory=list)
@@ -527,6 +761,7 @@ class BugState:
             "costs": [c.to_dict() for c in self.costs],
             "transitions": [t.to_dict() for t in self.transitions],
             "approval_record": self.approval_record.to_dict() if self.approval_record else None,
+            "debate_history": self.debate_history.to_dict() if self.debate_history else None,
             "blocked_reason": self.blocked_reason,
             "rejection_reason": self.rejection_reason,
             "notes": self.notes,
@@ -550,6 +785,7 @@ class BugState:
             costs=[AgentCost.from_dict(c) for c in data.get("costs", [])],
             transitions=[PhaseTransition.from_dict(t) for t in data.get("transitions", [])],
             approval_record=ApprovalRecord.from_dict(data["approval_record"]) if data.get("approval_record") else None,
+            debate_history=DebateHistory.from_dict(data["debate_history"]) if data.get("debate_history") else None,
             blocked_reason=data.get("blocked_reason"),
             rejection_reason=data.get("rejection_reason"),
             notes=data.get("notes", []),

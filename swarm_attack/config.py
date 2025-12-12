@@ -132,6 +132,27 @@ class GitConfig:
 
 
 @dataclass
+class BugDebateConfig:
+    """Bug Bash debate layer configuration."""
+    enabled: bool = True                        # Enable debate for root cause and fix plan
+    max_rounds: int = 2                         # Maximum debate rounds (10 min each)
+    timeout_seconds: int = 600                  # 10 minute timeout per debate round
+    root_cause_thresholds: dict[str, float] = field(default_factory=lambda: {
+        "evidence_quality": 0.8,
+        "hypothesis_correctness": 0.8,
+        "completeness": 0.8,
+        "alternative_consideration": 0.7,
+    })
+    fix_plan_thresholds: dict[str, float] = field(default_factory=lambda: {
+        "correctness": 0.8,
+        "completeness": 0.8,
+        "risk_assessment": 0.8,
+        "test_coverage": 0.8,
+        "side_effect_analysis": 0.7,
+    })
+
+
+@dataclass
 class BugBashConfig:
     """Bug Bash pipeline configuration."""
     max_cost_per_bug_usd: float = 10.0         # Maximum cost for a single bug investigation
@@ -140,6 +161,7 @@ class BugBashConfig:
     require_approval: bool = True               # Require human approval before fix (ALWAYS True)
     auto_commit_fixes: bool = False             # Auto-commit fixes after verification
     bugs_dir: str = ".swarm/bugs"              # Where to store bug state
+    debate: BugDebateConfig = field(default_factory=BugDebateConfig)
 
 
 @dataclass
@@ -337,15 +359,41 @@ def _parse_git_config(data: dict[str, Any]) -> GitConfig:
     )
 
 
+def _parse_bug_debate_config(data: dict[str, Any]) -> BugDebateConfig:
+    """Parse bug debate configuration from dict."""
+    default_rc_thresholds = {
+        "evidence_quality": 0.8,
+        "hypothesis_correctness": 0.8,
+        "completeness": 0.8,
+        "alternative_consideration": 0.7,
+    }
+    default_fp_thresholds = {
+        "correctness": 0.8,
+        "completeness": 0.8,
+        "risk_assessment": 0.8,
+        "test_coverage": 0.8,
+        "side_effect_analysis": 0.7,
+    }
+    return BugDebateConfig(
+        enabled=data.get("enabled", True),
+        max_rounds=data.get("max_rounds", 2),
+        timeout_seconds=data.get("timeout_seconds", 600),  # 10 minutes
+        root_cause_thresholds={**default_rc_thresholds, **data.get("root_cause_thresholds", {})},
+        fix_plan_thresholds={**default_fp_thresholds, **data.get("fix_plan_thresholds", {})},
+    )
+
+
 def _parse_bug_bash_config(data: dict[str, Any]) -> BugBashConfig:
     """Parse bug bash configuration from dict."""
+    debate_data = data.get("debate", {})
     return BugBashConfig(
         max_cost_per_bug_usd=data.get("max_cost_per_bug_usd", 10.0),
         max_reproduction_attempts=data.get("max_reproduction_attempts", 3),
         min_test_cases=data.get("min_test_cases", 2),
         require_approval=True,  # Always require approval - cannot be disabled
         auto_commit_fixes=data.get("auto_commit_fixes", False),
-        bugs_dir=data.get("bugs_dir", ".swarm/bugs")
+        bugs_dir=data.get("bugs_dir", ".swarm/bugs"),
+        debate=_parse_bug_debate_config(debate_data),
     )
 
 

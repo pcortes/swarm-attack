@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
+from swarm_attack.agents.bug_critic import BugCriticAgent
+from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.bug_researcher import BugResearcherAgent
 from swarm_attack.agents.fix_planner import FixPlannerAgent
 from swarm_attack.agents.root_cause_analyzer import RootCauseAnalyzerAgent
@@ -33,7 +35,13 @@ from swarm_attack.bug_models import (
     BugPhase,
     BugState,
     CostLimitExceededError,
+    DebateHistory,
+    DebateIssue,
+    FixPlan,
+    FixPlanDebateResult,
     InvalidPhaseError,
+    RootCauseAnalysis,
+    RootCauseDebateResult,
 )
 from swarm_attack.bug_state_store import BugStateStore
 
@@ -74,6 +82,8 @@ class BugOrchestrator:
         researcher: Optional[BugResearcherAgent] = None,
         analyzer: Optional[RootCauseAnalyzerAgent] = None,
         planner: Optional[FixPlannerAgent] = None,
+        critic: Optional[BugCriticAgent] = None,
+        moderator: Optional[BugModeratorAgent] = None,
     ) -> None:
         """
         Initialize the Bug Orchestrator.
@@ -85,6 +95,8 @@ class BugOrchestrator:
             researcher: Optional Bug Researcher agent (created if not provided).
             analyzer: Optional Root Cause Analyzer agent (created if not provided).
             planner: Optional Fix Planner agent (created if not provided).
+            critic: Optional Bug Critic agent (created if not provided).
+            moderator: Optional Bug Moderator agent (created if not provided).
         """
         self.config = config
         self._logger = logger
@@ -97,6 +109,8 @@ class BugOrchestrator:
         self._researcher = researcher
         self._analyzer = analyzer
         self._planner = planner
+        self._critic = critic
+        self._moderator = moderator
 
     @property
     def state_store(self) -> BugStateStore:
@@ -123,6 +137,20 @@ class BugOrchestrator:
         if self._planner is None:
             self._planner = FixPlannerAgent(self.config, self._logger)
         return self._planner
+
+    @property
+    def critic(self) -> BugCriticAgent:
+        """Get the Bug Critic agent (lazy init)."""
+        if self._critic is None:
+            self._critic = BugCriticAgent(self.config, self._logger)
+        return self._critic
+
+    @property
+    def moderator(self) -> BugModeratorAgent:
+        """Get the Bug Moderator agent (lazy init)."""
+        if self._moderator is None:
+            self._moderator = BugModeratorAgent(self.config, self._logger)
+        return self._moderator
 
     def _log(
         self,
@@ -152,6 +180,371 @@ class BugOrchestrator:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
         return f"bug-{slug}-{timestamp}"
+
+    # =========================================================================
+    # Debate Layer Methods
+    # =========================================================================
+
+    def _run_root_cause_debate(
+        self,
+        state: BugState,
+        progress_callback: Optional[Callable[[str, int, int, Optional[str]], None]] = None,
+    ) -> tuple[RootCauseAnalysis, float]:
+        """
+        Run debate loop to refine root cause analysis.
+
+        Args:
+            state: Current bug state with root_cause.
+            progress_callback: Optional callback for progress updates.
+
+        Returns:
+            Tuple of (improved_root_cause, total_debate_cost)
+        """
+        debate_config = self.config.bug_bash.debate
+        if not debate_config.enabled:
+            self._log("debate_skipped", {"reason": "disabled_in_config"})
+            return state.root_cause, 0.0
+
+        if not state.root_cause:
+            self._log("debate_skipped", {"reason": "no_root_cause"})
+            return state.root_cause, 0.0
+
+        # Initialize debate history if needed
+        if not state.debate_history:
+            state.debate_history = DebateHistory()
+
+        current_root_cause = state.root_cause
+        total_cost = 0.0
+        max_rounds = debate_config.max_rounds
+        thresholds = debate_config.root_cause_thresholds
+
+        self._log("root_cause_debate_start", {
+            "bug_id": state.bug_id,
+            "max_rounds": max_rounds,
+            "thresholds": thresholds,
+        })
+
+        for round_num in range(1, max_rounds + 1):
+            self._log("root_cause_debate_round_start", {
+                "round": round_num,
+                "bug_id": state.bug_id,
+            })
+
+            if progress_callback:
+                progress_callback(
+                    f"Debating root cause (round {round_num}/{max_rounds})",
+                    2, 3,
+                    f"Critic reviewing analysis..."
+                )
+
+            # Step 1: Critic reviews the analysis
+            self.critic.reset()
+            critic_result = self.critic.run({
+                "bug_id": state.bug_id,
+                "mode": "root_cause",
+                "root_cause": current_root_cause,
+                "bug_description": state.report.description,
+                "reproduction_summary": state.reproduction.notes if state.reproduction else "",
+            })
+
+            if not critic_result.success:
+                # Critic failed (likely auth error) - stop debate
+                self._log("root_cause_debate_critic_failed", {
+                    "error": critic_result.errors[0] if critic_result.errors else "Unknown",
+                    "round": round_num,
+                })
+                # Return current analysis without improvement
+                break
+
+            total_cost += critic_result.cost_usd
+            review = critic_result.output
+
+            # Build debate result
+            issues = [
+                DebateIssue(
+                    severity=i.get("severity", "minor"),
+                    description=i.get("description", ""),
+                    suggestion=i.get("suggestion", ""),
+                )
+                for i in review.get("issues", [])
+            ]
+
+            debate_result = RootCauseDebateResult(
+                round_number=round_num,
+                scores=review.get("scores", {}),
+                issues=issues,
+                recommendation=review.get("recommendation", "REVISE"),
+                critic_cost_usd=critic_result.cost_usd,
+            )
+
+            # Check if we meet thresholds
+            meets_thresholds = debate_result.meets_thresholds(thresholds)
+            no_critical = debate_result.critical_issue_count == 0
+            few_moderate = debate_result.moderate_issue_count < 2
+
+            self._log("root_cause_debate_critic_complete", {
+                "round": round_num,
+                "scores": review.get("scores", {}),
+                "critical_issues": debate_result.critical_issue_count,
+                "moderate_issues": debate_result.moderate_issue_count,
+                "meets_thresholds": meets_thresholds,
+                "recommendation": review.get("recommendation"),
+            })
+
+            # If all conditions met, we're done
+            if meets_thresholds and no_critical and few_moderate:
+                debate_result.continue_debate = False
+                state.debate_history.root_cause_rounds.append(debate_result)
+                self._log("root_cause_debate_success", {
+                    "round": round_num,
+                    "final_scores": review.get("scores"),
+                })
+                break
+
+            # Otherwise, run moderator to improve
+            if progress_callback:
+                progress_callback(
+                    f"Debating root cause (round {round_num}/{max_rounds})",
+                    2, 3,
+                    f"Moderator improving analysis..."
+                )
+
+            self.moderator.reset()
+            moderator_result = self.moderator.run({
+                "bug_id": state.bug_id,
+                "mode": "root_cause",
+                "root_cause": current_root_cause,
+                "review": review,
+                "bug_description": state.report.description,
+                "reproduction_summary": state.reproduction.notes if state.reproduction else "",
+                "round": round_num,
+            })
+
+            total_cost += moderator_result.cost_usd
+            debate_result.moderator_cost_usd = moderator_result.cost_usd
+
+            if moderator_result.success:
+                improved = moderator_result.output.get("improved_content", {})
+                if improved:
+                    # Update root cause with improvements
+                    current_root_cause = RootCauseAnalysis(
+                        summary=improved.get("summary", current_root_cause.summary),
+                        execution_trace=improved.get("execution_trace", current_root_cause.execution_trace),
+                        root_cause_file=improved.get("root_cause_file", current_root_cause.root_cause_file),
+                        root_cause_line=improved.get("root_cause_line", current_root_cause.root_cause_line),
+                        root_cause_code=improved.get("root_cause_code", current_root_cause.root_cause_code),
+                        root_cause_explanation=improved.get("root_cause_explanation", current_root_cause.root_cause_explanation),
+                        why_not_caught=improved.get("why_not_caught", current_root_cause.why_not_caught),
+                        confidence=improved.get("confidence", current_root_cause.confidence),
+                        alternative_hypotheses=improved.get("alternative_hypotheses", current_root_cause.alternative_hypotheses),
+                    )
+                debate_result.improvements = moderator_result.output.get("improvements", [])
+
+            state.debate_history.root_cause_rounds.append(debate_result)
+
+            self._log("root_cause_debate_round_complete", {
+                "round": round_num,
+                "cost": debate_result.total_cost_usd,
+            })
+
+        self._log("root_cause_debate_complete", {
+            "total_rounds": len(state.debate_history.root_cause_rounds),
+            "total_cost": total_cost,
+            "final_scores": state.debate_history.root_cause_final_scores,
+        })
+
+        return current_root_cause, total_cost
+
+    def _run_fix_plan_debate(
+        self,
+        state: BugState,
+        progress_callback: Optional[Callable[[str, int, int, Optional[str]], None]] = None,
+    ) -> tuple[FixPlan, float]:
+        """
+        Run debate loop to refine fix plan.
+
+        Args:
+            state: Current bug state with fix_plan.
+            progress_callback: Optional callback for progress updates.
+
+        Returns:
+            Tuple of (improved_fix_plan, total_debate_cost)
+        """
+        debate_config = self.config.bug_bash.debate
+        if not debate_config.enabled:
+            self._log("debate_skipped", {"reason": "disabled_in_config"})
+            return state.fix_plan, 0.0
+
+        if not state.fix_plan:
+            self._log("debate_skipped", {"reason": "no_fix_plan"})
+            return state.fix_plan, 0.0
+
+        # Initialize debate history if needed
+        if not state.debate_history:
+            state.debate_history = DebateHistory()
+
+        current_fix_plan = state.fix_plan
+        total_cost = 0.0
+        max_rounds = debate_config.max_rounds
+        thresholds = debate_config.fix_plan_thresholds
+
+        self._log("fix_plan_debate_start", {
+            "bug_id": state.bug_id,
+            "max_rounds": max_rounds,
+            "thresholds": thresholds,
+        })
+
+        for round_num in range(1, max_rounds + 1):
+            self._log("fix_plan_debate_round_start", {
+                "round": round_num,
+                "bug_id": state.bug_id,
+            })
+
+            if progress_callback:
+                progress_callback(
+                    f"Debating fix plan (round {round_num}/{max_rounds})",
+                    3, 3,
+                    f"Critic reviewing plan..."
+                )
+
+            # Step 1: Critic reviews the plan
+            self.critic.reset()
+            critic_result = self.critic.run({
+                "bug_id": state.bug_id,
+                "mode": "fix_plan",
+                "fix_plan": current_fix_plan,
+                "bug_description": state.report.description,
+                "root_cause_summary": state.root_cause.summary if state.root_cause else "",
+            })
+
+            if not critic_result.success:
+                # Critic failed - stop debate
+                self._log("fix_plan_debate_critic_failed", {
+                    "error": critic_result.errors[0] if critic_result.errors else "Unknown",
+                    "round": round_num,
+                })
+                break
+
+            total_cost += critic_result.cost_usd
+            review = critic_result.output
+
+            # Build debate result
+            issues = [
+                DebateIssue(
+                    severity=i.get("severity", "minor"),
+                    description=i.get("description", ""),
+                    suggestion=i.get("suggestion", ""),
+                )
+                for i in review.get("issues", [])
+            ]
+
+            debate_result = FixPlanDebateResult(
+                round_number=round_num,
+                scores=review.get("scores", {}),
+                issues=issues,
+                recommendation=review.get("recommendation", "REVISE"),
+                critic_cost_usd=critic_result.cost_usd,
+            )
+
+            # Check if we meet thresholds
+            meets_thresholds = debate_result.meets_thresholds(thresholds)
+            no_critical = debate_result.critical_issue_count == 0
+            few_moderate = debate_result.moderate_issue_count < 2
+
+            self._log("fix_plan_debate_critic_complete", {
+                "round": round_num,
+                "scores": review.get("scores", {}),
+                "critical_issues": debate_result.critical_issue_count,
+                "moderate_issues": debate_result.moderate_issue_count,
+                "meets_thresholds": meets_thresholds,
+                "recommendation": review.get("recommendation"),
+            })
+
+            # If all conditions met, we're done
+            if meets_thresholds and no_critical and few_moderate:
+                debate_result.continue_debate = False
+                state.debate_history.fix_plan_rounds.append(debate_result)
+                self._log("fix_plan_debate_success", {
+                    "round": round_num,
+                    "final_scores": review.get("scores"),
+                })
+                break
+
+            # Otherwise, run moderator to improve
+            if progress_callback:
+                progress_callback(
+                    f"Debating fix plan (round {round_num}/{max_rounds})",
+                    3, 3,
+                    f"Moderator improving plan..."
+                )
+
+            self.moderator.reset()
+            moderator_result = self.moderator.run({
+                "bug_id": state.bug_id,
+                "mode": "fix_plan",
+                "fix_plan": current_fix_plan,
+                "review": review,
+                "bug_description": state.report.description,
+                "root_cause_summary": state.root_cause.summary if state.root_cause else "",
+                "round": round_num,
+            })
+
+            total_cost += moderator_result.cost_usd
+            debate_result.moderator_cost_usd = moderator_result.cost_usd
+
+            if moderator_result.success:
+                improved = moderator_result.output.get("improved_content", {})
+                if improved:
+                    # Update fix plan with improvements
+                    from swarm_attack.bug_models import FileChange, TestCase
+                    changes = [
+                        FileChange(
+                            file_path=c.get("file_path", ""),
+                            change_type=c.get("change_type", "modify"),
+                            current_code=c.get("current_code"),
+                            proposed_code=c.get("proposed_code"),
+                            explanation=c.get("explanation", ""),
+                        )
+                        for c in improved.get("changes", [])
+                    ] if improved.get("changes") else current_fix_plan.changes
+
+                    test_cases = [
+                        TestCase(
+                            name=t.get("name", ""),
+                            description=t.get("description", ""),
+                            test_code=t.get("test_code", ""),
+                            category=t.get("category", "regression"),
+                        )
+                        for t in improved.get("test_cases", [])
+                    ] if improved.get("test_cases") else current_fix_plan.test_cases
+
+                    current_fix_plan = FixPlan(
+                        summary=improved.get("summary", current_fix_plan.summary),
+                        changes=changes,
+                        test_cases=test_cases,
+                        risk_level=improved.get("risk_level", current_fix_plan.risk_level),
+                        risk_explanation=improved.get("risk_explanation", current_fix_plan.risk_explanation),
+                        scope=improved.get("scope", current_fix_plan.scope),
+                        side_effects=improved.get("side_effects", current_fix_plan.side_effects),
+                        rollback_plan=improved.get("rollback_plan", current_fix_plan.rollback_plan),
+                        estimated_effort=improved.get("estimated_effort", current_fix_plan.estimated_effort),
+                    )
+                debate_result.improvements = moderator_result.output.get("improvements", [])
+
+            state.debate_history.fix_plan_rounds.append(debate_result)
+
+            self._log("fix_plan_debate_round_complete", {
+                "round": round_num,
+                "cost": debate_result.total_cost_usd,
+            })
+
+        self._log("fix_plan_debate_complete", {
+            "total_rounds": len(state.debate_history.fix_plan_rounds),
+            "total_cost": total_cost,
+            "final_scores": state.debate_history.fix_plan_final_scores,
+        })
+
+        return current_fix_plan, total_cost
 
     # =========================================================================
     # Bug Lifecycle Operations
@@ -351,6 +744,14 @@ class BugOrchestrator:
             )
 
         state.root_cause = analysis_result.output
+
+        # Run root cause debate to refine the analysis
+        improved_root_cause, debate_cost = self._run_root_cause_debate(state, progress_callback)
+        if improved_root_cause != state.root_cause:
+            state.root_cause = improved_root_cause
+        total_cost += debate_cost
+        state.add_cost(AgentCost.create("root_cause_debate", cost_usd=debate_cost))
+
         state.transition_to(BugPhase.ANALYZED, "agent_output")
         self._state_store.save(state)
         self._state_store.write_root_cause_report(state)
@@ -392,9 +793,27 @@ class BugOrchestrator:
             )
 
         state.fix_plan = plan_result.output
+
+        # Run fix plan debate to refine the plan
+        improved_fix_plan, fix_debate_cost = self._run_fix_plan_debate(state, progress_callback)
+        if improved_fix_plan != state.fix_plan:
+            state.fix_plan = improved_fix_plan
+        total_cost += fix_debate_cost
+        state.add_cost(AgentCost.create("fix_plan_debate", cost_usd=fix_debate_cost))
+
         state.transition_to(BugPhase.PLANNED, "agent_output")
         self._state_store.save(state)
         self._state_store.write_fix_plan_report(state)
+
+        # Calculate debate scores for summary
+        debate_summary = ""
+        if state.debate_history:
+            if state.debate_history.root_cause_final_scores:
+                rc_avg = sum(state.debate_history.root_cause_final_scores.values()) / len(state.debate_history.root_cause_final_scores)
+                debate_summary += f" RC score: {rc_avg:.2f}."
+            if state.debate_history.fix_plan_final_scores:
+                fp_avg = sum(state.debate_history.fix_plan_final_scores.values()) / len(state.debate_history.fix_plan_final_scores)
+                debate_summary += f" Fix score: {fp_avg:.2f}."
 
         self._log(
             "analysis_complete",
@@ -402,6 +821,10 @@ class BugOrchestrator:
                 "bug_id": bug_id,
                 "cost_usd": total_cost,
                 "fix_risk": state.fix_plan.risk_level,
+                "debate_rounds": {
+                    "root_cause": len(state.debate_history.root_cause_rounds) if state.debate_history else 0,
+                    "fix_plan": len(state.debate_history.fix_plan_rounds) if state.debate_history else 0,
+                },
             },
         )
 
@@ -410,7 +833,7 @@ class BugOrchestrator:
             bug_id=bug_id,
             phase=BugPhase.PLANNED,
             cost_usd=total_cost,
-            message=f"Analysis complete. Fix plan ready for approval. Risk: {state.fix_plan.risk_level}",
+            message=f"Analysis complete. Fix plan ready for approval. Risk: {state.fix_plan.risk_level}.{debate_summary}",
         )
 
     def approve(
