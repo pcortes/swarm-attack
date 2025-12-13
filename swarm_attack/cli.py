@@ -525,6 +525,287 @@ def init(
         console.print(f"  2. Run: [cyan]feature-swarm run {feature_id}[/cyan]")
 
 
+@app.command("import-spec")
+def import_spec(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature ID for the imported spec.",
+    ),
+    spec_path: str = typer.Option(
+        ...,
+        "--spec",
+        "-s",
+        help="Path to the external spec file to import.",
+    ),
+    prd_path: Optional[str] = typer.Option(
+        None,
+        "--prd",
+        "-p",
+        help="Path to optional PRD file. If not provided, a stub PRD will be generated.",
+    ),
+    debate: bool = typer.Option(
+        True,
+        "--debate/--no-debate",
+        help="Run the debate pipeline (critic + moderator) after importing.",
+    ),
+) -> None:
+    """
+    Import an external spec and optionally run the debate pipeline.
+
+    This command allows engineers who write specs outside the normal PRD → SpecAuthor
+    flow to use the debate pipeline (SpecCritic → SpecModerator) for quality review.
+
+    The imported spec is placed in specs/<feature>/spec-draft.md.
+    If no PRD is provided, a stub PRD is generated from the spec overview.
+
+    Examples:
+        # Import spec and run debate
+        swarm-attack import-spec my-feature --spec ~/my-spec.md
+
+        # Import with existing PRD
+        swarm-attack import-spec my-feature --spec ~/my-spec.md --prd ~/my-prd.md
+
+        # Import without debate (just copy)
+        swarm-attack import-spec my-feature --spec ~/my-spec.md --no-debate
+    """
+    import re
+    from pathlib import Path
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+
+    store = get_store(config)
+
+    # Validate spec file exists
+    spec_file = Path(spec_path).expanduser().resolve()
+    if not spec_file.exists():
+        console.print(f"[red]Error:[/red] Spec file not found at {spec_file}")
+        raise typer.Exit(1)
+
+    # Read spec content
+    try:
+        spec_content = spec_file.read_text()
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to read spec: {e}")
+        raise typer.Exit(1)
+
+    # Validate spec has some content
+    if len(spec_content.strip()) < 100:
+        console.print(f"[red]Error:[/red] Spec file is too short (< 100 chars)")
+        raise typer.Exit(1)
+
+    # Check/create feature
+    existing = store.load(feature_id)
+    if existing is not None and existing.phase not in [FeaturePhase.NO_PRD, FeaturePhase.PRD_READY, FeaturePhase.BLOCKED]:
+        console.print(f"[yellow]Warning:[/yellow] Feature '{feature_id}' exists in phase {_format_phase(existing.phase)}")
+        console.print("  Use --force to overwrite (not implemented), or choose a different feature ID.")
+        raise typer.Exit(1)
+
+    # Handle PRD - either use provided or generate stub
+    target_prd_path = _get_prd_path(config, feature_id)
+    ensure_dir(target_prd_path.parent)
+
+    if prd_path:
+        prd_file = Path(prd_path).expanduser().resolve()
+        if not prd_file.exists():
+            console.print(f"[red]Error:[/red] PRD file not found at {prd_file}")
+            raise typer.Exit(1)
+        prd_content = prd_file.read_text()
+        safe_write(target_prd_path, prd_content)
+        console.print(f"[dim]Copied PRD to:[/dim] {target_prd_path}")
+    else:
+        # Generate stub PRD from spec
+        prd_stub = _generate_prd_stub_from_spec(feature_id, spec_content)
+        safe_write(target_prd_path, prd_stub)
+        console.print(f"[dim]Generated PRD stub at:[/dim] {target_prd_path}")
+
+    # Copy spec to target location
+    target_spec_dir = _get_spec_dir(config, feature_id)
+    ensure_dir(target_spec_dir)
+    target_spec_path = target_spec_dir / "spec-draft.md"
+    safe_write(target_spec_path, spec_content)
+    console.print(f"[dim]Imported spec to:[/dim] {target_spec_path}")
+
+    # Create/update feature state
+    if existing is None:
+        store.create_feature(feature_id, FeaturePhase.SPEC_IN_PROGRESS)
+        console.print(f"[green]Created feature:[/green] {feature_id}")
+    else:
+        existing.update_phase(FeaturePhase.SPEC_IN_PROGRESS)
+        store.save(existing)
+        console.print(f"[green]Updated feature:[/green] {feature_id}")
+
+    if not debate:
+        # Just import, skip debate
+        state = store.load(feature_id)
+        if state:
+            state.update_phase(FeaturePhase.SPEC_NEEDS_APPROVAL)
+            store.save(state)
+
+        console.print(
+            Panel(
+                f"[green]Spec imported successfully![/green]\n\n"
+                f"Spec: {target_spec_path}\n"
+                f"PRD: {target_prd_path}\n\n"
+                f"[cyan]Next step:[/cyan] Review and approve:\n"
+                f"  [cyan]swarm-attack approve {feature_id}[/cyan]",
+                title="Import Complete",
+                border_style="green",
+            )
+        )
+        return
+
+    # Run debate pipeline (critic → moderator)
+    console.print()
+    console.print(f"[cyan]Running debate pipeline for imported spec...[/cyan]")
+    console.print()
+
+    # Set phase to SPEC_IN_PROGRESS before running debate
+    state = store.load(feature_id)
+    if state:
+        state.update_phase(FeaturePhase.SPEC_IN_PROGRESS)
+        store.save(state)
+
+    orchestrator = Orchestrator(config, state_store=store)
+
+    # Run debate starting from critic (skip author since we have spec)
+    with console.status("[yellow]Running spec debate...[/yellow]"):
+        result = orchestrator.run_spec_debate_only(feature_id)
+
+    console.print()
+
+    if result.status == "success":
+        console.print(
+            Panel(
+                f"[green]Spec debate completed successfully![/green]\n\n"
+                f"Rounds: {result.rounds_completed}\n"
+                f"Cost: {_format_cost(result.total_cost_usd)}\n"
+                f"Scores: {result.final_scores}\n\n"
+                f"[cyan]Next step:[/cyan] Review the spec at:\n"
+                f"  {target_spec_path}\n\n"
+                f"Then approve with:\n"
+                f"  [cyan]swarm-attack approve {feature_id}[/cyan]",
+                title="Debate Complete",
+                border_style="green",
+            )
+        )
+    elif result.status == "stalemate":
+        console.print(
+            Panel(
+                f"[yellow]Spec debate reached stalemate.[/yellow]\n\n"
+                f"Rounds: {result.rounds_completed}\n"
+                f"Cost: {_format_cost(result.total_cost_usd)}\n"
+                f"Scores: {result.final_scores}\n"
+                f"{result.message or ''}\n\n"
+                f"Review the spec at: {target_spec_path}",
+                title="Debate Stalemate",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(1)
+    elif result.status == "disagreement":
+        # Build rejected issues summary
+        rejected_summary = ""
+        if result.rejected_issues:
+            rejected_summary = "\n[bold]Rejected Issues:[/bold]\n"
+            for issue in result.rejected_issues[:5]:  # Show first 5
+                rejected_summary += f"  - {issue.get('original_issue', 'Unknown')}\n"
+                if issue.get("reasoning"):
+                    rejected_summary += f"    [dim]Reason: {issue['reasoning'][:80]}...[/dim]\n"
+            if len(result.rejected_issues) > 5:
+                rejected_summary += f"  ... and {len(result.rejected_issues) - 5} more\n"
+
+        console.print(
+            Panel(
+                f"[yellow]Spec debate reached disagreement.[/yellow]\n\n"
+                f"The architect rejected critic feedback that keeps being raised.\n"
+                f"Human review is required to arbitrate.\n\n"
+                f"Rounds: {result.rounds_completed}\n"
+                f"Cost: {_format_cost(result.total_cost_usd)}\n"
+                f"Scores: {result.final_scores}\n"
+                f"{rejected_summary}\n"
+                f"Review the spec and dispositions at:\n"
+                f"  {target_spec_path}\n"
+                f"  specs/{feature_id}/spec-dispositions.json\n\n"
+                f"Then approve or reject:\n"
+                f"  [cyan]swarm-attack approve {feature_id}[/cyan]\n"
+                f"  [cyan]swarm-attack reject {feature_id}[/cyan]",
+                title="Disagreement - Human Review Needed",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(2)  # Different exit code for disagreement
+    else:
+        console.print(
+            Panel(
+                f"[red]Spec debate failed.[/red]\n\n"
+                f"Error: {result.error}\n"
+                f"Cost: {_format_cost(result.total_cost_usd)}",
+                title="Debate Failed",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(1)
+
+
+def _generate_prd_stub_from_spec(feature_id: str, spec_content: str) -> str:
+    """
+    Generate a minimal PRD stub from spec content.
+
+    Extracts the overview/purpose section if present, otherwise creates a minimal stub.
+    """
+    import re
+
+    # Try to extract overview from spec
+    overview_match = re.search(
+        r'##?\s*(?:1\.?\s*)?Overview.*?\n(.*?)(?=\n##|\Z)',
+        spec_content,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if overview_match:
+        overview_text = overview_match.group(1).strip()
+        # Limit to first 500 chars
+        if len(overview_text) > 500:
+            overview_text = overview_text[:500] + "..."
+    else:
+        overview_text = "(Extracted from imported spec)"
+
+    # Try to extract purpose
+    purpose_match = re.search(
+        r'###?\s*(?:1\.1\.?\s*)?Purpose.*?\n(.*?)(?=\n###|\n##|\Z)',
+        spec_content,
+        re.IGNORECASE | re.DOTALL
+    )
+
+    if purpose_match:
+        purpose_text = purpose_match.group(1).strip()
+    else:
+        purpose_text = overview_text
+
+    return f"""# PRD: {feature_id}
+
+*This PRD was auto-generated from an imported spec.*
+
+## Overview
+
+{purpose_text}
+
+## Requirements
+
+(See imported spec for detailed requirements)
+
+## Success Criteria
+
+(See imported spec for success criteria)
+
+## Notes
+
+This PRD was generated to support the spec debate pipeline for an externally-authored spec.
+The full specification can be found in the spec file.
+"""
+
+
 @app.command()
 def run(
     feature_id: str = typer.Argument(
@@ -645,7 +926,8 @@ def _run_spec_pipeline(
                 f"[yellow]Spec pipeline reached stalemate.[/yellow]\n\n"
                 f"Rounds: {result.rounds_completed}\n"
                 f"Cost: {_format_cost(result.total_cost_usd)}\n"
-                f"Scores: {result.final_scores}\n\n"
+                f"Scores: {result.final_scores}\n"
+                f"{result.message or ''}\n\n"
                 "The spec is not improving. Human intervention may be needed.\n"
                 f"Review the spec at: specs/{feature_id}/spec-draft.md",
                 title="Pipeline Stalemate",
@@ -653,6 +935,38 @@ def _run_spec_pipeline(
             )
         )
         raise typer.Exit(1)
+    elif result.status == "disagreement":
+        # Build rejected issues summary
+        rejected_summary = ""
+        if result.rejected_issues:
+            rejected_summary = "\n[bold]Rejected Issues:[/bold]\n"
+            for issue in result.rejected_issues[:5]:
+                rejected_summary += f"  - {issue.get('original_issue', 'Unknown')}\n"
+                if issue.get("reasoning"):
+                    rejected_summary += f"    [dim]Reason: {issue['reasoning'][:80]}...[/dim]\n"
+            if len(result.rejected_issues) > 5:
+                rejected_summary += f"  ... and {len(result.rejected_issues) - 5} more\n"
+
+        console.print(
+            Panel(
+                f"[yellow]Spec pipeline reached disagreement.[/yellow]\n\n"
+                f"The architect rejected critic feedback that keeps being raised.\n"
+                f"Human review is required to arbitrate.\n\n"
+                f"Rounds: {result.rounds_completed}\n"
+                f"Cost: {_format_cost(result.total_cost_usd)}\n"
+                f"Scores: {result.final_scores}\n"
+                f"{rejected_summary}\n"
+                f"Review the spec and dispositions at:\n"
+                f"  specs/{feature_id}/spec-draft.md\n"
+                f"  specs/{feature_id}/spec-dispositions.json\n\n"
+                f"Then approve or reject:\n"
+                f"  [cyan]swarm-attack approve {feature_id}[/cyan]\n"
+                f"  [cyan]swarm-attack reject {feature_id}[/cyan]",
+                title="Disagreement - Human Review Needed",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(2)
     elif result.status == "timeout":
         console.print(
             Panel(

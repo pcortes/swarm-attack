@@ -1,0 +1,27 @@
+{
+  "round": 2,
+  "previous_scores": {
+    "clarity": 0.76,
+    "coverage": 0.62,
+    "architecture": 0.65,
+    "risk": 0.58
+  },
+  "current_scores": {
+    "clarity": 0.85,
+    "coverage": 0.72,
+    "architecture": 0.78,
+    "risk": 0.75
+  },
+  "issues_accepted": 2,
+  "issues_rejected": 1,
+  "issues_deferred": 0,
+  "issues_partial": 1,
+  "continue_debate": true,
+  "ready_for_approval": false,
+  "meta": {
+    "recommend_human_review": true,
+    "review_reason": "Issue R2-1 (upstream data pipeline) has been rejected twice consecutively. The reviewer continues to request ingestion/backfill documentation which I maintain is out of scope per the PRD. This fundamental disagreement about feature boundaries requires human arbitration."
+  },
+  "dispute_resolutions": [],
+  "updated_at": "2025-12-13T16:42:57.004929Z"
+}

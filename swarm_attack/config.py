@@ -98,6 +98,9 @@ class PreflightConfig:
 class SpecDebateConfig:
     """Spec debate/generation configuration."""
     max_rounds: int = 5                        # Maximum debate rounds
+    timeout_seconds: int = 900                 # 15 minute timeout per debate round (large specs)
+    consecutive_stalemate_threshold: int = 2   # Rounds of no improvement before stalemate
+    disagreement_threshold: int = 2            # Rejected issues before flagging disagreement
     rubric_thresholds: dict[str, float] = field(default_factory=lambda: {
         "clarity": 0.8,
         "coverage": 0.8,
@@ -326,6 +329,9 @@ def _parse_spec_debate_config(data: dict[str, Any]) -> SpecDebateConfig:
     thresholds = data.get("rubric_thresholds", default_thresholds)
     return SpecDebateConfig(
         max_rounds=data.get("max_rounds", 5),
+        timeout_seconds=data.get("timeout_seconds", 900),  # 15 minutes default
+        consecutive_stalemate_threshold=data.get("consecutive_stalemate_threshold", 2),
+        disagreement_threshold=data.get("disagreement_threshold", 2),
         rubric_thresholds={**default_thresholds, **thresholds}
     )
 

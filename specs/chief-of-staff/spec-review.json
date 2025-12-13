@@ -1,0 +1,44 @@
+{
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/chief-of-staff/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/chief-of-staff.md",
+  "reviewed_at": "2025-12-12T21:47:41.852608Z",
+  "scores": {
+    "clarity": 0.72,
+    "coverage": 0.55,
+    "architecture": 0.5,
+    "risk": 0.48
+  },
+  "issues": [
+    {
+      "severity": "critical",
+      "dimension": "architecture",
+      "location": "specs/chief-of-staff/spec-draft.md:180",
+      "description": "The `DailyGoal` model only stores text plus optional links, and AutopilotRunner (lines 1032\u20111075) is defined to execute lists of `DailyGoal`, but the spec never describes how those goals map to concrete CLI commands or orchestrator operations. With no executable metadata the `execute_goal` hook cannot know what to run, so the autopilot promised in the PRD cannot actually perform work autonomously.",
+      "suggestion": "Extend the goal schema (or introduce an execution plan object) with explicit command/action metadata and document how standup recommendations are translated into those executable plans before AutopilotRunner runs them."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "risk",
+      "location": "specs/chief-of-staff/spec-draft.md:928",
+      "description": "CheckpointSystem is expected to pause on approval-required or high-risk actions (lines 928\u2011979), yet the spec never defines where `current_action` metadata originates or how a goal is tagged as requiring approval/high risk. Without a structured flag or risk level on goals/recommendations the system cannot reliably fire the human gates that the PRD calls for.",
+      "suggestion": "Add explicit approval/high-risk metadata (e.g., `requires_approval`, `risk_level`, `action_type`) to the goal or recommendation models and describe how GoalTracker/Autopilot populate those fields so CheckpointSystem can make deterministic decisions."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "coverage",
+      "location": "specs/chief-of-staff/spec-draft.md:496",
+      "description": "User story #6 asks for \"GitHub issue deltas (what changed since yesterday)\", but the GitHubState model only captures aggregate counts (`open_issues`, `closed_issues_today`, `open_prs`). The spec never explains how yesterday\u2019s snapshot is stored or compared, so standup cannot enumerate which issues/PRs changed state.",
+      "suggestion": "Persist per-issue metadata (id, title, state, change timestamp) in the daily log or metrics store and have StateGatherer/StandupGenerator compute and render the delta list showing newly opened/closed/reopened work."
+    },
+    {
+      "severity": "minor",
+      "dimension": "clarity",
+      "location": "specs/chief-of-staff/spec-draft.md:64",
+      "description": "The architecture overview calls out `SpecStateSource (.claude/specs/*.md)` while the gather_specs section later operates on `specs/<feature>/...`. The inconsistent path references make it unclear which directory engineers should target when implementing spec discovery.",
+      "suggestion": "Clarify the canonical spec location and reference the same directory consistently across the architecture description and gather_specs implementation details."
+    }
+  ],
+  "summary": "Spec provides extensive data models and workflows, but core autopilot behavior is under-specified: goals are never translated into executable plans and checkpoint metadata is undefined, so autonomous execution and gating cannot be implemented as written. It also misses the PRD\u2019s GitHub delta requirement and has minor inconsistencies about spec storage paths.",
+  "recommendation": "REVISE",
+  "pass_threshold_met": false
+}

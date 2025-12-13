@@ -54,12 +54,14 @@ class PipelineResult:
     rounds completed, final scores, and total cost.
     """
 
-    status: str  # "success", "stalemate", "timeout", "failure"
+    status: str  # "success", "stalemate", "disagreement", "timeout", "failure"
     feature_id: str
     rounds_completed: int
     final_scores: dict[str, float]
     total_cost_usd: float
     error: Optional[str] = None
+    message: Optional[str] = None  # Human-readable summary
+    rejected_issues: Optional[list[dict]] = None  # For disagreement status
 
 
 @dataclass
@@ -170,12 +172,312 @@ class Orchestrator:
                 log_data.update(data)
             self.logger.log(event_type, log_data, level=level)
 
+    # =========================================================================
+    # Rejection Memory Methods (Debate Loop Enhancement)
+    # =========================================================================
+
+    def _generate_semantic_key(self, issue_text: str) -> str:
+        """
+        Generate stable semantic key from issue text.
+
+        Algorithm:
+        1. Lowercase, remove punctuation
+        2. Remove stopwords (should, would, implement, need, add, etc.)
+        3. Take first 3 significant words (>4 chars)
+        4. Sort and join with underscore
+
+        Example: "Should implement refresh token rotation" -> "refresh_rotation_token"
+
+        Args:
+            issue_text: The issue description text.
+
+        Returns:
+            Stable semantic key string.
+        """
+        import re
+        import string
+
+        # Stopwords to filter out (common in spec issues)
+        stopwords = {
+            "should", "would", "could", "must", "need", "needs", "implement",
+            "implementing", "implementation", "add", "adding", "include",
+            "including", "require", "requires", "required", "missing", "ensure",
+            "consider", "provide", "provides", "support", "supports", "handle",
+            "handling", "define", "defining", "specify", "specifying", "document",
+            "documenting", "update", "updating", "create", "creating", "have",
+            "having", "make", "making", "there", "that", "this", "with", "from",
+            "into", "about", "also", "being", "been", "does", "done", "each",
+            "more", "most", "other", "some", "such", "than", "then", "very",
+            "what", "when", "where", "which", "while", "will", "your", "their",
+        }
+
+        # Lowercase and remove punctuation
+        text = issue_text.lower()
+        text = text.translate(str.maketrans("", "", string.punctuation))
+
+        # Split into words and filter
+        words = text.split()
+        significant_words = [
+            w for w in words
+            if w not in stopwords and len(w) > 4
+        ]
+
+        # Take first 3 significant words and sort for stability
+        key_words = sorted(significant_words[:3])
+
+        # Join with underscore
+        return "_".join(key_words) if key_words else "generic_issue"
+
+    def _build_rejection_context_for_critic(self, feature_id: str) -> str:
+        """
+        Build rejection history context to inject into Critic prompt.
+
+        Returns formatted markdown block with:
+        - REJECTED issues (with PRD citations)
+        - DEFERRED issues
+        - Instructions for dispute mechanism
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            Formatted rejection context string, or empty string if no history.
+        """
+        if self._state_store is None:
+            return ""
+
+        state = self._state_store.load(feature_id)
+        if state is None:
+            return ""
+
+        # Get disposition history from state
+        disposition_history = getattr(state, "disposition_history", [])
+        if not disposition_history:
+            return ""
+
+        # Separate rejected and deferred issues
+        rejected_issues: list[dict] = []
+        deferred_issues: list[dict] = []
+
+        for disp in disposition_history:
+            classification = disp.get("classification", "").upper()
+            if classification == "REJECT":
+                rejected_issues.append(disp)
+            elif classification == "DEFER":
+                deferred_issues.append(disp)
+
+        # Limit to 8-10 most recent to stay token-efficient
+        rejected_issues = rejected_issues[-8:]
+        deferred_issues = deferred_issues[-2:]
+
+        if not rejected_issues and not deferred_issues:
+            return ""
+
+        # Build the context block
+        lines = [
+            "## Prior Round Context (READ CAREFULLY)",
+            "",
+        ]
+
+        if rejected_issues:
+            lines.extend([
+                "### REJECTED ISSUES (Do Not Re-raise)",
+                "",
+                "The following issues were previously raised and **REJECTED** by the architect.",
+                "They are out of scope or based on a misunderstanding. Do NOT re-raise these:",
+                "",
+            ])
+            for i, rej in enumerate(rejected_issues, 1):
+                issue_id = rej.get("issue_id", f"R?-{i}")
+                original = rej.get("original_issue", "Unknown issue")
+                reasoning = rej.get("reasoning", "No reasoning provided")
+                semantic_key = rej.get("semantic_key", self._generate_semantic_key(original))
+                lines.extend([
+                    f"**{issue_id}** (key: `{semantic_key}`)",
+                    f"- Issue: {original}",
+                    f"- Rejection reason: {reasoning}",
+                    "",
+                ])
+
+        if deferred_issues:
+            lines.extend([
+                "### DEFERRED ISSUES (Valid but Out of Scope)",
+                "",
+                "These were acknowledged as valid but deferred to future iterations:",
+                "",
+            ])
+            for i, def_issue in enumerate(deferred_issues, 1):
+                issue_id = def_issue.get("issue_id", f"D?-{i}")
+                original = def_issue.get("original_issue", "Unknown issue")
+                lines.extend([
+                    f"**{issue_id}**: {original}",
+                    "",
+                ])
+
+        # Add dispute instructions
+        lines.extend([
+            "### If You Disagree With a Rejection",
+            "",
+            "If you believe a rejected issue is **genuinely critical** (security, compliance,",
+            "or correctness), you may escalate it via the `disputed_issues` array.",
+            "",
+            "Add to `\"disputed_issues\"` (NOT `\"issues\"`):",
+            "```json",
+            "{",
+            '  "original_issue_id": "R1-4",',
+            '  "dispute_category": "security|compliance|correctness",',
+            '  "evidence": "Specific technical evidence why this matters",',
+            '  "risk_if_ignored": "Concrete impact of not addressing",',
+            '  "recommendation": "Suggested action for human review"',
+            "}",
+            "```",
+            "",
+            "**Note:** Frivolous disputes waste human review time. Only dispute if genuinely critical.",
+            "",
+        ])
+
+        return "\n".join(lines)
+
+    def _detect_semantic_disagreement(
+        self,
+        current_dispositions: list[dict[str, Any]],
+        previous_dispositions: list[dict[str, Any]],
+        feature_id: str,
+    ) -> dict[str, Any]:
+        """
+        Detect if same issues are being repeatedly rejected.
+
+        Strategy 1 (preferred): Use Moderator's `repeat_of` tags
+        Strategy 2 (fallback): Use semantic key matching
+        Strategy 3 (fallback): Use SequenceMatcher similarity >= 0.7
+
+        Args:
+            current_dispositions: Dispositions from current round.
+            previous_dispositions: Dispositions from previous round.
+            feature_id: The feature identifier for logging.
+
+        Returns:
+            {"deadlock": bool, "reason": str, "repeated_issues": list}
+        """
+        from difflib import SequenceMatcher
+
+        if not current_dispositions or not previous_dispositions:
+            return {"deadlock": False, "reason": "insufficient_data", "repeated_issues": []}
+
+        # Get current rejected issues
+        current_rejected = [
+            d for d in current_dispositions
+            if d.get("classification", "").upper() == "REJECT"
+        ]
+
+        # Get previous rejected issues
+        previous_rejected = [
+            d for d in previous_dispositions
+            if d.get("classification", "").upper() == "REJECT"
+        ]
+
+        if not current_rejected or not previous_rejected:
+            return {"deadlock": False, "reason": "no_rejections", "repeated_issues": []}
+
+        repeated_issues: list[dict] = []
+
+        for curr_rej in current_rejected:
+            curr_issue = curr_rej.get("original_issue", "")
+            curr_semantic_key = curr_rej.get("semantic_key", "")
+            curr_repeat_of = curr_rej.get("repeat_of", "")
+            curr_consecutive = curr_rej.get("consecutive_rejections", 1)
+
+            # Strategy 1: Check explicit repeat_of tag
+            if curr_repeat_of:
+                for prev_rej in previous_rejected:
+                    prev_id = prev_rej.get("issue_id", "")
+                    if prev_id == curr_repeat_of:
+                        repeated_issues.append({
+                            "current_issue_id": curr_rej.get("issue_id", ""),
+                            "previous_issue_id": prev_id,
+                            "match_strategy": "repeat_of_tag",
+                            "consecutive_count": curr_consecutive,
+                            "issue_text": curr_issue,
+                        })
+                        break
+                continue
+
+            # Strategy 2: Semantic key matching
+            if curr_semantic_key:
+                for prev_rej in previous_rejected:
+                    prev_semantic_key = prev_rej.get("semantic_key", "")
+                    if prev_semantic_key and curr_semantic_key == prev_semantic_key:
+                        repeated_issues.append({
+                            "current_issue_id": curr_rej.get("issue_id", ""),
+                            "previous_issue_id": prev_rej.get("issue_id", ""),
+                            "match_strategy": "semantic_key",
+                            "semantic_key": curr_semantic_key,
+                            "issue_text": curr_issue,
+                        })
+                        break
+                else:
+                    # Strategy 3: Fuzzy string matching as fallback
+                    prev_issue = ""
+                    for prev_rej in previous_rejected:
+                        prev_issue = prev_rej.get("original_issue", "")
+                        if prev_issue:
+                            ratio = SequenceMatcher(None, curr_issue.lower(), prev_issue.lower()).ratio()
+                            if ratio >= 0.7:
+                                repeated_issues.append({
+                                    "current_issue_id": curr_rej.get("issue_id", ""),
+                                    "previous_issue_id": prev_rej.get("issue_id", ""),
+                                    "match_strategy": "fuzzy_match",
+                                    "similarity_ratio": ratio,
+                                    "issue_text": curr_issue,
+                                })
+                                break
+            else:
+                # No semantic key, use Strategy 3 only
+                for prev_rej in previous_rejected:
+                    prev_issue = prev_rej.get("original_issue", "")
+                    if prev_issue:
+                        ratio = SequenceMatcher(None, curr_issue.lower(), prev_issue.lower()).ratio()
+                        if ratio >= 0.7:
+                            repeated_issues.append({
+                                "current_issue_id": curr_rej.get("issue_id", ""),
+                                "previous_issue_id": prev_rej.get("issue_id", ""),
+                                "match_strategy": "fuzzy_match",
+                                "similarity_ratio": ratio,
+                                "issue_text": curr_issue,
+                            })
+                            break
+
+        # Determine if we have a deadlock
+        disagreement_threshold = self.config.spec_debate.disagreement_threshold
+        is_deadlock = len(repeated_issues) >= disagreement_threshold
+
+        if is_deadlock:
+            self._log(
+                "semantic_disagreement_detected",
+                {
+                    "feature_id": feature_id,
+                    "repeated_count": len(repeated_issues),
+                    "threshold": disagreement_threshold,
+                    "repeated_issues": repeated_issues,
+                },
+            )
+
+        return {
+            "deadlock": is_deadlock,
+            "reason": "repeated_rejections" if is_deadlock else "below_threshold",
+            "repeated_issues": repeated_issues,
+        }
+
     def _check_stopping(
         self,
         scores: dict[str, float],
         issues: list[dict[str, Any]],
         prev_scores: Optional[dict[str, float]],
-    ) -> str:
+        dispositions: Optional[list[dict[str, Any]]] = None,
+        prev_dispositions: Optional[list[dict[str, Any]]] = None,
+        consecutive_no_improvement: int = 0,
+        feature_id: str = "",
+    ) -> tuple[str, int]:
         """
         Check stopping conditions for the debate.
 
@@ -183,13 +485,20 @@ class Orchestrator:
             scores: Current rubric scores.
             issues: List of issues from the critic.
             prev_scores: Scores from the previous round (if any).
+            dispositions: Current round dispositions from moderator.
+            prev_dispositions: Previous round dispositions.
+            consecutive_no_improvement: Count of rounds with no score improvement.
+            feature_id: Feature identifier for semantic disagreement detection.
 
         Returns:
-            "success" - All thresholds met, few/no issues
-            "stalemate" - No improvement from previous round
-            "continue" - Keep iterating
+            Tuple of (status, consecutive_no_improvement):
+            - "success" - All thresholds met, few/no issues
+            - "stalemate" - N consecutive rounds of no improvement
+            - "disagreement" - Moderator rejected same issues multiple rounds
+            - "continue" - Keep iterating
         """
         thresholds = self.config.spec_debate.rubric_thresholds
+        stalemate_threshold = self.config.spec_debate.consecutive_stalemate_threshold
 
         # Count issues by severity
         critical_count = sum(1 for i in issues if i.get("severity") == "critical")
@@ -203,7 +512,17 @@ class Orchestrator:
 
         # SUCCESS: All scores pass AND no critical issues AND <3 moderate issues
         if all_pass and critical_count == 0 and moderate_count < 3:
-            return "success"
+            return "success", 0
+
+        # Check for disagreement using semantic matching if we have both dispositions
+        if dispositions and prev_dispositions:
+            disagreement_result = self._detect_semantic_disagreement(
+                dispositions,
+                prev_dispositions,
+                feature_id,
+            )
+            if disagreement_result["deadlock"]:
+                return "disagreement", consecutive_no_improvement
 
         # Check for stalemate if we have previous scores
         if prev_scores is not None:
@@ -214,12 +533,17 @@ class Orchestrator:
             ]
             avg_improvement = sum(improvements) / len(improvements) if improvements else 0.0
 
-            # STALEMATE: Improvement < 0.05
+            # Track consecutive no-improvement rounds
             if avg_improvement < 0.05:
-                return "stalemate"
+                consecutive_no_improvement += 1
+                # STALEMATE: N consecutive rounds of no improvement
+                if consecutive_no_improvement >= stalemate_threshold:
+                    return "stalemate", consecutive_no_improvement
+            else:
+                consecutive_no_improvement = 0
 
         # CONTINUE: Keep iterating
-        return "continue"
+        return "continue", consecutive_no_improvement
 
     def _update_phase(self, feature_id: str, phase: FeaturePhase) -> None:
         """Update the feature phase in the state store."""
@@ -296,7 +620,7 @@ class Orchestrator:
         1. Author generates spec from PRD
         2. Critic reviews and scores spec
         3. If not passing, Moderator improves spec
-        4. Loop until success, stalemate, or max_rounds
+        4. Loop until success, stalemate, disagreement, or max_rounds
 
         Args:
             feature_id: The feature identifier.
@@ -308,6 +632,11 @@ class Orchestrator:
         total_cost = 0.0
         final_scores: dict[str, float] = {}
         prev_scores: Optional[dict[str, float]] = None
+
+        # Track dispositions across rounds for disagreement detection
+        issue_history: list[dict[str, Any]] = []
+        prev_dispositions: Optional[list[dict[str, Any]]] = None
+        consecutive_no_improvement = 0
 
         # Check feature exists
         if self._state_store:
@@ -352,9 +681,14 @@ class Orchestrator:
                         error=f"Spec author failed: {author_result.errors[0] if author_result.errors else 'Unknown error'}",
                     )
 
-            # Step 2: Critic reviews spec
+            # Step 2: Critic reviews spec (with rejection context for round 2+)
             self._critic.reset()
-            critic_result = self._critic.run({"feature_id": feature_id})
+            # Build rejection context from prior dispositions
+            rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
+            critic_result = self._critic.run({
+                "feature_id": feature_id,
+                "rejection_context": rejection_context,
+            })
             total_cost += critic_result.cost_usd
 
             if not critic_result.success:
@@ -388,50 +722,22 @@ class Orchestrator:
                 },
             )
 
-            # Check stopping conditions
-            stop_result = self._check_stopping(scores, issues, prev_scores)
-
-            if stop_result == "success":
-                self._log(
-                    "pipeline_success",
-                    {"feature_id": feature_id, "rounds": round_num, "scores": scores},
-                )
-                self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
-                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
-                return PipelineResult(
-                    status="success",
-                    feature_id=feature_id,
-                    rounds_completed=round_num,
-                    final_scores=final_scores,
-                    total_cost_usd=total_cost,
-                )
-
-            if stop_result == "stalemate":
-                self._log(
-                    "pipeline_stalemate",
-                    {"feature_id": feature_id, "rounds": round_num, "scores": scores},
-                )
-                self._update_phase(feature_id, FeaturePhase.BLOCKED)
-                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
-                return PipelineResult(
-                    status="stalemate",
-                    feature_id=feature_id,
-                    rounds_completed=round_num,
-                    final_scores=final_scores,
-                    total_cost_usd=total_cost,
-                )
-
             # Step 3: Moderator improves spec (if not last round)
+            current_dispositions: Optional[list[dict[str, Any]]] = None
+            # Extract disputed_issues from critic result for escalation
+            disputed_issues = critic_result.output.get("disputed_issues", [])
             if round_num < max_rounds:
                 self._moderator.reset()
-                moderator_result = self._moderator.run(
-                    {"feature_id": feature_id, "round": round_num}
-                )
+                moderator_result = self._moderator.run({
+                    "feature_id": feature_id,
+                    "round": round_num,
+                    "prior_dispositions": issue_history,
+                    "disputed_issues": disputed_issues,  # Pass for escalation handling
+                })
                 total_cost += moderator_result.cost_usd
 
                 if not moderator_result.success:
                     # Check if spec files indicate success despite the error
-                    # This handles timeout after Claude completed work but before response
                     files_ok, file_scores = self._check_spec_files_indicate_success(feature_id)
 
                     if files_ok:
@@ -469,14 +775,361 @@ class Orchestrator:
                         error=f"Spec moderator failed: {moderator_result.errors[0] if moderator_result.errors else 'Unknown error'}",
                     )
 
+                # Extract dispositions from moderator result
+                current_dispositions = moderator_result.output.get("dispositions", [])
+                if current_dispositions:
+                    issue_history.extend(current_dispositions)
+
                 # Use moderator's current scores for next comparison
                 prev_scores = moderator_result.output.get("current_scores", scores)
             else:
                 prev_scores = scores
 
+            # Check stopping conditions (after moderator for disposition tracking)
+            stop_result, consecutive_no_improvement = self._check_stopping(
+                scores,
+                issues,
+                prev_scores,
+                current_dispositions,
+                prev_dispositions,
+                consecutive_no_improvement,
+                feature_id,
+            )
+
+            # Store current dispositions for next round comparison
+            prev_dispositions = current_dispositions
+
+            if stop_result == "success":
+                self._log(
+                    "pipeline_success",
+                    {"feature_id": feature_id, "rounds": round_num, "scores": scores},
+                )
+                self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="success",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                )
+
+            if stop_result == "stalemate":
+                self._log(
+                    "pipeline_stalemate",
+                    {
+                        "feature_id": feature_id,
+                        "rounds": round_num,
+                        "scores": scores,
+                        "consecutive_no_improvement": consecutive_no_improvement,
+                    },
+                )
+                self._update_phase(feature_id, FeaturePhase.BLOCKED)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="stalemate",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                    message=f"No improvement for {consecutive_no_improvement} consecutive rounds.",
+                )
+
+            if stop_result == "disagreement":
+                rejected_issues = [
+                    d for d in (current_dispositions or [])
+                    if d.get("classification") == "REJECT"
+                ]
+                self._log(
+                    "pipeline_disagreement",
+                    {
+                        "feature_id": feature_id,
+                        "rounds": round_num,
+                        "rejected_issues": rejected_issues,
+                    },
+                )
+                self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="disagreement",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                    message="Architect and reviewer disagree on issues. Human review required.",
+                    rejected_issues=rejected_issues,
+                )
+
         # Reached max rounds - timeout
         self._log(
             "pipeline_timeout",
+            {"feature_id": feature_id, "rounds": max_rounds, "scores": final_scores},
+        )
+        self._update_phase(feature_id, FeaturePhase.BLOCKED)
+        self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+        return PipelineResult(
+            status="timeout",
+            feature_id=feature_id,
+            rounds_completed=max_rounds,
+            final_scores=final_scores,
+            total_cost_usd=total_cost,
+        )
+
+    def run_spec_debate_only(self, feature_id: str) -> PipelineResult:
+        """
+        Run the spec debate pipeline without the author step.
+
+        This is used for imported specs that already exist - it skips the
+        SpecAuthor and runs only Critic → Moderator debate.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            PipelineResult with status, scores, and cost.
+        """
+        max_rounds = self.config.spec_debate.max_rounds
+        total_cost = 0.0
+        final_scores: dict[str, float] = {}
+        prev_scores: Optional[dict[str, float]] = None
+
+        # NEW: Track dispositions across rounds for disagreement detection
+        issue_history: list[dict[str, Any]] = []
+        prev_dispositions: Optional[list[dict[str, Any]]] = None
+        consecutive_no_improvement = 0
+
+        # Check feature exists
+        if self._state_store:
+            state = self._state_store.load(feature_id)
+            if state is None:
+                return PipelineResult(
+                    status="failure",
+                    feature_id=feature_id,
+                    rounds_completed=0,
+                    final_scores={},
+                    total_cost_usd=0.0,
+                    error=f"Feature '{feature_id}' not found in state store",
+                )
+
+        # Verify spec-draft.md exists
+        spec_path = self.config.specs_path / feature_id / "spec-draft.md"
+        if not spec_path.exists():
+            return PipelineResult(
+                status="failure",
+                feature_id=feature_id,
+                rounds_completed=0,
+                final_scores={},
+                total_cost_usd=0.0,
+                error=f"Spec not found at {spec_path} - import the spec first",
+            )
+
+        # Update phase to SPEC_IN_PROGRESS
+        self._update_phase(feature_id, FeaturePhase.SPEC_IN_PROGRESS)
+
+        self._log(
+            "debate_only_start",
+            {"feature_id": feature_id, "max_rounds": max_rounds, "spec_path": str(spec_path)},
+        )
+
+        for round_num in range(1, max_rounds + 1):
+            self._log("round_start", {"feature_id": feature_id, "round": round_num})
+
+            # Step 1: Critic reviews spec (with rejection context for round 2+)
+            self._critic.reset()
+            # Build rejection context from prior dispositions
+            rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
+            critic_result = self._critic.run({
+                "feature_id": feature_id,
+                "rejection_context": rejection_context,
+            })
+            total_cost += critic_result.cost_usd
+
+            if not critic_result.success:
+                self._log(
+                    "critic_failure",
+                    {"feature_id": feature_id, "error": critic_result.errors},
+                    level="error",
+                )
+                self._update_phase(feature_id, FeaturePhase.BLOCKED)
+                return PipelineResult(
+                    status="failure",
+                    feature_id=feature_id,
+                    rounds_completed=round_num - 1,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                    error=f"Spec critic failed to review: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
+                )
+
+            # Extract scores and issues from critic result
+            scores = critic_result.output.get("scores", {})
+            issues = critic_result.output.get("issues", [])
+
+            final_scores = scores
+            self._log(
+                "round_scores",
+                {
+                    "feature_id": feature_id,
+                    "round": round_num,
+                    "scores": scores,
+                    "issue_counts": critic_result.output.get("issue_counts", {}),
+                },
+            )
+
+            # Step 2: Moderator improves spec (if not last round)
+            current_dispositions: Optional[list[dict[str, Any]]] = None
+            # Extract disputed_issues from critic result for escalation
+            disputed_issues = critic_result.output.get("disputed_issues", [])
+            if round_num < max_rounds:
+                self._moderator.reset()
+                moderator_result = self._moderator.run({
+                    "feature_id": feature_id,
+                    "round": round_num,
+                    "prior_dispositions": issue_history,  # Pass full history
+                    "disputed_issues": disputed_issues,  # Pass for escalation handling
+                })
+                total_cost += moderator_result.cost_usd
+
+                if not moderator_result.success:
+                    # Check if spec files indicate success despite the error
+                    files_ok, file_scores = self._check_spec_files_indicate_success(feature_id)
+
+                    if files_ok:
+                        self._log(
+                            "moderator_timeout_recovered",
+                            {
+                                "feature_id": feature_id,
+                                "recovered_from": "file_check",
+                                "scores": file_scores,
+                            },
+                        )
+                        self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                        self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                        return PipelineResult(
+                            status="success",
+                            feature_id=feature_id,
+                            rounds_completed=round_num,
+                            final_scores=file_scores,
+                            total_cost_usd=total_cost,
+                        )
+
+                    self._log(
+                        "moderator_failure",
+                        {"feature_id": feature_id, "error": moderator_result.errors},
+                        level="error",
+                    )
+                    self._update_phase(feature_id, FeaturePhase.BLOCKED)
+                    return PipelineResult(
+                        status="failure",
+                        feature_id=feature_id,
+                        rounds_completed=round_num,
+                        final_scores=final_scores,
+                        total_cost_usd=total_cost,
+                        error=f"Spec moderator failed: {moderator_result.errors[0] if moderator_result.errors else 'Unknown error'}",
+                    )
+
+                # Extract dispositions from moderator result
+                current_dispositions = moderator_result.output.get("dispositions", [])
+                if current_dispositions:
+                    issue_history.extend(current_dispositions)
+
+                # Log disposition summary
+                disp_counts = moderator_result.output.get("disposition_counts", {})
+                self._log(
+                    "round_dispositions",
+                    {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "accepted": disp_counts.get("accepted", 0),
+                        "rejected": disp_counts.get("rejected", 0),
+                        "deferred": disp_counts.get("deferred", 0),
+                        "partial": disp_counts.get("partial", 0),
+                    },
+                )
+
+                prev_scores = moderator_result.output.get("current_scores", scores)
+            else:
+                prev_scores = scores
+
+            # Check stopping conditions (now after moderator runs so we have dispositions)
+            stop_result, consecutive_no_improvement = self._check_stopping(
+                scores,
+                issues,
+                prev_scores,
+                current_dispositions,
+                prev_dispositions,
+                consecutive_no_improvement,
+                feature_id,
+            )
+
+            # Store current dispositions for next round comparison
+            prev_dispositions = current_dispositions
+
+            if stop_result == "success":
+                self._log(
+                    "debate_success",
+                    {"feature_id": feature_id, "rounds": round_num, "scores": scores},
+                )
+                self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="success",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                )
+
+            if stop_result == "stalemate":
+                self._log(
+                    "debate_stalemate",
+                    {
+                        "feature_id": feature_id,
+                        "rounds": round_num,
+                        "scores": scores,
+                        "consecutive_no_improvement": consecutive_no_improvement,
+                    },
+                )
+                self._update_phase(feature_id, FeaturePhase.BLOCKED)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="stalemate",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                    message=f"No improvement for {consecutive_no_improvement} consecutive rounds.",
+                )
+
+            if stop_result == "disagreement":
+                # Get the rejected issues for human review
+                rejected_issues = [
+                    d for d in (current_dispositions or [])
+                    if d.get("classification") == "REJECT"
+                ]
+                self._log(
+                    "debate_disagreement",
+                    {
+                        "feature_id": feature_id,
+                        "rounds": round_num,
+                        "rejected_issues": rejected_issues,
+                    },
+                )
+                # Don't mark as BLOCKED - this needs human review
+                self._update_phase(feature_id, FeaturePhase.SPEC_NEEDS_APPROVAL)
+                self._update_cost(feature_id, total_cost, "SPEC_IN_PROGRESS")
+                return PipelineResult(
+                    status="disagreement",
+                    feature_id=feature_id,
+                    rounds_completed=round_num,
+                    final_scores=final_scores,
+                    total_cost_usd=total_cost,
+                    message="Architect and reviewer disagree on issues. Human review required.",
+                    rejected_issues=rejected_issues,
+                )
+
+        # Reached max rounds - timeout
+        self._log(
+            "debate_timeout",
             {"feature_id": feature_id, "rounds": max_rounds, "scores": final_scores},
         )
         self._update_phase(feature_id, FeaturePhase.BLOCKED)

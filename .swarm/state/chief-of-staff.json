@@ -1,0 +1,12 @@
+{
+  "feature_id": "chief-of-staff",
+  "phase": "BLOCKED",
+  "tasks": [],
+  "current_session": null,
+  "created_at": "2025-12-12T21:09:31.826319Z",
+  "updated_at": "2025-12-12T21:47:41.853821Z",
+  "cost_total_usd": 1.18744575,
+  "cost_by_phase": {
+    "SPEC_IN_PROGRESS": 1.18744575
+  }
+}

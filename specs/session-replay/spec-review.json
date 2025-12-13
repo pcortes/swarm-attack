@@ -1,0 +1,49 @@
+{
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/session-replay/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/session-replay.md",
+  "reviewed_at": "2025-12-13T16:38:57.882928Z",
+  "scores": {
+    "clarity": 0.76,
+    "coverage": 0.62,
+    "architecture": 0.65,
+    "risk": 0.58
+  },
+  "issues": [
+    {
+      "severity": "critical",
+      "dimension": "coverage",
+      "location": "Section 8 - Open Questions (#1, #2, #5)",
+      "description": "The spec never resolves how coaching sessions and audio files reach the new tables/S3 bucket, yet every PRD requirement depends on that data being present. Without a defined ingestion/backfill plan for the `coaching_sessions` data and audio storage, we cannot guarantee that users will see any sessions to replay or that audio will exist for playback.",
+      "suggestion": "Document the upstream pipeline: identify the owning service, required columns, and migration/backfill steps to populate `coaching_sessions.audio_file_key` for existing data, and block implementation on completing that plan."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "architecture",
+      "location": "Section 3.2 - Schema Changes & migration file",
+      "description": "`coaching_sessions` is created unconditionally even though the spec acknowledges an existing or future upstream session model. Creating a parallel table without a migration strategy risks data divergence or downtime if the table already lives elsewhere.",
+      "suggestion": "Decide whether to extend the current session table or create a new one, then update the migration plan to either add the missing columns/constraints in-place or include data migration/backfill steps plus coordination with upstream owners."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "risk",
+      "location": "Section 1.3 Success Criteria",
+      "description": "Performance targets (load time, playback start, bookmark latency, etc.) are listed but no instrumentation or monitoring plan is described, so there is no way to verify or alert on these SLAs once the feature ships.",
+      "suggestion": "Specify how each metric will be captured (e.g., frontend perf beacons, backend tracing, logs) and add acceptance criteria or tasks to wire those measurements into dashboards/alerts."
+    },
+    {
+      "severity": "minor",
+      "dimension": "clarity",
+      "location": "Section 9.3 BookmarkTimeline component",
+      "description": "The component props note `onBookmarkAdd(timestamp, label)` but the spec never explains how the UI derives the timestamp (current playback position? manual entry?) or how users input labels, leaving interaction details ambiguous for implementers.",
+      "suggestion": "Add a short UX description showing the add-bookmark flow (e.g., CTA uses current player time, surfaces a modal for label entry, confirms on save) so frontend work can proceed without guesswork."
+    }
+  ],
+  "disputed_issues": [],
+  "strengths": [
+    "High-level architecture diagrams and component responsibilities make the service boundaries easy to understand.",
+    "API contract tables and example payloads cover the core CRUD flows for sessions and bookmarks in good detail."
+  ],
+  "summary": "The spec captures the desired user experience and API surfaces, but it leaves foundational data flow questions unresolved and does not yet articulate how success metrics will be measured. Address the upstream data/migration plan and flesh out the missing implementation details before handing this to engineering.",
+  "recommendation": "REVISE",
+  "pass_threshold_met": false
+}

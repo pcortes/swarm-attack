@@ -139,9 +139,13 @@ Write the complete spec - do not abbreviate or use placeholders.
         prompt = self._build_prompt(feature_id, prd_content)
 
         try:
+            # Use a higher max_turns for comprehensive PRDs that require
+            # more exploration and spec writing
             result = self.llm.run(
                 prompt,
                 allowed_tools=["Read", "Glob", "Write"],
+                max_turns=25,  # Comprehensive PRDs need many turns for exploration + spec writing
+                timeout=self.config.spec_debate.timeout_seconds,  # 15 min default for large specs
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:

@@ -98,10 +98,27 @@ class SpecCriticAgent(BaseAgent):
         return self._skill_prompt
 
     def _build_prompt(
-        self, feature_id: str, spec_content: str, prd_content: str
+        self, feature_id: str, spec_content: str, prd_content: str, rejection_context: str = ""
     ) -> str:
-        """Build the full prompt for GPT-5."""
+        """Build the full prompt for GPT-5.
+
+        Args:
+            feature_id: The feature identifier.
+            spec_content: The spec draft markdown content.
+            prd_content: The PRD markdown content.
+            rejection_context: Prior round rejection context to avoid re-raising.
+
+        Returns:
+            Full prompt string for the LLM.
+        """
         skill_prompt = self._load_skill_prompt()
+
+        # Build rejection context section if provided
+        rejection_section = ""
+        if rejection_context:
+            rejection_section = f"""
+{rejection_context}
+"""
 
         return f"""{skill_prompt}
 
@@ -110,7 +127,7 @@ class SpecCriticAgent(BaseAgent):
 ## Context for This Task
 
 **Feature ID:** {feature_id}
-
+{rejection_section}
 **PRD Content:**
 
 ```markdown
@@ -134,6 +151,24 @@ Score each rubric dimension (clarity, coverage, architecture, risk) from 0.0 to 
 Identify all issues with severity (critical, moderate, minor).
 Output ONLY valid JSON matching the schema in the skill instructions.
 Do not include any markdown code fences or explanatory text - just the raw JSON.
+
+## Output Schema
+
+Your output JSON MUST include these fields:
+```json
+{{
+  "scores": {{"clarity": 0.0, "coverage": 0.0, "architecture": 0.0, "risk": 0.0}},
+  "issues": [...],
+  "disputed_issues": [],
+  "strengths": [...],
+  "summary": "..."
+}}
+```
+
+**Important:**
+- `issues`: Regular issues you've identified (NEW issues not previously rejected)
+- `disputed_issues`: ONLY use this if you strongly disagree with a prior rejection
+  and have new evidence. See "If You Disagree With a Rejection" above.
 """
 
     def _parse_review_json(self, text: str) -> dict[str, Any]:
@@ -209,11 +244,12 @@ Do not include any markdown code fences or explanatory text - just the raw JSON.
         Args:
             context: Dictionary containing:
                 - feature_id: The feature identifier (required)
+                - rejection_context: Prior round rejection context (optional)
 
         Returns:
             AgentResult with:
                 - success: True if review was generated
-                - output: Dict with scores, issues, and review_path
+                - output: Dict with scores, issues, disputed_issues, and review_path
                 - errors: List of any errors encountered
                 - cost_usd: Cost of the LLM invocation
         """
@@ -221,7 +257,13 @@ Do not include any markdown code fences or explanatory text - just the raw JSON.
         if not feature_id:
             return AgentResult.failure_result("Missing required context: feature_id")
 
-        self._log("spec_critic_start", {"feature_id": feature_id})
+        # Extract optional rejection context for round 2+
+        rejection_context = context.get("rejection_context", "")
+
+        self._log("spec_critic_start", {
+            "feature_id": feature_id,
+            "has_rejection_context": bool(rejection_context),
+        })
         self.checkpoint("started")
 
         # Check if spec draft exists
@@ -256,11 +298,14 @@ Do not include any markdown code fences or explanatory text - just the raw JSON.
 
         self.checkpoint("files_loaded")
 
-        # Build prompt and invoke Codex
-        prompt = self._build_prompt(feature_id, spec_content, prd_content)
+        # Build prompt and invoke Codex (with rejection context for round 2+)
+        prompt = self._build_prompt(feature_id, spec_content, prd_content, rejection_context)
 
         try:
-            result = self.codex.run(prompt)
+            result = self.codex.run(
+                prompt,
+                timeout=self.config.spec_debate.timeout_seconds,  # 15 min default for large specs
+            )
             cost = 0.0  # Codex uses flat-rate subscription
         except CodexTimeoutError as e:
             error = f"Codex timed out: {e}"
@@ -335,11 +380,15 @@ Do not include any markdown code fences or explanatory text - just the raw JSON.
             },
         )
 
+        # Extract disputed issues if any (for escalation to human review)
+        disputed_issues = review.get("disputed_issues", [])
+
         return AgentResult.success_result(
             output={
                 "review_path": str(review_path),
                 "scores": review["scores"],
                 "issues": issues,
+                "disputed_issues": disputed_issues,  # NEW: For escalation path
                 "issue_counts": {
                     "critical": critical_count,
                     "moderate": moderate_count,

@@ -76,6 +76,10 @@ class SpecModeratorAgent(BaseAgent):
             self._skill_prompt = self.load_skill("feature-spec-moderator")
         return self._skill_prompt
 
+    def _get_dispositions_path(self, feature_id: str) -> Path:
+        """Get the path to the dispositions file."""
+        return self._get_spec_dir(feature_id) / "spec-dispositions.json"
+
     def _build_prompt(
         self,
         feature_id: str,
@@ -83,9 +87,60 @@ class SpecModeratorAgent(BaseAgent):
         review_content: dict[str, Any],
         prd_content: str,
         round_number: int,
+        prior_dispositions: Optional[list[dict[str, Any]]] = None,
+        disputed_issues: Optional[list[dict[str, Any]]] = None,
     ) -> str:
-        """Build the full prompt for Claude."""
+        """Build the full prompt for Claude.
+
+        Args:
+            feature_id: The feature identifier.
+            spec_content: The current spec draft content.
+            review_content: The critic's review as a dictionary.
+            prd_content: The PRD content.
+            round_number: Current debate round.
+            prior_dispositions: Dispositions from previous rounds.
+            disputed_issues: Issues the critic is disputing for escalation.
+
+        Returns:
+            Full prompt string.
+        """
         skill_prompt = self._load_skill_prompt()
+
+        # Format prior dispositions if available
+        prior_context = ""
+        if prior_dispositions:
+            prior_context = f"""
+
+## Prior Round Dispositions
+
+You previously classified these issues. HOLD YOUR GROUND on rejections:
+
+```json
+{json.dumps(prior_dispositions, indent=2)}
+```
+
+If the critic raises the same issues you already rejected, cite your prior reasoning
+and maintain your position. Don't flip-flop unless the critic provides compelling
+new evidence you missed.
+"""
+
+        # Format disputed issues section if any
+        disputed_section = ""
+        if disputed_issues:
+            disputed_section = f"""
+
+## Disputed Issues (REQUIRES EVALUATION)
+
+The critic is formally disputing the following previously-rejected issues.
+Evaluate each dispute carefully - if the evidence is compelling, recommend
+human review. If not, maintain rejection with explanation.
+
+```json
+{json.dumps(disputed_issues, indent=2)}
+```
+
+For each disputed issue, add a "dispute_resolutions" array to your rubric output.
+"""
 
         return f"""{skill_prompt}
 
@@ -95,8 +150,9 @@ class SpecModeratorAgent(BaseAgent):
 
 **Feature ID:** {feature_id}
 **Round Number:** {round_number}
+{prior_context}{disputed_section}
 
-**PRD Content:**
+**PRD Content (Source of Truth):**
 
 ```markdown
 {prd_content}
@@ -108,7 +164,7 @@ class SpecModeratorAgent(BaseAgent):
 {spec_content}
 ```
 
-**Critic Review:**
+**Critic Review (Round {round_number}):**
 
 ```json
 {json.dumps(review_content, indent=2)}
@@ -118,13 +174,31 @@ class SpecModeratorAgent(BaseAgent):
 
 ## Your Task
 
-1. Address the issues identified in the critic review
-2. Rewrite the spec draft with improvements
-3. Create a rubric assessment JSON
+1. **Evaluate each issue** - classify as ACCEPT, REJECT, DEFER, or PARTIAL
+2. **Document dispositions** - explain your reasoning for each
+3. **Apply accepted changes** - update the spec for ACCEPT and PARTIAL issues
+4. **Create rubric** - self-assess the current spec quality
+5. **Handle disputes** - if disputed_issues exist, evaluate and resolve them
 
 ## CRITICAL OUTPUT FORMAT
 
 You MUST output in EXACTLY this format. Do NOT deviate:
+
+<<<DISPOSITIONS_START>>>
+[
+  {{
+    "issue_id": "R{round_number}-1",
+    "original_issue": "[First issue from critic]",
+    "classification": "ACCEPT|REJECT|DEFER|PARTIAL",
+    "reasoning": "[2-3 sentences explaining why]",
+    "action_taken": "[what you changed, or 'none']",
+    "resolved": true,
+    "semantic_key": "[stable_key_for_this_issue]",
+    "repeat_of": "[prior issue_id if this is a repeat, else null]",
+    "consecutive_rejections": 1
+  }}
+]
+<<<DISPOSITIONS_END>>>
 
 <<<SPEC_START>>>
 # Engineering Spec: {feature_id}
@@ -137,19 +211,41 @@ You MUST output in EXACTLY this format. Do NOT deviate:
   "round": {round_number},
   "previous_scores": {json.dumps(review_content.get("scores", {}))},
   "current_scores": {{"clarity": 0.0, "coverage": 0.0, "architecture": 0.0, "risk": 0.0}},
-  "improvements": [],
-  "remaining_issues": [],
-  "issues_addressed": 0,
-  "issues_remaining": 0,
+  "issues_accepted": 0,
+  "issues_rejected": 0,
+  "issues_deferred": 0,
+  "issues_partial": 0,
   "continue_debate": true,
-  "ready_for_approval": false
+  "ready_for_approval": false,
+  "meta": {{
+    "recommend_human_review": false,
+    "review_reason": null
+  }},
+  "dispute_resolutions": []
 }}
 <<<RUBRIC_END>>>
+
+## Semantic Key Generation
+
+For each disposition, generate a `semantic_key` by:
+1. Lowercasing the issue text
+2. Removing common words (should, would, implement, add, etc.)
+3. Taking the first 3 significant words (>4 chars)
+4. Sorting alphabetically and joining with underscore
+
+Example: "Should implement refresh token rotation" → "refresh_rotation_token"
+
+## Tracking Repeat Issues
+
+If an issue is substantially similar to one you rejected in a prior round:
+- Set `repeat_of` to the prior issue_id (e.g., "R1-4")
+- Increment `consecutive_rejections` count
+- If rejected 2+ consecutive times, set `meta.recommend_human_review = true`
 
 ## CRITICAL: YOU MUST OUTPUT TEXT
 
 **THIS IS THE MOST IMPORTANT INSTRUCTION:**
-- You MUST output the spec and rubric as TEXT in your response
+- You MUST output the dispositions, spec, and rubric as TEXT in your response
 - Do NOT use any tools like Write, Edit, or Bash
 - The Write tool is NOT available to you
 - Your ONLY job is to OUTPUT TEXT with the markers
@@ -161,26 +257,8 @@ If you try to use tools or don't output text, the task will FAIL.
 - Do NOT wrap the spec in markdown code fences
 - Do NOT add explanations outside the markers
 - Do NOT modify the marker format (<<<SPEC_START>>>, etc.)
-- The rubric JSON must be valid JSON (no trailing commas, proper quotes)
+- All JSON must be valid (no trailing commas, proper quotes)
 - Fill in the rubric with your actual assessment scores and details
-
-## Example of Correct Output
-
-<<<SPEC_START>>>
-# Engineering Spec: My Feature
-
-## Overview
-This spec describes...
-
-## Requirements
-1. First requirement
-2. Second requirement
-
-<<<SPEC_END>>>
-
-<<<RUBRIC_START>>>
-{{"round": 1, "current_scores": {{"clarity": 0.8}}}}
-<<<RUBRIC_END>>>
 """
 
     # =========================================================================
@@ -212,6 +290,47 @@ This spec describes...
             result = re.sub(pattern, "", result, flags=re.IGNORECASE)
 
         return result.strip()
+
+    def _try_dispositions_extraction(self, text: str) -> list[dict[str, Any]] | None:
+        """
+        Extract dispositions using <<<DISPOSITIONS_START>>> markers.
+        Returns list of disposition dicts or None if not found.
+        """
+        disp_match = re.search(
+            r"<<<DISPOSITIONS_START>>>\s*(.*?)\s*<<<DISPOSITIONS_END>>>", text, re.DOTALL
+        )
+        if not disp_match:
+            return None
+
+        disp_text = disp_match.group(1).strip()
+        # Try to parse as JSON array
+        try:
+            # Strip markdown fences if present
+            disp_text = re.sub(r"^```(?:json)?\s*", "", disp_text)
+            disp_text = re.sub(r"\s*```\s*$", "", disp_text)
+            result = json.loads(disp_text)
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+        # Try fixing common issues
+        fixed_json = disp_text
+        fixes = [
+            (r",\s*([}\]])", r"\1"),  # Remove trailing commas
+            (r"'([^']*)':", r'"\1":'),  # Single to double quotes
+        ]
+        for pattern, replacement in fixes:
+            fixed_json = re.sub(pattern, replacement, fixed_json)
+
+        try:
+            result = json.loads(fixed_json)
+            if isinstance(result, list):
+                return result
+        except json.JSONDecodeError:
+            pass
+
+        return None
 
     def _try_delimiter_extraction(self, text: str) -> tuple[str | None, dict | None]:
         """
@@ -537,11 +656,13 @@ This spec describes...
             context: Dictionary containing:
                 - feature_id: The feature identifier (required)
                 - round: The current debate round number (default: 1)
+                - prior_dispositions: List of prior round dispositions (optional)
+                - disputed_issues: Issues critic is escalating for human review (optional)
 
         Returns:
             AgentResult with:
                 - success: True if spec was improved
-                - output: Dict with updated scores and continue_debate flag
+                - output: Dict with updated scores, continue_debate flag, dispositions, and meta
                 - errors: List of any errors encountered
                 - cost_usd: Cost of the LLM invocation
         """
@@ -550,9 +671,17 @@ This spec describes...
             return AgentResult.failure_result("Missing required context: feature_id")
 
         round_number = context.get("round", 1)
+        prior_dispositions = context.get("prior_dispositions", [])
+        disputed_issues = context.get("disputed_issues", [])
 
         self._log(
-            "spec_moderator_start", {"feature_id": feature_id, "round": round_number}
+            "spec_moderator_start",
+            {
+                "feature_id": feature_id,
+                "round": round_number,
+                "prior_dispositions_count": len(prior_dispositions) if prior_dispositions else 0,
+                "disputed_issues_count": len(disputed_issues) if disputed_issues else 0,
+            },
         )
         self.checkpoint("started")
 
@@ -590,9 +719,15 @@ This spec describes...
 
         self.checkpoint("files_loaded")
 
-        # Build prompt and invoke Claude
+        # Build prompt and invoke Claude (pass prior dispositions and disputed issues)
         prompt = self._build_prompt(
-            feature_id, spec_content, review_content, prd_content, round_number
+            feature_id,
+            spec_content,
+            review_content,
+            prd_content,
+            round_number,
+            prior_dispositions,
+            disputed_issues,
         )
 
         try:
@@ -601,6 +736,8 @@ This spec describes...
             result = self.llm.run(
                 prompt,
                 allowed_tools=["Read", "Glob"],
+                max_turns=12,  # Allow adequate exploration for comprehensive spec reviews
+                timeout=self.config.spec_debate.timeout_seconds,  # 15 min default for large specs
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:
@@ -627,10 +764,14 @@ This spec describes...
         # Get previous scores for default rubric creation
         previous_scores = review_content.get("scores", {})
         rubric_path = self._get_rubric_path(feature_id)
+        dispositions_path = self._get_dispositions_path(feature_id)
 
         # Parse response using multi-strategy fallback
         # Pass original spec for validation (to detect if it actually changed)
         updated_spec, rubric = self._parse_response(result.text, spec_content)
+
+        # Extract dispositions from the response
+        dispositions = self._try_dispositions_extraction(result.text or "")
 
         # Log parsing result for debugging
         self._log(
@@ -639,6 +780,8 @@ This spec describes...
                 "spec_extracted": updated_spec is not None,
                 "spec_length": len(updated_spec) if updated_spec else 0,
                 "rubric_extracted": rubric is not None,
+                "dispositions_extracted": dispositions is not None,
+                "dispositions_count": len(dispositions) if dispositions else 0,
                 "response_length": len(result.text) if result.text else 0,
             },
         )
@@ -690,6 +833,18 @@ This spec describes...
             self._log("spec_moderator_error", {"error": error}, level="error")
             return AgentResult.failure_result(error, cost_usd=cost)
 
+        # Write dispositions file (for tracking across rounds)
+        dispositions = dispositions or []
+        # Add round metadata to each disposition
+        for disp in dispositions:
+            disp["round"] = round_number
+        try:
+            safe_write(dispositions_path, json.dumps(dispositions, indent=2))
+            logger.info(f"Wrote {len(dispositions)} dispositions to {dispositions_path}")
+        except Exception as e:
+            logger.warning(f"Failed to write dispositions: {e}")
+            # Non-fatal - continue without dispositions file
+
         self.checkpoint("files_written", cost_usd=0)
 
         # Determine if we should continue
@@ -711,10 +866,23 @@ This spec describes...
             },
         )
 
+        # Count dispositions by classification
+        disposition_counts = {
+            "accepted": sum(1 for d in dispositions if d.get("classification") == "ACCEPT"),
+            "rejected": sum(1 for d in dispositions if d.get("classification") == "REJECT"),
+            "deferred": sum(1 for d in dispositions if d.get("classification") == "DEFER"),
+            "partial": sum(1 for d in dispositions if d.get("classification") == "PARTIAL"),
+        }
+
+        # Extract meta and dispute resolutions from rubric
+        meta = rubric.get("meta", {"recommend_human_review": False, "review_reason": None})
+        dispute_resolutions = rubric.get("dispute_resolutions", [])
+
         return AgentResult.success_result(
             output={
                 "spec_path": str(spec_path),
                 "rubric_path": str(rubric_path),
+                "dispositions_path": str(dispositions_path),
                 "round": round_number,
                 "previous_scores": previous_scores,
                 "current_scores": current_scores,
@@ -722,6 +890,10 @@ This spec describes...
                 "ready_for_approval": ready_for_approval,
                 "improvements": rubric.get("improvements", []),
                 "remaining_issues": rubric.get("remaining_issues", []),
+                "dispositions": dispositions,
+                "disposition_counts": disposition_counts,
+                "meta": meta,  # NEW: For human review recommendation
+                "dispute_resolutions": dispute_resolutions,  # NEW: For dispute handling
             },
             cost_usd=cost,
         )

@@ -1,0 +1,50 @@
+[
+  {
+    "issue_id": "R2-1",
+    "original_issue": "The spec never resolves how coaching sessions and audio files reach the new tables/S3 bucket, yet every PRD requirement depends on that data being present. Without a defined ingestion/backfill plan for the `coaching_sessions` data and audio storage, we cannot guarantee that users will see any sessions to replay or that audio will exist for playback.",
+    "classification": "REJECT",
+    "reasoning": "This is a repeat of R1-2. As stated in my prior disposition, the PRD defines requirements for replaying past sessions - it does not define how sessions are created or audio is ingested. Session creation is a separate upstream system concern outside the scope of this feature. The Open Questions section correctly identifies this as a blocking dependency requiring stakeholder clarification. Adding an ingestion pipeline specification would be scope creep beyond this feature's PRD.",
+    "action_taken": "none",
+    "resolved": false,
+    "semantic_key": "coaching_ingestion_sessions",
+    "repeat_of": "R1-2",
+    "consecutive_rejections": 2,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-2",
+    "original_issue": "`coaching_sessions` is created unconditionally even though the spec acknowledges an existing or future upstream session model. Creating a parallel table without a migration strategy risks data divergence or downtime if the table already lives elsewhere.",
+    "classification": "PARTIAL",
+    "reasoning": "The concern about table creation strategy is valid. However, the spec already uses CREATE TABLE IF NOT EXISTS and acknowledges the existing table question in Open Questions #2. I will add clarifying language to the migration section explaining the conditional approach and coordination requirements, without specifying a full migration strategy that depends on unknowns.",
+    "action_taken": "Added clarifying notes to Section 3.2 explaining the conditional table creation strategy and coordination requirements with upstream owners.",
+    "resolved": true,
+    "semantic_key": "migration_schema_sessions",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-3",
+    "original_issue": "Performance targets (load time, playback start, bookmark latency, etc.) are listed but no instrumentation or monitoring plan is described, so there is no way to verify or alert on these SLAs once the feature ships.",
+    "classification": "ACCEPT",
+    "reasoning": "This is a valid gap. The spec defines success criteria but doesn't explain how they will be measured. Adding a brief monitoring approach will help ensure the team can verify these targets post-launch without over-engineering the spec.",
+    "action_taken": "Added Section 11.4 'Observability & Metrics' describing instrumentation approach for each success criterion.",
+    "resolved": true,
+    "semantic_key": "instrumentation_monitoring_performance",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-4",
+    "original_issue": "The component props note `onBookmarkAdd(timestamp, label)` but the spec never explains how the UI derives the timestamp (current playback position? manual entry?) or how users input labels, leaving interaction details ambiguous for implementers.",
+    "classification": "ACCEPT",
+    "reasoning": "Valid clarity issue. The bookmark creation flow should be documented to avoid frontend implementation guesswork. This is a reasonable addition that clarifies existing functionality without adding scope.",
+    "action_taken": "Added UX flow description to Section 9.3 explaining the add-bookmark interaction pattern.",
+    "resolved": true,
+    "semantic_key": "bookmark_interaction_timestamp",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  }
+]
