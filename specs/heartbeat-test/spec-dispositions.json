@@ -1,0 +1,38 @@
+[
+  {
+    "issue_id": "R2-1",
+    "original_issue": "Weekly and monthly rollups are deleted as soon as their week_start/month_start is older than 30 days, which wipes out the prior month's aggregates midway through the following month even though several days of that period are still within the allowed retention window. This undermines the PRD requirement to show monthly trends because users quickly lose access to the most recent full month view.",
+    "classification": "ACCEPT",
+    "reasoning": "The reviewer raises a valid point. The current retention logic deletes weekly/monthly rollups based on start date, which means a monthly rollup starting Nov 1 would be deleted on Dec 1 even though it contains data from Nov 30 (still within 30-day window). The PRD requires 'Show weekly/monthly activity trends' and the 30-day constraint should apply to the data covered, not the period start date. I will add a period_end column and adjust retention logic accordingly.",
+    "action_taken": "Added period_end columns to activity_weekly and activity_monthly tables. Updated retention function to delete rollups only when period_end < cutoff_date. Updated data models to include period_end fields. Added clarifying documentation.",
+    "resolved": true,
+    "semantic_key": "monthly_retention_period",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-2",
+    "original_issue": "The Activity Collector only batches in memory (100 events or 30 seconds) and immediately POSTs to the API; there is no durable queue, retry policy, or background sync described. If the user goes offline or the request fails, those events are dropped permanently, which breaks the offline requirement and skews activity/peak-hour metrics.",
+    "classification": "ACCEPT",
+    "reasoning": "The reviewer correctly identifies a gap. The PRD states 'Must work offline after initial load' and while the spec addresses offline dashboard viewing, it doesn't address offline event collection. Events captured during offline periods would be lost, creating gaps in activity data. A durable client-side queue with background sync is needed for data integrity.",
+    "action_taken": "Added IndexedDB-backed event queue to Activity Collector SDK specification. Added Background Sync API integration for reliable event delivery. Updated SDK usage examples and configuration. Added retry policy with exponential backoff.",
+    "resolved": true,
+    "semantic_key": "collector_offline_queue",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-3",
+    "original_issue": "All aggregation tables store UTC timestamps and the spec never explains how hourly/day buckets or peak-hour analysis will respect each user's timezone preference. Without a timezone-aware aggregation plan, peak hours and daily activity charts will be incorrect for non-UTC users, violating the 'highlight peak productivity hours' goal.",
+    "classification": "ACCEPT",
+    "reasoning": "The reviewer is correct. The spec stores all data in UTC and mentions user timezone preferences exist, but never explains how peak hours and daily boundaries are computed in the user's local time. A user in PST seeing '10 AM' as their peak hour based on UTC data would actually be seeing 2 AM local time. This must be addressed to meet the PRD goal of highlighting peak productivity hours.",
+    "action_taken": "Added comprehensive timezone handling strategy in new section 7.4. API endpoints now convert UTC data to user timezone at read time. Peak hours analysis explicitly computes local-time buckets. Added timezone conversion utilities specification.",
+    "resolved": true,
+    "semantic_key": "aggregation_timezone_handling",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  }
+]

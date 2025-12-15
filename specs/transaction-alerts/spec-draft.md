@@ -1,0 +1,1518 @@
+# Engineering Spec: Transaction Alerts
+
+## 1. Overview
+
+### 1.1 Purpose
+
+Transaction Alerts is a real-time notification system that monitors user accounts for suspicious transaction activity and delivers alerts through multiple channels (push notifications, SMS, and email). The system enables users to configure personalized alert thresholds and temporarily snooze alerts when needed (e.g., while traveling).
+
+### 1.2 Scope
+
+**In Scope:**
+- Real-time transaction monitoring with <30 second alert delivery
+- Multi-channel notification delivery (push, SMS, email)
+- User-configurable alert rules and thresholds
+- System default rules for immediate value (>$500 transactions, high fraud scores)
+- Alert snooze functionality with automatic expiration
+- Quiet hours support with priority-based handling
+- Per-user alert rate limiting to prevent alert fatigue
+- Integration with existing notification service
+- Transaction data retention policy enforcement (90-day limit)
+- Support for 10M users and 100M transactions/day
+
+**Out of Scope:**
+- Fraud detection ML models (assumes upstream fraud scoring exists)
+- Payment blocking/hold functionality
+- User authentication and account management
+- Notification service implementation (existing service)
+- Transaction processing (reads from existing transaction stream)
+- False positive analytics and dashboards (emits events for downstream systems)
+- Fraud loss measurement and business impact analytics (emits events for downstream systems)
+
+### 1.3 Success Criteria
+
+| Criterion | Metric | Target |
+|-----------|--------|--------|
+| Alert latency | P99 delivery time | < 30 seconds |
+| User adoption | Opt-in rate | > 60% |
+| Alert quality | False positive rate | < 5% |
+| System scale | Concurrent users | 10M users |
+| Throughput | Daily transactions | 100M/day |
+| Availability | System uptime | 99.9% |
+
+---
+
+## 2. Architecture
+
+### 2.1 High-Level Design
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Transaction Alerts System                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                                    │
+                   ┌────────────────┴────────────────┐
+                   │      Transaction Stream         │
+                   │    (Kafka/Event Source)         │
+                   └────────────────┬────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Transaction Processor                                │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │  Transaction    │  │  Rule Engine    │  │  Alert          │             │
+│  │  Consumer       │──│  Evaluator      │──│  Generator      │             │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Alert Delivery Pipeline                             │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │  Alert Queue    │  │  Channel        │  │  Notification   │             │
+│  │  (Priority)     │──│  Router         │──│  Service        │             │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Storage Layer                                      │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐             │
+│  │  User           │  │  Alert          │  │  Alert          │             │
+│  │  Preferences    │  │  Rules          │  │  History        │             │
+│  │  (Redis)        │  │  (PostgreSQL)   │  │  (TimescaleDB)  │             │
+│  └─────────────────┘  └─────────────────┘  └─────────────────┘             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 Components
+
+| Component | Responsibility | Technology |
+|-----------|---------------|------------|
+| Transaction Consumer | Consume transactions from event stream | Kafka Consumer |
+| Rule Engine Evaluator | Evaluate user rules against transactions | In-memory rules cache + PostgreSQL |
+| Alert Generator | Create alert objects from triggered rules | Python service |
+| Alert Queue | Priority queue for alert delivery | Redis Sorted Set (clustered, AOF) |
+| Channel Router | Route alerts to appropriate notification channels | Python service |
+| Notification Service | Deliver notifications via push/SMS/email | Existing service (integration) |
+| User Preferences Store | Cache user preferences for fast lookup | Redis |
+| Alert Rules Store | Persist user-defined alert rules | PostgreSQL |
+| Alert History Store | Time-series storage for alert history | TimescaleDB (90-day retention) |
+
+### 2.3 Data Flow
+
+1. **Transaction Ingestion**
+   - Transaction events arrive via Kafka topic `transactions.processed`
+   - Consumer deserializes and validates transaction schema
+   - Transaction enriched with user_id and account metadata
+
+2. **Rule Evaluation**
+   - Fetch user's active alert rules from cache (Redis) or database
+   - Include system default rules (see Section 3.3)
+   - Check if user has active snooze period
+   - Evaluate each rule against transaction attributes
+   - Generate alert if any rule triggers
+
+3. **Alert Generation**
+   - Create Alert object with transaction details and triggered rule
+   - Assign priority based on rule severity and transaction amount
+   - Check rate limits (see Section 2.6)
+   - Enqueue to priority queue for delivery
+
+4. **Alert Delivery**
+   - Dequeue alerts by priority
+   - Check quiet hours (see Section 2.5)
+   - Route to user's preferred channels
+   - Call notification service for each channel
+   - Record delivery status in alert history
+
+5. **Cleanup**
+   - Background job purges alerts older than 90 days
+   - Expired snooze periods are automatically cleared
+
+### 2.4 Snooze Behavior
+
+When a user has an active snooze period, the system handles alerts as follows:
+
+**Behavior:** Alerts are **dropped** (not queued for later delivery).
+
+**Rationale:** Users snooze alerts during travel or known activity periods. Delivering a backlog of alerts when snooze ends would be overwhelming and the alerts would be stale. Users can review transaction history if they want to see what happened during the snooze period.
+
+**Implementation:**
+1. During rule evaluation, check for active snooze periods
+2. If snooze affects the triggered rule/channel, skip alert generation
+3. Record a delivery record with status `snoozed` for audit purposes
+4. Transaction remains in history and is visible via `/api/v1/alerts/history`
+
+**Partial Snooze:** If a snooze only covers specific channels (e.g., SMS snoozed but push active), alerts are delivered to non-snoozed channels only.
+
+### 2.5 Quiet Hours Behavior
+
+When a user has quiet hours configured, the system handles alerts based on priority:
+
+**Behavior by Priority:**
+
+| Priority | During Quiet Hours | Rationale |
+|----------|-------------------|-----------|
+| CRITICAL | Delivered immediately | Potential fraud requires immediate attention |
+| HIGH | Queued until quiet hours end | Important but not urgent |
+| NORMAL | Queued until quiet hours end | Standard alerts can wait |
+| LOW | Queued until quiet hours end | Informational alerts |
+
+**Implementation:**
+1. During alert delivery, check if current time falls within user's quiet hours (respecting timezone)
+2. If CRITICAL priority: bypass quiet hours, deliver immediately
+3. If non-CRITICAL: add to quiet hours queue with delivery_after timestamp
+4. Background job processes quiet hours queue when user's quiet hours end
+5. Queued alerts are delivered in priority order when quiet hours end
+
+**Queue Behavior:**
+- Alerts queued during quiet hours are delivered in batches when quiet hours end
+- If more than 10 alerts are queued, they are aggregated into a summary notification followed by individual alerts
+- Quiet hours queue uses the same Redis infrastructure as the main alert queue
+
+**Edge Cases:**
+- If quiet hours span midnight (e.g., 22:00-07:00), system correctly handles the date boundary
+- If user changes quiet hours while alerts are queued, existing queue is not affected
+
+### 2.6 Alert Rate Limiting
+
+To prevent alert fatigue and protect users from notification floods during fraud events:
+
+**Rate Limits:**
+
+| Limit Type | Threshold | Window | Action When Exceeded |
+|------------|-----------|--------|---------------------|
+| Per-user hourly | 20 alerts | 1 hour | Aggregate into summary |
+| Per-user daily | 100 alerts | 24 hours | Aggregate into summary |
+| Per-channel hourly | 10 alerts | 1 hour | Route to alternate channel |
+
+**Exemptions:**
+- CRITICAL priority alerts are never rate-limited (fraud must always notify)
+- System rules (fraud_score >= 0.7) bypass rate limits
+
+**Aggregation Behavior:**
+When rate limits are exceeded:
+1. Individual alerts continue to be recorded in alerts_history
+2. User receives a summary notification: "You have 15 new transaction alerts. Tap to view."
+3. Summary is sent on the least-used channel to avoid channel fatigue
+4. Rate limit counters reset at the top of each hour/day (UTC)
+
+**Implementation:**
+```python
+@dataclass
+class UserRateLimitState:
+    user_id: str
+    hourly_count: int = 0
+    daily_count: int = 0
+    hourly_reset_at: datetime
+    daily_reset_at: datetime
+    
+def check_rate_limit(user_id: str, priority: AlertPriority) -> RateLimitResult:
+    """Check if alert should be delivered or aggregated."""
+    if priority == AlertPriority.CRITICAL:
+        return RateLimitResult(allowed=True, reason="critical_exempt")
+    
+    state = get_user_rate_state(user_id)
+    
+    if state.hourly_count >= 20:
+        return RateLimitResult(allowed=False, reason="hourly_limit", aggregate=True)
+    if state.daily_count >= 100:
+        return RateLimitResult(allowed=False, reason="daily_limit", aggregate=True)
+    
+    return RateLimitResult(allowed=True)
+```
+
+**Monitoring:**
+- `alerts_rate_limited_total` counter tracks how often limits are hit
+- `alerts_aggregated_total` counter tracks summary notifications sent
+
+---
+
+## 3. Data Models
+
+### 3.1 New Models
+
+```python
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Optional, Literal
+from decimal import Decimal
+import uuid
+
+
+class AlertChannel(Enum):
+    """Supported notification channels."""
+    PUSH = "push"
+    SMS = "sms"
+    EMAIL = "email"
+
+
+class AlertPriority(Enum):
+    """Alert priority levels for queue ordering."""
+    CRITICAL = 1  # Immediate delivery (fraud, large amounts)
+    HIGH = 2      # Fast delivery (threshold exceeded)
+    NORMAL = 3    # Standard delivery (informational)
+    LOW = 4       # Batch delivery (summaries)
+
+
+class RuleOperator(Enum):
+    """Comparison operators for rule evaluation."""
+    GREATER_THAN = "gt"
+    GREATER_THAN_OR_EQUAL = "gte"
+    LESS_THAN = "lt"
+    LESS_THAN_OR_EQUAL = "lte"
+    EQUALS = "eq"
+    NOT_EQUALS = "neq"
+    IN = "in"
+    NOT_IN = "not_in"
+
+
+class RuleField(Enum):
+    """Transaction fields available for rule conditions."""
+    AMOUNT = "amount"
+    MERCHANT_CATEGORY = "merchant_category"
+    MERCHANT_NAME = "merchant_name"
+    COUNTRY = "country"
+    TRANSACTION_TYPE = "transaction_type"
+    IS_INTERNATIONAL = "is_international"
+    IS_CARD_PRESENT = "is_card_present"
+    FRAUD_SCORE = "fraud_score"  # Upstream fraud score (0.0 - 1.0)
+
+
+class RuleType(Enum):
+    """Distinguishes system-managed rules from user-created rules."""
+    SYSTEM = "system"  # Auto-provisioned, cannot be deleted by user
+    USER = "user"      # User-created, fully manageable
+
+
+@dataclass
+class RuleCondition:
+    """Single condition in an alert rule."""
+    field: RuleField
+    operator: RuleOperator
+    value: str | int | float | list[str]  # Type depends on field
+
+    def evaluate(self, transaction: "Transaction") -> bool:
+        """Evaluate this condition against a transaction."""
+        tx_value = getattr(transaction, self.field.value, None)
+        if tx_value is None:
+            return False
+
+        if self.operator == RuleOperator.GREATER_THAN:
+            return tx_value > self.value
+        elif self.operator == RuleOperator.GREATER_THAN_OR_EQUAL:
+            return tx_value >= self.value
+        elif self.operator == RuleOperator.LESS_THAN:
+            return tx_value < self.value
+        elif self.operator == RuleOperator.LESS_THAN_OR_EQUAL:
+            return tx_value <= self.value
+        elif self.operator == RuleOperator.EQUALS:
+            return tx_value == self.value
+        elif self.operator == RuleOperator.NOT_EQUALS:
+            return tx_value != self.value
+        elif self.operator == RuleOperator.IN:
+            return tx_value in self.value
+        elif self.operator == RuleOperator.NOT_IN:
+            return tx_value not in self.value
+        return False
+
+
+@dataclass
+class AlertRule:
+    """User-defined rule for triggering alerts."""
+    rule_id: str                                    # UUID
+    user_id: str                                    # User who owns this rule
+    name: str                                       # Human-readable name
+    description: str                                # Rule description
+    conditions: list[RuleCondition]                 # All conditions must match (AND)
+    channels: list[AlertChannel]                    # Channels to notify
+    priority: AlertPriority = AlertPriority.NORMAL  # Default priority
+    rule_type: RuleType = RuleType.USER             # System vs user rule
+    is_active: bool = True                          # Can be disabled without deletion
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+    def evaluate(self, transaction: "Transaction") -> bool:
+        """Evaluate all conditions against a transaction (AND logic)."""
+        if not self.is_active:
+            return False
+        return all(condition.evaluate(transaction) for condition in self.conditions)
+
+
+@dataclass
+class UserAlertPreferences:
+    """User's global alert preferences."""
+    user_id: str
+    alerts_enabled: bool = True                     # Master switch
+    default_channels: list[AlertChannel] = field(
+        default_factory=lambda: [AlertChannel.PUSH]
+    )
+    quiet_hours_start: Optional[int] = None         # Hour (0-23), None = disabled
+    quiet_hours_end: Optional[int] = None           # Hour (0-23)
+    quiet_hours_timezone: str = "UTC"               # User's timezone
+    min_amount_for_alert: Decimal = Decimal("0")    # Minimum transaction amount
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class AlertSnooze:
+    """Temporary snooze period for alerts."""
+    snooze_id: str                                  # UUID
+    user_id: str
+    reason: Optional[str] = None                    # e.g., "traveling"
+    channels_snoozed: list[AlertChannel] = field(  # Empty = all channels
+        default_factory=list
+    )
+    rules_snoozed: list[str] = field(              # Rule IDs, empty = all rules
+        default_factory=list
+    )
+    start_at: datetime = field(default_factory=datetime.utcnow)
+    end_at: datetime = field(                       # Default 24 hours
+        default_factory=lambda: datetime.utcnow() + timedelta(hours=24)
+    )
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    def is_active(self, at_time: Optional[datetime] = None) -> bool:
+        """Check if snooze is currently active."""
+        check_time = at_time or datetime.utcnow()
+        return self.start_at <= check_time <= self.end_at
+
+    def affects_rule(self, rule_id: str) -> bool:
+        """Check if this snooze affects a specific rule."""
+        return len(self.rules_snoozed) == 0 or rule_id in self.rules_snoozed
+
+    def affects_channel(self, channel: AlertChannel) -> bool:
+        """Check if this snooze affects a specific channel."""
+        return len(self.channels_snoozed) == 0 or channel in self.channels_snoozed
+
+
+@dataclass
+class Transaction:
+    """Transaction data from upstream system."""
+    transaction_id: str
+    user_id: str
+    account_id: str
+    amount: Decimal
+    currency: str
+    merchant_name: str
+    merchant_category: str
+    country: str
+    transaction_type: Literal["purchase", "withdrawal", "transfer", "refund"]
+    is_international: bool
+    is_card_present: bool
+    fraud_score: float                              # 0.0 - 1.0 from upstream
+    timestamp: datetime
+    metadata: dict = field(default_factory=dict)    # Additional attributes
+
+
+@dataclass
+class Alert:
+    """Generated alert ready for delivery."""
+    alert_id: str                                   # UUID
+    user_id: str
+    transaction_id: str
+    rule_id: str                                    # Rule that triggered this alert
+    rule_name: str
+    channels: list[AlertChannel]
+    priority: AlertPriority
+    title: str                                      # Short title for notification
+    body: str                                       # Full message body
+    amount: Decimal
+    merchant_name: str
+    transaction_timestamp: datetime
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    delivered_at: Optional[datetime] = None
+    delivery_status: dict[str, str] = field(        # channel -> status
+        default_factory=dict
+    )
+
+    def mark_delivered(self, channel: AlertChannel, status: str) -> None:
+        """Record delivery status for a channel."""
+        self.delivery_status[channel.value] = status
+        if all(s == "delivered" for s in self.delivery_status.values()):
+            self.delivered_at = datetime.utcnow()
+
+
+@dataclass
+class AlertDeliveryRecord:
+    """Record of alert delivery attempt."""
+    record_id: str                                  # UUID
+    alert_id: str
+    channel: AlertChannel
+    status: Literal["pending", "delivered", "failed", "snoozed", "quiet_hours", "rate_limited"]
+    attempted_at: datetime
+    delivered_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    snoozed_by: Optional[str] = None               # snooze_id if status=snoozed
+    deliver_after: Optional[datetime] = None       # For quiet hours queuing
+```
+
+### 3.2 Schema Changes
+
+**PostgreSQL Migrations:**
+
+```sql
+-- Migration: 001_create_alert_rules
+CREATE TABLE alert_rules (
+    rule_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(64) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    conditions JSONB NOT NULL,
+    channels TEXT[] NOT NULL,
+    priority VARCHAR(20) NOT NULL DEFAULT 'normal',
+    rule_type VARCHAR(20) NOT NULL DEFAULT 'user',
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT valid_priority CHECK (priority IN ('critical', 'high', 'normal', 'low')),
+    CONSTRAINT valid_channels CHECK (channels <@ ARRAY['push', 'sms', 'email']::TEXT[]),
+    CONSTRAINT valid_rule_type CHECK (rule_type IN ('system', 'user'))
+);
+
+CREATE INDEX idx_alert_rules_user_id ON alert_rules(user_id);
+CREATE INDEX idx_alert_rules_active ON alert_rules(user_id, is_active) WHERE is_active = true;
+
+
+-- Migration: 002_create_user_alert_preferences
+CREATE TABLE user_alert_preferences (
+    user_id VARCHAR(64) PRIMARY KEY,
+    alerts_enabled BOOLEAN NOT NULL DEFAULT true,
+    default_channels TEXT[] NOT NULL DEFAULT ARRAY['push'],
+    quiet_hours_start SMALLINT CHECK (quiet_hours_start >= 0 AND quiet_hours_start <= 23),
+    quiet_hours_end SMALLINT CHECK (quiet_hours_end >= 0 AND quiet_hours_end <= 23),
+    quiet_hours_timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
+    min_amount_for_alert DECIMAL(15,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+-- Migration: 003_create_alert_snooze
+CREATE TABLE alert_snooze (
+    snooze_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(64) NOT NULL,
+    reason TEXT,
+    channels_snoozed TEXT[],
+    rules_snoozed UUID[],
+    start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    end_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT valid_snooze_period CHECK (end_at > start_at)
+);
+
+CREATE INDEX idx_alert_snooze_user_active ON alert_snooze(user_id, end_at)
+    WHERE end_at > NOW();
+
+
+-- Migration: 004_create_alerts_history (TimescaleDB hypertable)
+CREATE TABLE alerts_history (
+    alert_id UUID NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    transaction_id VARCHAR(64) NOT NULL,
+    rule_id UUID NOT NULL,
+    rule_name VARCHAR(255) NOT NULL,
+    channels TEXT[] NOT NULL,
+    priority VARCHAR(20) NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    body TEXT NOT NULL,
+    amount DECIMAL(15,2) NOT NULL,
+    merchant_name VARCHAR(255) NOT NULL,
+    transaction_timestamp TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    delivered_at TIMESTAMPTZ,
+    delivery_status JSONB NOT NULL DEFAULT '{}'::JSONB,
+
+    PRIMARY KEY (alert_id, created_at)
+);
+
+-- Convert to TimescaleDB hypertable for efficient time-series queries
+SELECT create_hypertable('alerts_history', 'created_at');
+
+-- Automatic retention policy: drop data older than 90 days
+SELECT add_retention_policy('alerts_history', INTERVAL '90 days');
+
+CREATE INDEX idx_alerts_history_user ON alerts_history(user_id, created_at DESC);
+CREATE INDEX idx_alerts_history_transaction ON alerts_history(transaction_id);
+
+
+-- Migration: 005_create_delivery_records
+CREATE TABLE alert_delivery_records (
+    record_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    alert_id UUID NOT NULL,
+    channel VARCHAR(20) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    delivered_at TIMESTAMPTZ,
+    error_message TEXT,
+    retry_count INT NOT NULL DEFAULT 0,
+    snoozed_by UUID,  -- References snooze_id if status='snoozed'
+    deliver_after TIMESTAMPTZ,  -- For quiet hours queuing
+
+    CONSTRAINT valid_status CHECK (status IN ('pending', 'delivered', 'failed', 'snoozed', 'quiet_hours', 'rate_limited'))
+);
+
+CREATE INDEX idx_delivery_records_alert ON alert_delivery_records(alert_id);
+CREATE INDEX idx_delivery_records_pending ON alert_delivery_records(status)
+    WHERE status = 'pending';
+CREATE INDEX idx_delivery_records_quiet_hours ON alert_delivery_records(deliver_after)
+    WHERE status = 'quiet_hours' AND deliver_after IS NOT NULL;
+
+
+-- Migration: 006_create_rate_limit_state
+CREATE TABLE user_rate_limit_state (
+    user_id VARCHAR(64) PRIMARY KEY,
+    hourly_count INT NOT NULL DEFAULT 0,
+    daily_count INT NOT NULL DEFAULT 0,
+    hourly_reset_at TIMESTAMPTZ NOT NULL,
+    daily_reset_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### 3.3 System Default Rules
+
+Every user receives the following system-managed rules upon account creation. These rules ensure immediate value per PRD requirements and cannot be deleted (only disabled).
+
+**Default Rule 1: Large Transaction Alert**
+
+| Property | Value |
+|----------|-------|
+| Name | Large Transaction |
+| Description | Alerts for transactions over $500 |
+| Condition | `amount >= 500` |
+| Priority | HIGH |
+| Channels | User's default channels (initially: push) |
+| Rule Type | SYSTEM |
+
+**Default Rule 2: Suspicious Activity Alert**
+
+| Property | Value |
+|----------|-------|
+| Name | Suspicious Activity |
+| Description | Alerts for transactions with high fraud scores |
+| Condition | `fraud_score >= 0.7` |
+| Priority | CRITICAL |
+| Channels | All enabled channels (push, SMS, email) |
+| Rule Type | SYSTEM |
+
+**Provisioning:**
+- System rules are created during user onboarding via the `provision_default_rules(user_id)` function
+- Rules are stored in `alert_rules` table with `rule_type = 'system'`
+- API prevents deletion of system rules (returns 403 FORBIDDEN)
+- Users may disable system rules via the toggle endpoint
+- Users may customize thresholds by creating their own rules
+
+**Implementation:**
+
+```python
+SYSTEM_DEFAULT_RULES = [
+    {
+        "name": "Large Transaction",
+        "description": "Alerts for transactions over $500",
+        "conditions": [
+            {"field": "amount", "operator": "gte", "value": 500.00}
+        ],
+        "priority": "high",
+        "rule_type": "system",
+    },
+    {
+        "name": "Suspicious Activity",
+        "description": "Alerts for transactions with high fraud scores",
+        "conditions": [
+            {"field": "fraud_score", "operator": "gte", "value": 0.7}
+        ],
+        "priority": "critical",
+        "rule_type": "system",
+    },
+]
+
+async def provision_default_rules(user_id: str, preferences: UserAlertPreferences) -> list[AlertRule]:
+    """Create system default rules for a new user."""
+    rules = []
+    for rule_def in SYSTEM_DEFAULT_RULES:
+        rule = AlertRule(
+            rule_id=str(uuid.uuid4()),
+            user_id=user_id,
+            name=rule_def["name"],
+            description=rule_def["description"],
+            conditions=[RuleCondition(**c) for c in rule_def["conditions"]],
+            channels=preferences.default_channels if rule_def["priority"] == "high" 
+                     else list(AlertChannel),  # Critical rules use all channels
+            priority=AlertPriority[rule_def["priority"].upper()],
+            rule_type=RuleType.SYSTEM,
+        )
+        rules.append(rule)
+    return rules
+```
+
+---
+
+## 4. API Design
+
+### 4.1 Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/v1/alerts/preferences | Get user's alert preferences |
+| PUT | /api/v1/alerts/preferences | Update user's alert preferences |
+| GET | /api/v1/alerts/rules | List user's alert rules |
+| POST | /api/v1/alerts/rules | Create a new alert rule |
+| GET | /api/v1/alerts/rules/{rule_id} | Get a specific rule |
+| PUT | /api/v1/alerts/rules/{rule_id} | Update a rule |
+| DELETE | /api/v1/alerts/rules/{rule_id} | Delete a rule (user rules only) |
+| POST | /api/v1/alerts/rules/{rule_id}/toggle | Enable/disable a rule |
+| GET | /api/v1/alerts/snooze | Get active snooze periods |
+| POST | /api/v1/alerts/snooze | Create a snooze period |
+| DELETE | /api/v1/alerts/snooze/{snooze_id} | Cancel a snooze |
+| GET | /api/v1/alerts/history | List alert history |
+| GET | /api/v1/alerts/{alert_id} | Get a specific alert |
+
+### 4.2 Request/Response Schemas
+
+**GET /api/v1/alerts/preferences**
+
+Response:
+```json
+{
+  "user_id": "usr_123456",
+  "alerts_enabled": true,
+  "default_channels": ["push", "email"],
+  "quiet_hours": {
+    "enabled": true,
+    "start": 22,
+    "end": 7,
+    "timezone": "America/New_York"
+  },
+  "min_amount_for_alert": "10.00"
+}
+```
+
+**PUT /api/v1/alerts/preferences**
+
+Request:
+```json
+{
+  "alerts_enabled": true,
+  "default_channels": ["push", "sms"],
+  "quiet_hours": {
+    "enabled": true,
+    "start": 23,
+    "end": 8,
+    "timezone": "America/Los_Angeles"
+  },
+  "min_amount_for_alert": "25.00"
+}
+```
+
+Response: Same as GET
+
+**POST /api/v1/alerts/rules**
+
+Request:
+```json
+{
+  "name": "Large transactions",
+  "description": "Alert me for transactions over $500",
+  "conditions": [
+    {
+      "field": "amount",
+      "operator": "gte",
+      "value": 500.00
+    }
+  ],
+  "channels": ["push", "sms"],
+  "priority": "high"
+}
+```
+
+Response:
+```json
+{
+  "rule_id": "rul_abc123def456",
+  "user_id": "usr_123456",
+  "name": "Large transactions",
+  "description": "Alert me for transactions over $500",
+  "conditions": [
+    {
+      "field": "amount",
+      "operator": "gte",
+      "value": 500.00
+    }
+  ],
+  "channels": ["push", "sms"],
+  "priority": "high",
+  "rule_type": "user",
+  "is_active": true,
+  "created_at": "2025-12-15T10:30:00Z",
+  "updated_at": "2025-12-15T10:30:00Z"
+}
+```
+
+**GET /api/v1/alerts/rules**
+
+Response includes both system and user rules:
+```json
+{
+  "rules": [
+    {
+      "rule_id": "rul_sys_001",
+      "name": "Large Transaction",
+      "description": "Alerts for transactions over $500",
+      "conditions": [{"field": "amount", "operator": "gte", "value": 500.00}],
+      "channels": ["push"],
+      "priority": "high",
+      "rule_type": "system",
+      "is_active": true,
+      "created_at": "2025-12-01T00:00:00Z",
+      "updated_at": "2025-12-01T00:00:00Z"
+    },
+    {
+      "rule_id": "rul_sys_002",
+      "name": "Suspicious Activity",
+      "description": "Alerts for transactions with high fraud scores",
+      "conditions": [{"field": "fraud_score", "operator": "gte", "value": 0.7}],
+      "channels": ["push", "sms", "email"],
+      "priority": "critical",
+      "rule_type": "system",
+      "is_active": true,
+      "created_at": "2025-12-01T00:00:00Z",
+      "updated_at": "2025-12-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+**DELETE /api/v1/alerts/rules/{rule_id}**
+
+For system rules, returns 403:
+```json
+{
+  "error": {
+    "code": "CANNOT_DELETE_SYSTEM_RULE",
+    "message": "System rules cannot be deleted. Use the toggle endpoint to disable.",
+    "details": {
+      "rule_id": "rul_sys_001",
+      "rule_type": "system"
+    }
+  }
+}
+```
+
+**POST /api/v1/alerts/snooze**
+
+Request:
+```json
+{
+  "reason": "Traveling internationally",
+  "duration_hours": 72,
+  "channels_snoozed": [],
+  "rules_snoozed": []
+}
+```
+
+Response:
+```json
+{
+  "snooze_id": "snz_xyz789",
+  "user_id": "usr_123456",
+  "reason": "Traveling internationally",
+  "channels_snoozed": [],
+  "rules_snoozed": [],
+  "start_at": "2025-12-15T10:30:00Z",
+  "end_at": "2025-12-18T10:30:00Z",
+  "created_at": "2025-12-15T10:30:00Z"
+}
+```
+
+**GET /api/v1/alerts/history**
+
+Query Parameters:
+- `limit` (int, default: 50, max: 100)
+- `offset` (int, default: 0)
+- `start_date` (ISO date, optional)
+- `end_date` (ISO date, optional)
+- `rule_id` (UUID, optional)
+- `include_snoozed` (bool, default: false) - Include transactions that occurred during snooze
+
+Response:
+```json
+{
+  "alerts": [
+    {
+      "alert_id": "alt_abc123",
+      "transaction_id": "txn_xyz789",
+      "rule_id": "rul_abc123def456",
+      "rule_name": "Large transactions",
+      "title": "Large Transaction Alert",
+      "body": "A transaction of $750.00 at Amazon.com was detected",
+      "amount": "750.00",
+      "merchant_name": "Amazon.com",
+      "channels": ["push", "sms"],
+      "priority": "high",
+      "transaction_timestamp": "2025-12-15T10:25:00Z",
+      "created_at": "2025-12-15T10:25:05Z",
+      "delivered_at": "2025-12-15T10:25:08Z",
+      "delivery_status": {
+        "push": "delivered",
+        "sms": "delivered"
+      }
+    }
+  ],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "total": 127
+  }
+}
+```
+
+### 4.3 Error Responses
+
+```json
+{
+  "error": {
+    "code": "RULE_NOT_FOUND",
+    "message": "Alert rule with ID 'rul_invalid' not found",
+    "details": {
+      "rule_id": "rul_invalid"
+    }
+  }
+}
+```
+
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| INVALID_REQUEST | 400 | Malformed request body |
+| INVALID_RULE_CONDITION | 400 | Invalid rule condition syntax |
+| RULE_NOT_FOUND | 404 | Rule does not exist |
+| SNOOZE_NOT_FOUND | 404 | Snooze period does not exist |
+| CANNOT_DELETE_SYSTEM_RULE | 403 | Attempted to delete a system rule |
+| MAX_RULES_EXCEEDED | 429 | User has too many rules (limit: 50) |
+| MAX_SNOOZE_EXCEEDED | 429 | User has too many active snoozes |
+| INTERNAL_ERROR | 500 | Internal server error |
+
+---
+
+## 5. Implementation Plan
+
+### 5.1 Tasks
+
+| # | Task | Dependencies | Size | Description |
+|---|------|--------------|------|-------------|
+| 1 | Create data models | None | M | Implement all dataclasses in `models/alert_models.py` |
+| 2 | Database migrations | None | S | Create PostgreSQL and TimescaleDB migrations |
+| 3 | Alert rules repository | 1, 2 | M | CRUD operations for alert rules with caching |
+| 4 | User preferences repository | 1, 2 | S | CRUD for user preferences with Redis cache |
+| 5 | Snooze repository | 1, 2 | S | Snooze period management |
+| 6 | Rule evaluation engine | 1 | M | Evaluate conditions against transactions |
+| 7 | Transaction consumer | 1 | M | Kafka consumer for transaction events |
+| 8 | Alert generator service | 1, 6 | M | Generate alerts from triggered rules |
+| 9 | Alert queue manager | 1 | S | Priority queue for alert delivery |
+| 10 | Channel router | 1 | M | Route alerts to notification channels |
+| 11 | Notification service integration | 10 | M | Integrate with existing notification service |
+| 12 | Alert history repository | 1, 2 | M | TimescaleDB storage with retention |
+| 13 | REST API endpoints | 3, 4, 5, 12 | L | All API endpoints with validation |
+| 14 | Alert processor orchestrator | 7, 8, 9, 10 | L | Coordinate the full pipeline |
+| 15 | Default rules provisioning | 3, 4 | S | System default rules on user creation |
+| 16 | Quiet hours handler | 4, 9 | M | Queue and deliver alerts respecting quiet hours |
+| 17 | Rate limiter | 4, 8 | M | Per-user rate limiting with aggregation |
+| 18 | Monitoring and metrics | 14 | M | Prometheus metrics, latency tracking |
+| 19 | Unit tests | 1-18 | L | Comprehensive unit test coverage |
+| 20 | Integration tests | 19 | L | End-to-end pipeline tests |
+| 21 | Load testing | 20 | M | Verify 100M transactions/day throughput |
+
+### 5.2 File Changes
+
+**New Files:**
+```
+src/
+├── alerts/
+│   ├── __init__.py
+│   ├── models.py                    # Task 1: Data models
+│   ├── constants.py                 # Task 15: System default rules definitions
+│   ├── repositories/
+│   │   ├── __init__.py
+│   │   ├── rules_repository.py      # Task 3: Alert rules CRUD
+│   │   ├── preferences_repository.py # Task 4: User preferences
+│   │   ├── snooze_repository.py     # Task 5: Snooze management
+│   │   └── history_repository.py    # Task 12: Alert history
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── rule_engine.py           # Task 6: Rule evaluation
+│   │   ├── alert_generator.py       # Task 8: Alert generation
+│   │   ├── channel_router.py        # Task 10: Channel routing
+│   │   ├── notification_adapter.py  # Task 11: Notification integration
+│   │   ├── user_provisioning.py     # Task 15: Default rule provisioning
+│   │   ├── quiet_hours_handler.py   # Task 16: Quiet hours logic
+│   │   └── rate_limiter.py          # Task 17: Rate limiting
+│   ├── consumers/
+│   │   ├── __init__.py
+│   │   └── transaction_consumer.py  # Task 7: Kafka consumer
+│   ├── queue/
+│   │   ├── __init__.py
+│   │   └── alert_queue.py           # Task 9: Priority queue
+│   ├── orchestrator.py              # Task 14: Pipeline coordinator
+│   └── api/
+│       ├── __init__.py
+│       ├── routes.py                # Task 13: API routes
+│       ├── schemas.py               # Task 13: Pydantic schemas
+│       └── handlers.py              # Task 13: Request handlers
+├── migrations/
+│   ├── 001_create_alert_rules.sql
+│   ├── 002_create_user_alert_preferences.sql
+│   ├── 003_create_alert_snooze.sql
+│   ├── 004_create_alerts_history.sql
+│   ├── 005_create_delivery_records.sql
+│   └── 006_create_rate_limit_state.sql
+tests/
+├── alerts/
+│   ├── test_models.py               # Task 19
+│   ├── test_rule_engine.py          # Task 19
+│   ├── test_alert_generator.py      # Task 19
+│   ├── test_repositories.py         # Task 19
+│   ├── test_api.py                  # Task 19
+│   ├── test_default_rules.py        # Task 19: System rules tests
+│   ├── test_quiet_hours.py          # Task 19: Quiet hours tests
+│   ├── test_rate_limiter.py         # Task 19: Rate limit tests
+│   └── integration/
+│       ├── test_full_pipeline.py    # Task 20
+│       └── test_load.py             # Task 21
+```
+
+**Modified Files:**
+```
+src/
+├── config.py                        # Add alerts configuration section
+├── main.py                          # Register alert API routes
+└── services/notification_service.py # Add alert delivery methods (if needed)
+```
+
+---
+
+## 6. Testing Strategy
+
+### 6.1 Unit Tests
+
+| Component | Test Cases | Coverage Target |
+|-----------|------------|-----------------|
+| Data models | Serialization, validation, equality | 95% |
+| Rule conditions | All operators, edge cases, fraud_score | 100% |
+| Rule engine | Single/multiple conditions, inactive rules, system rules | 90% |
+| Alert generator | Title/body formatting, priority assignment | 90% |
+| Repositories | CRUD operations, cache invalidation | 85% |
+| Queue manager | Priority ordering, dequeue behavior | 90% |
+| API handlers | Request validation, error responses, system rule protection | 85% |
+| Default provisioning | New user gets system rules, idempotency | 90% |
+| Quiet hours handler | Queueing, delivery timing, CRITICAL bypass | 90% |
+| Rate limiter | Limit enforcement, aggregation, CRITICAL bypass | 90% |
+
+**Key Unit Tests:**
+
+```python
+# test_rule_engine.py
+def test_amount_greater_than_condition():
+    """Rule triggers when transaction amount exceeds threshold."""
+    rule = AlertRule(
+        rule_id="test_rule",
+        user_id="user_123",
+        name="Large tx",
+        description="",
+        conditions=[
+            RuleCondition(
+                field=RuleField.AMOUNT,
+                operator=RuleOperator.GREATER_THAN,
+                value=500
+            )
+        ],
+        channels=[AlertChannel.PUSH]
+    )
+
+    tx_over = Transaction(amount=Decimal("750.00"), ...)
+    tx_under = Transaction(amount=Decimal("100.00"), ...)
+
+    assert rule.evaluate(tx_over) == True
+    assert rule.evaluate(tx_under) == False
+
+def test_fraud_score_triggers_alert():
+    """High fraud score triggers suspicious activity rule."""
+    rule = AlertRule(
+        rule_id="fraud_rule",
+        user_id="user_123",
+        name="Suspicious Activity",
+        description="",
+        conditions=[
+            RuleCondition(
+                field=RuleField.FRAUD_SCORE,
+                operator=RuleOperator.GREATER_THAN_OR_EQUAL,
+                value=0.7
+            )
+        ],
+        channels=[AlertChannel.PUSH, AlertChannel.SMS, AlertChannel.EMAIL],
+        priority=AlertPriority.CRITICAL,
+        rule_type=RuleType.SYSTEM
+    )
+
+    tx_suspicious = Transaction(fraud_score=0.85, amount=Decimal("50.00"), ...)
+    tx_normal = Transaction(fraud_score=0.2, amount=Decimal("50.00"), ...)
+
+    assert rule.evaluate(tx_suspicious) == True
+    assert rule.evaluate(tx_normal) == False
+
+def test_multiple_conditions_require_all_match():
+    """All conditions must match for rule to trigger (AND logic)."""
+    rule = AlertRule(
+        conditions=[
+            RuleCondition(RuleField.AMOUNT, RuleOperator.GREATER_THAN, 100),
+            RuleCondition(RuleField.IS_INTERNATIONAL, RuleOperator.EQUALS, True),
+        ],
+        ...
+    )
+
+    tx_both = Transaction(amount=Decimal("500"), is_international=True, ...)
+    tx_amount_only = Transaction(amount=Decimal("500"), is_international=False, ...)
+
+    assert rule.evaluate(tx_both) == True
+    assert rule.evaluate(tx_amount_only) == False
+
+def test_snooze_blocks_alert():
+    """Active snooze prevents alert generation."""
+    snooze = AlertSnooze(
+        user_id="user_123",
+        start_at=datetime.utcnow() - timedelta(hours=1),
+        end_at=datetime.utcnow() + timedelta(hours=23),
+    )
+
+    assert snooze.is_active() == True
+
+def test_expired_snooze_allows_alert():
+    """Expired snooze does not block alerts."""
+    snooze = AlertSnooze(
+        user_id="user_123",
+        start_at=datetime.utcnow() - timedelta(hours=25),
+        end_at=datetime.utcnow() - timedelta(hours=1),
+    )
+
+    assert snooze.is_active() == False
+
+# test_default_rules.py
+def test_new_user_receives_system_rules():
+    """New users are provisioned with system default rules."""
+    user_id = "new_user_123"
+    preferences = UserAlertPreferences(user_id=user_id)
+    
+    rules = await provision_default_rules(user_id, preferences)
+    
+    assert len(rules) == 2
+    assert all(r.rule_type == RuleType.SYSTEM for r in rules)
+    assert any(r.name == "Large Transaction" for r in rules)
+    assert any(r.name == "Suspicious Activity" for r in rules)
+
+def test_cannot_delete_system_rule():
+    """API returns 403 when attempting to delete system rule."""
+    response = client.delete("/api/v1/alerts/rules/rul_sys_001")
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "CANNOT_DELETE_SYSTEM_RULE"
+
+def test_can_disable_system_rule():
+    """System rules can be disabled via toggle endpoint."""
+    response = client.post("/api/v1/alerts/rules/rul_sys_001/toggle")
+    assert response.status_code == 200
+    assert response.json()["is_active"] == False
+
+# test_quiet_hours.py
+def test_critical_alerts_bypass_quiet_hours():
+    """CRITICAL priority alerts are delivered during quiet hours."""
+    user = create_user_with_quiet_hours(start=22, end=7)
+    alert = create_alert(priority=AlertPriority.CRITICAL)
+    
+    result = quiet_hours_handler.process(alert, current_hour=23)
+    
+    assert result.action == "deliver_now"
+    assert result.queued == False
+
+def test_high_priority_alerts_queued_during_quiet_hours():
+    """HIGH priority alerts are queued during quiet hours."""
+    user = create_user_with_quiet_hours(start=22, end=7)
+    alert = create_alert(priority=AlertPriority.HIGH)
+    
+    result = quiet_hours_handler.process(alert, current_hour=23)
+    
+    assert result.action == "queue"
+    assert result.deliver_after.hour == 7
+
+def test_queued_alerts_delivered_when_quiet_hours_end():
+    """Queued alerts are delivered when quiet hours end."""
+    # Queue 5 alerts during quiet hours
+    alerts = [create_alert(priority=AlertPriority.NORMAL) for _ in range(5)]
+    
+    # Simulate quiet hours ending
+    delivered = quiet_hours_handler.process_queue(user_id, current_hour=7)
+    
+    assert len(delivered) == 5
+
+# test_rate_limiter.py
+def test_rate_limit_aggregates_excess_alerts():
+    """Alerts beyond rate limit are aggregated into summary."""
+    user_id = "user_123"
+    
+    # Send 25 alerts (5 over hourly limit of 20)
+    results = [rate_limiter.check(user_id, AlertPriority.NORMAL) for _ in range(25)]
+    
+    allowed = [r for r in results if r.allowed]
+    aggregated = [r for r in results if r.aggregate]
+    
+    assert len(allowed) == 20
+    assert len(aggregated) == 5
+
+def test_critical_alerts_bypass_rate_limit():
+    """CRITICAL alerts are never rate limited."""
+    user_id = "user_123"
+    
+    # Exhaust rate limit with normal alerts
+    for _ in range(25):
+        rate_limiter.check(user_id, AlertPriority.NORMAL)
+    
+    # CRITICAL should still be allowed
+    result = rate_limiter.check(user_id, AlertPriority.CRITICAL)
+    
+    assert result.allowed == True
+    assert result.reason == "critical_exempt"
+```
+
+### 6.2 Integration Tests
+
+| Scenario | Description | Validation |
+|----------|-------------|------------|
+| Full pipeline happy path | Transaction → Alert → Delivery | Alert delivered < 30s |
+| System rule triggers on new user | $600 transaction for new user | Alert delivered via default rules |
+| Fraud score triggers critical alert | Transaction with fraud_score=0.8 | Critical alert on all channels |
+| Snooze blocks delivery | User snoozes, transaction occurs | No alert delivered, status='snoozed' |
+| Snooze partial channel | Snooze SMS only | Push delivered, SMS snoozed |
+| Quiet hours queues non-critical | HIGH alert during quiet hours | Queued, delivered after quiet hours |
+| Quiet hours bypassed for CRITICAL | CRITICAL alert during quiet hours | Delivered immediately |
+| Rate limit triggers aggregation | 25 alerts in 1 hour | First 20 delivered, 5 aggregated |
+| Rule update propagates | Update rule, new transaction | New rule evaluated |
+| Multi-channel delivery | Rule with 3 channels | All channels receive alert |
+| Retention enforcement | Query 91-day-old alert | Alert not found |
+| High volume throughput | 1000 transactions/second | All processed < 30s |
+| Queue recovery after restart | Simulate restart with pending alerts | Pending alerts recovered and delivered |
+
+### 6.3 Edge Cases
+
+| Edge Case | Expected Behavior |
+|-----------|-------------------|
+| User with no rules | System default rules still evaluate |
+| User with alerts_enabled=false | No alert generated |
+| All rules inactive (including system) | No alert generated |
+| Transaction exactly at threshold | Rule triggers (>=) |
+| Multiple rules trigger same transaction | One alert per rule |
+| Snooze covers some channels | Non-snoozed channels alerted |
+| Notification service timeout | Retry with backoff |
+| Notification service returns 500 | Retry with backoff, then fail |
+| User deletes rule after alert generated | Alert still delivered |
+| Concurrent snooze create/delete | Last write wins |
+| Transaction with null merchant_category | Rule condition skipped |
+| Transaction with fraud_score exactly 0.7 | Suspicious Activity rule triggers |
+| Quiet hours span midnight (22:00-07:00) | Correctly handles date boundary |
+| Rate limit reset at hour boundary | Counter resets, new alerts allowed |
+| CRITICAL alert during rate limit | Delivered without aggregation |
+
+---
+
+## 7. Risks and Mitigations
+
+| Risk | Impact | Likelihood | Mitigation |
+|------|--------|------------|------------|
+| Alert delivery exceeds 30s SLA | High | Medium | Priority queue, parallel channel delivery, dedicated worker pools |
+| Notification service unavailable | High | Low | Retry with exponential backoff, circuit breaker, fallback channels |
+| Rule evaluation bottleneck at scale | High | Medium | Cache user rules in Redis, batch evaluation, pre-filter by user activity |
+| False positive alerts annoy users | Medium | Medium | Require minimum alert thresholds, provide easy snooze, track opt-out rates |
+| Database write bottleneck | Medium | Low | TimescaleDB for writes, batch inserts, async persistence |
+| Redis cache inconsistency | Medium | Low | Write-through cache, TTL expiration, cache invalidation events |
+| User creates too many rules | Low | Low | Enforce 50 rule limit per user |
+| Data retention violation | High | Low | TimescaleDB automatic retention policy, compliance audit logs |
+| Duplicate alerts | Medium | Medium | Idempotency key on transaction_id + rule_id, deduplication window |
+| Alert fatigue from high volume | Medium | Medium | Per-user rate limiting, alert aggregation, quiet hours support |
+| Queue data loss during failover | High | Low | Redis AOF persistence, cluster replication, recovery from alerts_history |
+
+### 7.1 Latency Optimization Strategy
+
+To meet the <30 second P99 latency requirement:
+
+1. **Transaction Consumer**: Use consumer group with 10+ partitions for parallelism
+2. **Rule Lookup**: Pre-load active users' rules into Redis at startup
+3. **Alert Generation**: Generate in same process as evaluation (no queue between)
+4. **Priority Queue**: Redis sorted set for O(log N) operations
+5. **Channel Delivery**: Parallel async calls to notification service
+6. **Timeout Handling**: 5 second timeout per channel, fail fast on slow channels
+
+**Latency Budget:**
+| Stage | Target | Cumulative |
+|-------|--------|------------|
+| Transaction consume | 100ms | 100ms |
+| Rule evaluation | 50ms | 150ms |
+| Alert generation | 50ms | 200ms |
+| Queue + dequeue | 100ms | 300ms |
+| Notification delivery | 5000ms | 5300ms |
+| Buffer | 24700ms | 30000ms |
+
+### 7.2 Scalability Design
+
+For 100M transactions/day (≈1157 TPS average, ≈5000 TPS peak):
+
+- **Kafka Consumers**: 10 consumer instances × 10 partitions
+- **Rule Cache**: Redis cluster with 3 nodes, 10GB memory
+- **Database Writes**: Batch alerts in 100ms windows, bulk insert
+- **Notification Workers**: 50 worker threads for channel delivery
+
+### 7.3 Capacity Model
+
+**Assumptions:**
+- 10M users total, ~20% active daily (2M users with transactions)
+- Average 50 transactions/user/day for active users
+- Maximum 50 rules per user (limit enforced)
+- System default rules: 2 per user
+- Average rules per user: 5 (2 system + 3 custom)
+
+**Rule Evaluation Estimates:**
+
+| Scenario | Rules/User | Time/Rule | Total Time | Notes |
+|----------|------------|-----------|------------|-------|
+| Cache hit | 5 | 1ms | 5ms | Rules in Redis |
+| Cache miss | 5 | 20ms | 100ms | DB fetch + cache populate |
+| Worst case (50 rules) | 50 | 1ms | 50ms | Power user, cached |
+
+**Memory Requirements:**
+
+| Component | Calculation | Estimate |
+|-----------|-------------|----------|
+| Rule cache (Redis) | 2M active users × 5 rules × 1KB/rule | 10GB |
+| Preferences cache | 2M users × 200B/user | 400MB |
+| Active snoozes | 100K snoozes × 500B | 50MB |
+| Rate limit state | 2M users × 100B | 200MB |
+| **Total Redis** | | **~12GB** |
+
+**Throughput Capacity:**
+
+| Component | Capacity | Calculation |
+|-----------|----------|-------------|
+| Kafka consumers | 10K TPS | 10 instances × 1K TPS each |
+| Rule engine | 20K TPS | 10 instances × 2K evaluations/sec |
+| Alert queue | 50K ops/sec | Redis sorted set ops |
+| Notification workers | 5K alerts/sec | 50 workers × 100 alerts/sec |
+
+**Back-Pressure Handling:**
+
+1. **Consumer lag monitoring**: Alert when Kafka consumer lag > 10 seconds
+2. **Queue depth limits**: If alert queue > 100K items, shed LOW priority alerts
+3. **Circuit breaker**: If notification service error rate > 50%, pause delivery for 30 seconds
+4. **Graceful degradation**: Under extreme load, batch similar alerts (same user, same rule)
+
+### 7.4 Queue Durability
+
+The alert queue uses Redis with the following high-availability configuration:
+
+**Redis Configuration:**
+- **Cluster mode**: 3-node Redis cluster with automatic failover
+- **Persistence**: AOF (Append Only File) with `appendfsync everysec`
+- **Replication**: Each primary has 1 replica for redundancy
+
+**Recovery Mechanism:**
+
+On service startup, the alert processor executes a recovery check:
+
+1. Query `alerts_history` for alerts where `created_at > NOW() - 5 minutes` and `delivered_at IS NULL`
+2. For each undelivered alert, check `alert_delivery_records` for pending status
+3. Re-enqueue alerts that have no successful delivery record
+4. Deduplication key (transaction_id + rule_id) prevents duplicate delivery
+
+```python
+async def recover_pending_alerts():
+    """Recover alerts that may have been lost during failover."""
+    cutoff = datetime.utcnow() - timedelta(minutes=5)
+    
+    undelivered = await alerts_history.find(
+        created_at__gte=cutoff,
+        delivered_at__isnull=True
+    )
+    
+    for alert in undelivered:
+        if not await delivery_records.has_success(alert.alert_id):
+            await alert_queue.enqueue(alert, dedupe=True)
+            logger.info(f"Recovered alert {alert.alert_id}")
+```
+
+**Why Not Kafka-backed Queue:**
+
+A Kafka-backed queue was considered but rejected because:
+1. Alerts should be in the queue for < 1 second typically
+2. Redis with AOF + cluster provides sufficient durability for this use case
+3. Adding Kafka introduces operational complexity and latency
+4. Recovery from alerts_history handles the rare failover scenario
+
+---
+
+## 8. Open Questions
+
+1. ~~**Default Rules**: Should new users get a default set of rules?~~ **RESOLVED**: Yes, users receive system default rules for >$500 and high fraud scores (see Section 3.3).
+
+2. ~~**Rate Limiting**: What is the maximum number of alerts a user should receive per hour/day to prevent alert fatigue?~~ **RESOLVED**: 20 alerts/hour, 100 alerts/day with aggregation for excess (see Section 2.6).
+
+3. ~~**Quiet Hours Channels**: During quiet hours, should alerts be queued for later delivery or silently dropped?~~ **RESOLVED**: CRITICAL alerts delivered immediately; all others queued until quiet hours end (see Section 2.5).
+
+4. **Snooze Maximum Duration**: What is the maximum snooze duration allowed? Should there be limits to prevent users from accidentally snoozing for too long?
+
+5. **Alert Aggregation**: For users receiving many alerts (e.g., business accounts), should we aggregate multiple alerts into a daily digest?
+
+6. **Notification Service SLA**: What are the latency and availability guarantees of the existing notification service?
+
+7. **Multi-Account Support**: Can a user have alerts for multiple accounts, and if so, should rules be per-account or global?
+
+8. **Regulatory Requirements**: Are there specific compliance requirements (PCI-DSS, GDPR) that affect how we store or transmit transaction data in alerts?
+
+9. **Fallback Channel**: If primary notification channel fails, should we automatically try secondary channels or wait for retry?
+
+---
+
+## 9. Appendix
+
+### 9.1 Sample Alert Templates
+
+**Push Notification:**
+```
+Title: Large Transaction Alert
+Body: $750.00 purchase at Amazon.com detected
+```
+
+**Push Notification (Suspicious):**
+```
+Title: ⚠️ Suspicious Activity Detected
+Body: Unusual transaction of $150.00 at Foreign Merchant flagged for review
+```
+
+**Push Notification (Rate Limited Summary):**
+```
+Title: Transaction Alert Summary
+Body: You have 15 new transaction alerts. Tap to view details.
+```
+
+**SMS:**
+```
+[YourBank] Alert: $750.00 at Amazon.com. Not you? Call 1-800-XXX-XXXX
+```
+
+**Email:**
+```
+Subject: Transaction Alert - $750.00 at Amazon.com
+
+Dear [Customer Name],
+
+We detected a transaction on your account:
+
+Amount: $750.00
+Merchant: Amazon.com
+Date: December 15, 2025 at 10:25 AM EST
+Card: ****1234
+
+If you did not make this transaction, please contact us immediately.
+
+Best regards,
+Your Bank Security Team
+```
+
+### 9.2 Configuration Schema
+
+```yaml
+alerts:
+  # Processing settings
+  consumer:
+    kafka_topic: "transactions.processed"
+    consumer_group: "alerts-processor"
+    partitions: 10
+    max_poll_records: 500
+
+  # Caching settings
+  cache:
+    redis_cluster: "redis://alerts-cache:6379"
+    rules_ttl_seconds: 300
+    preferences_ttl_seconds: 60
+
+  # Delivery settings
+  delivery:
+    max_retries: 3
+    retry_backoff_seconds: [1, 5, 15]
+    channel_timeout_seconds: 5
+    parallel_channels: true
+
+  # Rate limiting
+  rate_limits:
+    per_user_hourly: 20
+    per_user_daily: 100
+    per_channel_hourly: 10
+    critical_exempt: true
+
+  # Quiet hours
+  quiet_hours:
+    critical_bypass: true
+    max_queued_alerts: 100
+    aggregation_threshold: 10
+
+  # Limits
+  limits:
+    max_rules_per_user: 50
+    max_active_snoozes: 5
+    max_snooze_duration_hours: 168  # 1 week
+    min_alert_amount: 0.01
+
+  # System default rules
+  defaults:
+    large_transaction_threshold: 500.00
+    fraud_score_threshold: 0.7
+
+  # Queue durability
+  queue:
+    redis_aof_enabled: true
+    redis_cluster_nodes: 3
+    recovery_window_minutes: 5
+
+  # Retention
+  retention:
+    alert_history_days: 90
+    delivery_records_days: 30
+```
+
+### 9.3 Monitoring Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `alerts_transactions_consumed_total` | Counter | - | Total transactions consumed |
+| `alerts_rules_evaluated_total` | Counter | rule_type | Total rule evaluations by type |
+| `alerts_generated_total` | Counter | priority, rule_type | Alerts generated by priority and rule type |
+| `alerts_delivered_total` | Counter | channel, status | Delivery outcomes |
+| `alerts_snoozed_total` | Counter | channel | Alerts dropped due to snooze |
+| `alerts_quiet_hours_queued_total` | Counter | priority | Alerts queued for quiet hours |
+| `alerts_rate_limited_total` | Counter | limit_type | Alerts that hit rate limits |
+| `alerts_aggregated_total` | Counter | - | Summary notifications sent |
+| `alerts_delivery_latency_seconds` | Histogram | channel | End-to-end delivery latency |
+| `alerts_queue_depth` | Gauge | priority | Current queue depth |
+| `alerts_quiet_hours_queue_depth` | Gauge | - | Alerts waiting for quiet hours to end |
+| `alerts_rule_evaluation_duration_seconds` | Histogram | - | Rule evaluation time |
+| `alerts_notification_duration_seconds` | Histogram | channel | Notification service call time |
+| `alerts_active_snoozes` | Gauge | - | Currently active snooze periods |
+| `alerts_cache_hit_ratio` | Gauge | cache_type | Redis cache hit rate |
+| `alerts_user_dismissed_total` | Counter | rule_type | User dismissed/acknowledged alerts |
+| `alerts_user_reported_incorrect_total` | Counter | rule_type | User reported alert as false positive |
+| `alerts_user_action_taken_total` | Counter | action_type | User actions (blocked_card, reported_fraud, dismissed) |
+| `alerts_recovered_total` | Counter | - | Alerts recovered after restart/failover |
+
+**Note on False Positive Measurement:** The `alerts_user_reported_incorrect_total` metric tracks when users explicitly mark an alert as incorrect. This data should be exported to a downstream analytics system for calculating the false positive rate against actual dispute outcomes. The alerting system emits these events but does not compute the aggregate metric.
+
+**Note on Fraud Loss Measurement:** The `alerts_user_action_taken_total` metric tracks user responses to alerts (blocked card, reported fraud, dismissed). To measure fraud loss reduction (PRD goal: 40%), this data must be joined with dispute outcomes and financial loss data in a downstream analytics system. This is a cross-functional initiative requiring coordination with fraud operations and finance teams.

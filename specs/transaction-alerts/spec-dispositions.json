@@ -1,0 +1,50 @@
+[
+  {
+    "issue_id": "R2-1",
+    "original_issue": "Quiet-hours behavior is undefined even though the preferences model exposes quiet-hour configuration. Without a decision on whether alerts are queued, dropped, or routed to alternate channels the delivery pipeline in Section 2.3 cannot be implemented deterministically.",
+    "classification": "ACCEPT",
+    "reasoning": "This is a valid gap. The spec defines quiet_hours fields in UserAlertPreferences but never specifies what happens to alerts during those hours. Implementers need a clear decision to build the delivery pipeline. I'll specify that during quiet hours, non-critical alerts are queued until quiet hours end, while CRITICAL alerts (fraud) are delivered immediately regardless of quiet hours.",
+    "action_taken": "Added Section 2.5 'Quiet Hours Behavior' specifying that CRITICAL alerts bypass quiet hours, while HIGH/NORMAL/LOW alerts are queued for delivery when quiet hours end. Updated data flow in Section 2.3 to include quiet hours check.",
+    "resolved": true,
+    "semantic_key": "behavior_hours_quiet",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-2",
+    "original_issue": "There is no alert-rate limiting or per-user throttling strategy. In a fraud scenario a single compromised account could emit hundreds of alerts per minute, overwhelming users and violating the PRD goal of maintaining trust.",
+    "classification": "ACCEPT",
+    "reasoning": "Valid concern for user experience and system stability. A compromised account generating hundreds of transactions would flood the user with alerts, causing alert fatigue and potentially masking the real fraud. Rate limiting is a reasonable operational control. I'll add per-user rate limits with aggregation for excess alerts.",
+    "action_taken": "Added Section 2.6 'Alert Rate Limiting' with per-user limits (20 alerts/hour, 100 alerts/day), aggregation behavior for excess alerts, and CRITICAL alert exemption. Added rate_limit metrics to monitoring.",
+    "resolved": true,
+    "semantic_key": "limiting_rate_throttling",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-3",
+    "original_issue": "The alert queue relies on a single Redis sorted set but the spec does not address persistence, replication, or replay semantics. A Redis failover or eviction would silently drop queued alerts, making it impossible to meet the 30-second SLA or guarantee delivery.",
+    "classification": "PARTIAL",
+    "reasoning": "The concern about queue durability is valid\u2014losing alerts during failover would violate the SLA. However, the suggestion to add Kafka-backed fallback is over-engineering for a queue that should be nearly empty most of the time (alerts are processed within seconds). I'll specify Redis persistence and cluster requirements, plus a lightweight recovery mechanism using the alerts_history table.",
+    "action_taken": "Added Section 7.4 'Queue Durability' specifying Redis AOF persistence, 3-node cluster with automatic failover, and recovery mechanism that replays undelivered alerts from alerts_history on startup. Did not add Kafka fallback as it adds unnecessary complexity.",
+    "resolved": true,
+    "semantic_key": "durability_queue_redis",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  },
+  {
+    "issue_id": "R2-4",
+    "original_issue": "The PRD targets a 40% fraud-loss reduction, but the spec only lists latency/operational metrics. There is no plan for capturing prevented-loss data or tying alerts back to confirmed fraud outcomes, so success against the business goal cannot be measured.",
+    "classification": "DEFER",
+    "reasoning": "The PRD lists 'Reduce fraud losses by 40%' as a goal, but measuring this requires linking alerts to downstream fraud disposition systems, dispute outcomes, and financial loss tracking\u2014none of which are within the scope of this alerting system. This is a cross-functional analytics concern that requires coordination with fraud operations, disputes, and finance teams. The alerting system's job is to emit events; measuring business impact is a separate analytics initiative.",
+    "action_taken": "Added a note in Section 9.3 about emitting alert_action_taken events (user blocked card, reported fraud, dismissed) for downstream analytics. Actual fraud loss measurement requires a separate analytics project integrating multiple data sources.",
+    "resolved": false,
+    "semantic_key": "fraud_loss_measurement",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 2
+  }
+]

@@ -81,8 +81,16 @@ class ClaudeCliRunner:
             "--max-turns", str(max_turns or self.config.claude.max_turns),
         ]
 
-        if allowed_tools:
-            cmd.extend(["--allowedTools", ",".join(allowed_tools)])
+        # Handle allowed_tools:
+        # - None: don't pass --allowedTools (use default tools)
+        # - []: pass --allowedTools "" to disable all tools
+        # - ["tool1", ...]: pass --allowedTools tool1,tool2,...
+        if allowed_tools is not None:
+            if allowed_tools:
+                cmd.extend(["--allowedTools", ",".join(allowed_tools)])
+            else:
+                # Empty list means disable all tools
+                cmd.extend(["--allowedTools", ""])
 
         # Use -- separator before positional prompt argument to prevent
         # prompts starting with --- (YAML frontmatter) from being interpreted

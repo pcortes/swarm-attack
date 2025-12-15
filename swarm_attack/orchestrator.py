@@ -109,6 +109,8 @@ class Orchestrator:
         test_writer: Optional[TestWriterAgent] = None,
         coder: Optional[CoderAgent] = None,
         verifier: Optional[VerifierAgent] = None,
+        # Progress callback for CLI output
+        progress_callback: Optional[Any] = None,
     ) -> None:
         """
         Initialize the orchestrator.
@@ -124,10 +126,12 @@ class Orchestrator:
             test_writer: Optional TestWriterAgent (created if not provided).
             coder: Optional CoderAgent (created if not provided).
             verifier: Optional VerifierAgent (created if not provided).
+            progress_callback: Optional callback function(event: str, data: dict) for progress.
         """
         self.config = config
         self.logger = logger
         self._state_store = state_store
+        self._progress_callback = progress_callback
 
         # Spec debate agents
         self._author = author or SpecAuthorAgent(config, logger)
@@ -171,6 +175,11 @@ class Orchestrator:
             if data:
                 log_data.update(data)
             self.logger.log(event_type, log_data, level=level)
+
+    def _emit_progress(self, event: str, data: Optional[dict] = None) -> None:
+        """Emit progress event to callback if configured."""
+        if self._progress_callback:
+            self._progress_callback(event, data or {})
 
     # =========================================================================
     # Rejection Memory Methods (Debate Loop Enhancement)
@@ -661,9 +670,18 @@ class Orchestrator:
 
             # Step 1: Author generates spec (only on first round)
             if round_num == 1:
+                self._emit_progress("author_start", {"feature_id": feature_id})
                 self._author.reset()
                 author_result = self._author.run({"feature_id": feature_id})
                 total_cost += author_result.cost_usd
+
+                if author_result.success:
+                    spec_path = author_result.output.get("spec_path", "")
+                    self._emit_progress("author_complete", {
+                        "feature_id": feature_id,
+                        "spec_path": spec_path,
+                        "cost_usd": author_result.cost_usd,
+                    })
 
                 if not author_result.success:
                     self._log(
@@ -682,6 +700,7 @@ class Orchestrator:
                     )
 
             # Step 2: Critic reviews spec (with rejection context for round 2+)
+            self._emit_progress("critic_start", {"feature_id": feature_id, "round": round_num})
             self._critic.reset()
             # Build rejection context from prior dispositions
             rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
@@ -690,6 +709,16 @@ class Orchestrator:
                 "rejection_context": rejection_context,
             })
             total_cost += critic_result.cost_usd
+
+            if critic_result.success:
+                self._emit_progress("critic_complete", {
+                    "feature_id": feature_id,
+                    "round": round_num,
+                    "scores": critic_result.output.get("scores", {}),
+                    "recommendation": critic_result.output.get("recommendation", ""),
+                    "issue_counts": critic_result.output.get("issue_counts", {}),
+                    "cost_usd": critic_result.cost_usd,
+                })
 
             if not critic_result.success:
                 self._log(
@@ -727,6 +756,7 @@ class Orchestrator:
             # Extract disputed_issues from critic result for escalation
             disputed_issues = critic_result.output.get("disputed_issues", [])
             if round_num < max_rounds:
+                self._emit_progress("moderator_start", {"feature_id": feature_id, "round": round_num})
                 self._moderator.reset()
                 moderator_result = self._moderator.run({
                     "feature_id": feature_id,
@@ -735,6 +765,18 @@ class Orchestrator:
                     "disputed_issues": disputed_issues,  # Pass for escalation handling
                 })
                 total_cost += moderator_result.cost_usd
+
+                if moderator_result.success:
+                    disposition_counts = moderator_result.output.get("disposition_counts", {})
+                    self._emit_progress("moderator_complete", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "accepted": disposition_counts.get("accepted", 0),
+                        "rejected": disposition_counts.get("rejected", 0),
+                        "deferred": disposition_counts.get("deferred", 0),
+                        "partial": disposition_counts.get("partial", 0),
+                        "cost_usd": moderator_result.cost_usd,
+                    })
 
                 if not moderator_result.success:
                     # Check if spec files indicate success despite the error

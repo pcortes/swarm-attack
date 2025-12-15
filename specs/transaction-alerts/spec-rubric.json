@@ -1,0 +1,27 @@
+{
+  "round": 2,
+  "previous_scores": {
+    "clarity": 0.78,
+    "coverage": 0.72,
+    "architecture": 0.75,
+    "risk": 0.65
+  },
+  "current_scores": {
+    "clarity": 0.85,
+    "coverage": 0.82,
+    "architecture": 0.83,
+    "risk": 0.8
+  },
+  "issues_accepted": 2,
+  "issues_rejected": 0,
+  "issues_deferred": 1,
+  "issues_partial": 1,
+  "continue_debate": true,
+  "ready_for_approval": false,
+  "meta": {
+    "recommend_human_review": false,
+    "review_reason": null
+  },
+  "dispute_resolutions": [],
+  "updated_at": "2025-12-15T21:47:28.568963Z"
+}

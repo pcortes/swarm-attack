@@ -1,0 +1,41 @@
+{
+  "scores": {
+    "clarity": 0.83,
+    "coverage": 0.72,
+    "architecture": 0.7,
+    "risk": 0.65
+  },
+  "issues": [
+    {
+      "severity": "moderate",
+      "dimension": "coverage",
+      "location": "Section 2.3 \u2013 Step 5 Retention Enforcement",
+      "description": "Weekly and monthly rollups are deleted as soon as their week_start/month_start is older than 30 days, which wipes out the prior month\u2019s aggregates midway through the following month even though several days of that period are still within the allowed retention window. This undermines the PRD requirement to show monthly trends because users quickly lose access to the most recent full month view.",
+      "suggestion": "Include an explicit period_end on each rollup (or compute it) and only purge when all days covered by the rollup exceed 30 days, so the monthly/weekly APIs can continue to serve the last 30 days of data even when the calendar period spans earlier start dates."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "risk",
+      "location": "Sections 2.3.1 & 3.1 Activity Collection / ActivityCollector SDK",
+      "description": "The Activity Collector only batches in memory (100 events or 30 seconds) and immediately POSTs to the API; there is no durable queue, retry policy, or background sync described. If the user goes offline or the request fails, those events are dropped permanently, which breaks the offline requirement and skews activity/peak-hour metrics.",
+      "suggestion": "Specify a persistent client-side queue (e.g., IndexedDB + background sync/service worker) that stores batches until the server acknowledges them, with retry/backoff semantics so offline sessions are uploaded once connectivity returns."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "architecture",
+      "location": "Sections 2.2/3.1 Aggregation & UserDashboardPreferences",
+      "description": "All aggregation tables store UTC timestamps and the spec never explains how hourly/day buckets or peak-hour analysis will respect each user\u2019s timezone preference. Without a timezone-aware aggregation plan, peak hours and daily activity charts will be incorrect for non-UTC users, violating the \u201chighlight peak productivity hours\u201d goal.",
+      "suggestion": "Describe how aggregation jobs or query logic shift buckets into the user\u2019s timezone (e.g., store per-user offsets, compute localized rollups, or adjust results at read time) so peak hours/daily charts line up with local time."
+    }
+  ],
+  "disputed_issues": [],
+  "strengths": [
+    "High-level architecture, ASCII diagram, and component table make system boundaries and responsibilities easy to grasp.",
+    "Data models and migrations are detailed, covering rollups, exports, retention logging, and even helper methods, which reduces implementation guesswork.",
+    "Testing/performance strategy enumerates concrete KPIs, unit tests, and load targets, giving teams a clear validation roadmap."
+  ],
+  "summary": "Spec is generally thorough, but retention rules currently delete weekly/monthly rollups too early, there\u2019s no plan for durable offline event capture, and timezone handling for peak-hour insights is unspecified; please address those gaps (and note I could not write specs/heartbeat-test/spec-review.json because the environment is read-only).",
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/heartbeat-test/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/heartbeat-test.md",
+  "reviewed_at": "2025-12-15T22:19:56.464634Z"
+}

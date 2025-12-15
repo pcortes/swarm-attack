@@ -1,0 +1,74 @@
+{
+  "feature_id": "external-dashboard",
+  "generated_at": "2025-12-15T12:00:00Z",
+  "issues": [
+    {
+      "title": "Create UserMetrics data model",
+      "body": "## Description\n\nCreate the UserMetrics data model to represent user activity metrics for the dashboard.\n\n## Acceptance Criteria\n\n- [ ] UserMetrics class/model with user_id (str), login_history (list of datetime), last_active (datetime), total_actions (int)\n- [ ] Model can be serialized to JSON for API responses\n- [ ] Model includes type hints/validation for all fields\n- [ ] Unit tests for model creation and serialization\n\n## Technical Notes\n\n- Follow existing model patterns in the codebase\n- login_history should store recent login timestamps as a list\n- Ensure datetime fields serialize to ISO format strings",
+      "labels": [
+        "enhancement",
+        "backend",
+        "database"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1
+    },
+    {
+      "title": "Implement database query for user login history",
+      "body": "## Description\n\nCreate a database query function to retrieve login events from existing auth logs for a given user.\n\n## Acceptance Criteria\n\n- [ ] Function queries existing auth logs table for login events by user_id\n- [ ] Returns list of login timestamps (most recent first)\n- [ ] Retrieves last_active timestamp from user data\n- [ ] Retrieves total_actions count\n- [ ] Returns None/raises appropriate error if user not found\n- [ ] Includes basic try/except around database calls\n- [ ] Unit tests with mocked database\n\n## Technical Notes\n\n- Query existing database directly per spec\n- No caching needed for 50 users\n- Log errors when database query fails\n- Use existing database connection patterns",
+      "labels": [
+        "enhancement",
+        "backend",
+        "database"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1
+      ],
+      "order": 2
+    },
+    {
+      "title": "Implement GET /api/metrics/{user_id} endpoint",
+      "body": "## Description\n\nCreate the API endpoint to retrieve user metrics for the dashboard.\n\n## Acceptance Criteria\n\n- [ ] GET /api/metrics/{user_id} endpoint implemented\n- [ ] Returns UserMetrics as JSON with user_id, login_history, last_active, total_actions\n- [ ] Returns 404 with appropriate message if user not found\n- [ ] Returns 500 with error logged if database query fails\n- [ ] Response format matches spec: {\"user_id\": \"abc123\", \"login_history\": [...], \"last_active\": \"...\", \"total_actions\": 42}\n- [ ] Integration tests for success, 404, and 500 cases\n\n## Technical Notes\n\n- Use existing API framework patterns\n- Datetime fields should serialize to ISO 8601 format (e.g., \"2025-01-15T10:30:00Z\")\n- Basic error handling with try/except",
+      "labels": [
+        "enhancement",
+        "backend",
+        "api"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        2
+      ],
+      "order": 3
+    },
+    {
+      "title": "Build dashboard UI for user metrics",
+      "body": "## Description\n\nCreate a simple frontend dashboard displaying the three user activity metrics: login history, last active time, and action count.\n\n## Acceptance Criteria\n\n- [ ] Dashboard page displays login history as a list of timestamps\n- [ ] Dashboard shows last active time in human-readable format\n- [ ] Dashboard shows total action count\n- [ ] Calls GET /api/metrics/{user_id} to fetch data\n- [ ] Shows appropriate loading state while fetching\n- [ ] Shows error message if API returns 404 or 500\n- [ ] Clean, simple UI suitable for beta users\n\n## Technical Notes\n\n- Use existing UI framework/patterns\n- No real-time updates needed for v1\n- Ship to all 50 beta users\n- Keep it simple - iterate based on feedback",
+      "labels": [
+        "enhancement",
+        "frontend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        3
+      ],
+      "order": 4
+    },
+    {
+      "title": "Add end-to-end tests for metrics dashboard",
+      "body": "## Description\n\nAdd comprehensive tests to verify the full metrics dashboard flow works correctly.\n\n## Acceptance Criteria\n\n- [ ] E2E test: API returns correct metrics for valid user\n- [ ] E2E test: API returns 404 for non-existent user\n- [ ] E2E test: Dashboard displays metrics correctly\n- [ ] E2E test: Dashboard handles error states gracefully\n- [ ] All tests pass in CI\n\n## Technical Notes\n\n- Use existing test framework and patterns\n- Include both API integration tests and UI tests\n- Test with realistic sample data",
+      "labels": [
+        "enhancement",
+        "tests"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3,
+        4
+      ],
+      "order": 5
+    }
+  ]
+}

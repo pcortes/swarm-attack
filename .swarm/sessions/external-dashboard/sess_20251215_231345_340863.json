@@ -1,0 +1,35 @@
+{
+  "session_id": "sess_20251215_231345_340863",
+  "feature_id": "external-dashboard",
+  "issue_number": 1,
+  "started_at": "2025-12-15T23:13:45.340885Z",
+  "status": "active",
+  "checkpoints": [
+    {
+      "agent": "test_writer",
+      "status": "complete",
+      "timestamp": "2025-12-15T23:14:24.046645Z",
+      "commit": null,
+      "cost_usd": 0.16575574999999998
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-15T23:14:35.230475Z",
+      "commit": null,
+      "cost_usd": 0.11295925000000001
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-15T23:14:35.568285Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": null,
+  "end_status": null,
+  "cost_usd": 0.278715,
+  "worktree_path": null,
+  "commits": []
+}

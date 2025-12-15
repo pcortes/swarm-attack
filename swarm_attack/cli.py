@@ -16,6 +16,7 @@ This module provides the command-line interface using Typer with Rich output:
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -56,7 +57,7 @@ PHASE_DISPLAY = {
     FeaturePhase.READY_TO_IMPLEMENT: ("Ready to Implement", "cyan"),
     FeaturePhase.IMPLEMENTING: ("Implementing", "cyan bold"),
     FeaturePhase.COMPLETE: ("Complete", "green bold"),
-    FeaturePhase.BLOCKED: ("Blocked", "red bold"),
+    FeaturePhase.BLOCKED: ("Review Needed", "yellow bold"),
 }
 
 # Task stage display names
@@ -68,7 +69,7 @@ STAGE_DISPLAY = {
     TaskStage.INTERRUPTED: ("Interrupted", "yellow bold"),
     TaskStage.VERIFYING: ("Verifying", "blue"),
     TaskStage.DONE: ("Done", "green"),
-    TaskStage.BLOCKED: ("Blocked", "red"),
+    TaskStage.BLOCKED: ("Review Needed", "yellow"),
     TaskStage.SKIPPED: ("Skipped", "magenta"),
 }
 
@@ -236,7 +237,21 @@ def _get_config_or_default() -> SwarmConfig:
     )
 
 
-def _show_all_features(store: StateStore) -> None:
+def _get_effective_phase(state: RunState, config: SwarmConfig) -> FeaturePhase:
+    """
+    Get the effective phase, checking disk for PRD if needed.
+
+    If state shows NO_PRD but PRD file exists on disk, returns PRD_READY.
+    This handles the case where PRD was created outside of swarm-attack.
+    """
+    if state.phase == FeaturePhase.NO_PRD:
+        prd_path = _get_prd_path(config, state.feature_id)
+        if file_exists(prd_path):
+            return FeaturePhase.PRD_READY
+    return state.phase
+
+
+def _show_all_features(store: StateStore, config: SwarmConfig) -> None:
     """Display table of all features with their phases."""
     feature_ids = store.list_features()
 
@@ -276,9 +291,12 @@ def _show_all_features(store: StateStore) -> None:
         # Format updated_at as relative or short date
         updated = state.updated_at[:10] if state.updated_at else "-"
 
+        # Get effective phase (checks disk for PRD if needed)
+        effective_phase = _get_effective_phase(state, config)
+
         table.add_row(
             feature_id,
-            _format_phase(state.phase),
+            _format_phase(effective_phase),
             _get_task_summary(state),
             _format_cost(state.cost_total_usd),
             updated,
@@ -291,7 +309,7 @@ def _show_all_features(store: StateStore) -> None:
         console.print(f"\n[dim]Total cost:[/dim] [yellow]${total_cost:.2f}[/yellow]")
 
 
-def _show_feature_detail(store: StateStore, feature_id: str) -> None:
+def _show_feature_detail(store: StateStore, feature_id: str, config: SwarmConfig) -> None:
     """Display detailed status for a specific feature."""
     state = store.load(feature_id)
 
@@ -299,8 +317,11 @@ def _show_feature_detail(store: StateStore, feature_id: str) -> None:
         console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
         raise typer.Exit(1)
 
+    # Get effective phase (checks disk for PRD if needed)
+    effective_phase = _get_effective_phase(state, config)
+
     # Header panel with feature info
-    phase_text = _format_phase(state.phase)
+    phase_text = _format_phase(effective_phase)
 
     info_lines = [
         f"[bold]Feature:[/bold] {state.feature_id}",
@@ -434,9 +455,9 @@ def status(
     store = get_store(config)
 
     if feature_id is None:
-        _show_all_features(store)
+        _show_all_features(store, config)
     else:
-        _show_feature_detail(store, feature_id)
+        _show_feature_detail(store, feature_id, config)
 
 
 def _get_prd_path(config: SwarmConfig, feature_id: str) -> Path:
@@ -490,7 +511,7 @@ def init(
         console.print(f"[dim]PRD found at:[/dim] {prd_path}")
         console.print(f"[dim]Phase:[/dim] {_format_phase(initial_phase)}")
         console.print("\n[cyan]Next step:[/cyan] Run the spec pipeline with:")
-        console.print(f"  [cyan]feature-swarm run {feature_id}[/cyan]")
+        console.print(f"  [cyan]swarm-attack run {feature_id}[/cyan]")
     else:
         # Create PRD template
         prd_dir = prd_path.parent
@@ -522,7 +543,7 @@ def init(
         console.print(f"[dim]Phase:[/dim] {_format_phase(initial_phase)}")
         console.print("\n[cyan]Next steps:[/cyan]")
         console.print(f"  1. Edit the PRD at {prd_path}")
-        console.print(f"  2. Run: [cyan]feature-swarm run {feature_id}[/cyan]")
+        console.print(f"  2. Run: [cyan]swarm-attack run {feature_id}[/cyan]")
 
 
 @app.command("import-spec")
@@ -896,14 +917,85 @@ def _run_spec_pipeline(
     console.print(f"[dim]PRD:[/dim] {prd_path}")
     console.print()
 
-    # Run the orchestrator
-    orchestrator = Orchestrator(config, state_store=store)
+    import time
+    start_time = time.time()
 
-    with console.status("[yellow]Running spec pipeline...[/yellow]"):
-        result = orchestrator.run_spec_pipeline(feature_id)
+    # Heartbeat state for long operations
+    heartbeat_stop = threading.Event()
+    heartbeat_start_time: list[float] = []  # Use list to allow mutation in closure
+    heartbeat_operation: list[str] = []
 
-    # Display results
+    def heartbeat_thread():
+        """Background thread that prints elapsed time every 60 seconds."""
+        while not heartbeat_stop.is_set():
+            heartbeat_stop.wait(60)  # Wait 60 seconds or until stopped
+            if not heartbeat_stop.is_set() and heartbeat_start_time:
+                elapsed = int(time.time() - heartbeat_start_time[0])
+                minutes = elapsed // 60
+                seconds = elapsed % 60
+                op = heartbeat_operation[0] if heartbeat_operation else "Processing"
+                console.print(f"[dim]   Still {op.lower()}... ({minutes}m {seconds}s elapsed)[/dim]")
+
+    def start_heartbeat(operation: str):
+        """Start the heartbeat timer."""
+        heartbeat_start_time.clear()
+        heartbeat_start_time.append(time.time())
+        heartbeat_operation.clear()
+        heartbeat_operation.append(operation)
+        heartbeat_stop.clear()
+
+    def stop_heartbeat():
+        """Stop the heartbeat timer."""
+        heartbeat_stop.set()
+        heartbeat_start_time.clear()
+        heartbeat_operation.clear()
+
+    # Start heartbeat thread
+    hb_thread = threading.Thread(target=heartbeat_thread, daemon=True)
+    hb_thread.start()
+
+    # Progress callback for real-time output
+    def on_progress(event: str, data: dict) -> None:
+        if event == "author_start":
+            console.print("[yellow]-> Generating spec draft...[/yellow]")
+            start_heartbeat("generating")
+        elif event == "author_complete":
+            stop_heartbeat()
+            spec_path = data.get("spec_path", "")
+            cost = data.get("cost_usd", 0)
+            console.print(f"[green]   Wrote spec-draft.md[/green] (${cost:.2f})")
+        elif event == "critic_start":
+            round_num = data.get("round", 1)
+            console.print(f"[yellow]-> Running critic review (round {round_num})...[/yellow]")
+            start_heartbeat("reviewing")
+        elif event == "critic_complete":
+            stop_heartbeat()
+            rec = data.get("recommendation", "")
+            scores = data.get("scores", {})
+            cost = data.get("cost_usd", 0)
+            avg_score = sum(scores.values()) / len(scores) if scores else 0
+            console.print(f"[green]   Review complete[/green] (avg: {avg_score:.2f}, ${cost:.2f})")
+        elif event == "moderator_start":
+            round_num = data.get("round", 1)
+            console.print(f"[yellow]-> Debate round {round_num}...[/yellow]")
+            start_heartbeat("thinking")
+        elif event == "moderator_complete":
+            stop_heartbeat()
+            accepted = data.get("accepted", 0)
+            rejected = data.get("rejected", 0)
+            cost = data.get("cost_usd", 0)
+            console.print(f"[green]   Round complete[/green] ({accepted} accepted, {rejected} rejected, ${cost:.2f})")
+
+    # Run the orchestrator with progress callback
+    orchestrator = Orchestrator(config, state_store=store, progress_callback=on_progress)
+    result = orchestrator.run_spec_pipeline(feature_id)
+
+    # Calculate and display elapsed time
+    elapsed = time.time() - start_time
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
     console.print()
+    console.print(f"[dim]Duration:[/dim] {minutes}m {seconds}s")
 
     if result.status == "success":
         console.print(
@@ -1939,7 +2031,7 @@ BUG_PHASE_DISPLAY = {
     "implementing": ("Implementing", "yellow"),
     "verifying": ("Verifying", "yellow"),
     "fixed": ("Fixed", "green bold"),
-    "blocked": ("Blocked", "red bold"),
+    "blocked": ("Review Needed", "yellow bold"),
 }
 
 

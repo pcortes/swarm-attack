@@ -1,0 +1,38 @@
+[
+  {
+    "issue_id": "R1-1",
+    "original_issue": "Spec defines storage APIs but never explains what actual product events will call create(...), so the PRD goal of notifying users when something important happens is still undefined.",
+    "classification": "PARTIAL",
+    "reasoning": "Valid point that the spec doesn't explain what triggers notifications. However, the suggestion to 'list concrete event sources' is scope creep - this spec is for the notification INFRASTRUCTURE, not for deciding what events trigger notifications. That's a separate product decision. I'll add a brief note clarifying that event sources are out of scope for this spec and will be defined per-feature.",
+    "action_taken": "Added clarification in Section 1.3 that event trigger integration is per-feature, not this spec's responsibility",
+    "resolved": true,
+    "semantic_key": "event_sources_triggers",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 1
+  },
+  {
+    "issue_id": "R1-2",
+    "original_issue": "PRD requires that users can see notification history and mark items read, but the spec omits any plan for presenting this in the existing CLI/UI and how the read status is toggled from user actions.",
+    "classification": "ACCEPT",
+    "reasoning": "This is a real gap. The PRD says users should be able to see notifications and mark them as read, but we only have a storage layer with no way for users to actually interact with it. For a CLI tool, we need simple commands. Minimal fix: add CLI commands.",
+    "action_taken": "Added Section 3.2 with CLI commands for listing and marking notifications as read",
+    "resolved": true,
+    "semantic_key": "cli_integration_presentation",
+    "repeat_of": null,
+    "consecutive_rejections": 0,
+    "round": 1
+  },
+  {
+    "issue_id": "R1-3",
+    "original_issue": "Manual and automated test plans only cover happy-path CRUD but ignore corrupted JSON files or concurrent writes, which are realistic risks when persisting per-user JSON.",
+    "classification": "REJECT",
+    "reasoning": "OVER-ENGINEERING. We have 100 beta users. Concurrent writes to the same user's notification file? That's not happening. Corrupted JSON? If it happens, we tell the user to delete the file and start fresh. The existing StateStore pattern doesn't have this complexity either. Adding locking and corruption handling for 100 users is premature optimization.",
+    "action_taken": "none",
+    "resolved": false,
+    "semantic_key": "concurrent_corrupted_handling",
+    "repeat_of": null,
+    "consecutive_rejections": 1,
+    "round": 1
+  }
+]
