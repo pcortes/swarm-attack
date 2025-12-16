@@ -722,6 +722,138 @@ class SessionManager:
                 },
             )
 
+    def clean_stale_locks(
+        self,
+        feature_id: str,
+    ) -> list[int]:
+        """
+        Clean up stale issue locks for a feature.
+
+        Locks are considered stale if they are older than stale_timeout_minutes.
+        This should be called on startup before attempting to claim new issues
+        to ensure interrupted processes don't leave orphaned locks.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of issue numbers whose locks were cleaned.
+        """
+        lock_dir = self.config.swarm_path / "locks" / feature_id
+        if not lock_dir.exists():
+            return []
+
+        stale_timeout = self.config.sessions.stale_timeout_minutes
+        now = datetime.now(timezone.utc)
+        cleaned_issues: list[int] = []
+
+        # Find all lock files for this feature
+        for lock_file in lock_dir.glob("issue_*.lock"):
+            try:
+                # Extract issue number from filename
+                issue_num_str = lock_file.stem.replace("issue_", "")
+                issue_number = int(issue_num_str)
+
+                # Read lock timestamp
+                lock_data = lock_file.read_text().strip()
+                if not lock_data:
+                    # Empty lock file is considered stale
+                    lock_file.unlink()
+                    cleaned_issues.append(issue_number)
+                    continue
+
+                # Parse timestamp and check if stale
+                locked_at = datetime.fromisoformat(lock_data.replace("Z", "+00:00"))
+                age = now - locked_at
+
+                if age >= timedelta(minutes=stale_timeout):
+                    lock_file.unlink()
+                    cleaned_issues.append(issue_number)
+                    self._log(
+                        "stale_lock_cleaned",
+                        {
+                            "feature_id": feature_id,
+                            "issue_number": issue_number,
+                            "lock_age_minutes": age.total_seconds() / 60,
+                            "stale_timeout_minutes": stale_timeout,
+                        },
+                    )
+
+            except (ValueError, OSError) as e:
+                # Corrupted lock file - remove it
+                try:
+                    lock_file.unlink()
+                    self._log(
+                        "corrupted_lock_cleaned",
+                        {
+                            "feature_id": feature_id,
+                            "lock_file": str(lock_file),
+                            "error": str(e),
+                        },
+                        level="warning",
+                    )
+                except OSError:
+                    pass
+
+        if cleaned_issues:
+            self._log(
+                "stale_locks_cleaned",
+                {
+                    "feature_id": feature_id,
+                    "cleaned_count": len(cleaned_issues),
+                    "cleaned_issues": cleaned_issues,
+                },
+            )
+
+        return cleaned_issues
+
+    def clear_all_locks(
+        self,
+        feature_id: str,
+    ) -> list[int]:
+        """
+        Clear ALL issue locks for a feature (regardless of age).
+
+        This is a manual override used when automation fails and
+        the user needs to force-clear locks.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of issue numbers whose locks were cleared.
+        """
+        lock_dir = self.config.swarm_path / "locks" / feature_id
+        if not lock_dir.exists():
+            return []
+
+        cleared_issues: list[int] = []
+
+        for lock_file in lock_dir.glob("issue_*.lock"):
+            try:
+                issue_num_str = lock_file.stem.replace("issue_", "")
+                issue_number = int(issue_num_str)
+                lock_file.unlink()
+                cleared_issues.append(issue_number)
+            except (ValueError, OSError):
+                # Try to remove anyway
+                try:
+                    lock_file.unlink()
+                except OSError:
+                    pass
+
+        if cleared_issues:
+            self._log(
+                "locks_force_cleared",
+                {
+                    "feature_id": feature_id,
+                    "cleared_count": len(cleared_issues),
+                    "cleared_issues": cleared_issues,
+                },
+            )
+
+        return cleared_issues
+
     def detect_stale_sessions(
         self,
         feature_id: str,

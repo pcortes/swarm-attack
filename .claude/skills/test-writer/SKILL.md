@@ -411,3 +411,99 @@ The Coder will automatically redirect protected paths to the feature directory, 
   - `ios/Runner.xcodeproj/` - entire Xcode project structure
   - `android/.gradle/` - Gradle cache
   - `build/` - build output directory
+
+---
+
+## CRITICAL: Interface Contract Tests (for INTERNAL_FEATURE specs)
+
+When writing tests for features that write to `swarm_attack/` (internal features), you MUST include **interface contract tests** that verify integration requirements.
+
+### Why Interface Contract Tests Matter
+
+Unit tests verify that code works in isolation. But code is called by existing `swarm_attack/` code. Without interface tests, code can pass unit tests but crash at runtime.
+
+**Example failure:** `ChiefOfStaffConfig` passed unit tests (testing dataclass structure), but crashed when `config.py:411` tried to call `ChiefOfStaffConfig.from_dict(data)` - a method that didn't exist.
+
+### Required Interface Tests for Config Classes
+
+For any config dataclass being added to swarm_attack, include:
+
+```python
+class TestConfigInterfaceContract:
+    """Interface contract tests - these verify integration works."""
+
+    def test_has_from_dict_classmethod(self):
+        """Config classes MUST have from_dict for config.py parsing."""
+        from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+        assert hasattr(ChiefOfStaffConfig, 'from_dict')
+        assert callable(ChiefOfStaffConfig.from_dict)
+
+    def test_has_to_dict_method(self):
+        """Config classes MUST have to_dict for serialization."""
+        from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+        config = ChiefOfStaffConfig()
+        assert hasattr(config, 'to_dict')
+        assert callable(config.to_dict)
+
+    def test_from_dict_creates_valid_instance(self):
+        """from_dict must work with empty dict (use defaults)."""
+        from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+        config = ChiefOfStaffConfig.from_dict({})
+        assert isinstance(config, ChiefOfStaffConfig)
+
+    def test_from_dict_to_dict_roundtrip(self):
+        """Roundtrip: from_dict(x.to_dict()) should equal x."""
+        from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+        original = ChiefOfStaffConfig()
+        roundtrip = ChiefOfStaffConfig.from_dict(original.to_dict())
+        assert roundtrip == original
+```
+
+### Required Interface Tests for Agent Classes
+
+```python
+class TestAgentInterfaceContract:
+    """Interface contract tests for agent classes."""
+
+    def test_inherits_from_base_agent(self):
+        """All agents must inherit from BaseAgent."""
+        from swarm_attack.agents.base import BaseAgent
+        from swarm_attack.chief_of_staff.agent import ChiefOfStaffAgent
+        assert issubclass(ChiefOfStaffAgent, BaseAgent)
+
+    def test_has_name_attribute(self):
+        """Agents must have a name class attribute."""
+        from swarm_attack.chief_of_staff.agent import ChiefOfStaffAgent
+        assert hasattr(ChiefOfStaffAgent, 'name')
+        assert isinstance(ChiefOfStaffAgent.name, str)
+
+    def test_has_run_method(self):
+        """Agents must implement run(context) -> AgentResult."""
+        from swarm_attack.chief_of_staff.agent import ChiefOfStaffAgent
+        assert hasattr(ChiefOfStaffAgent, 'run')
+        assert callable(ChiefOfStaffAgent.run)
+```
+
+### When to Include Interface Contract Tests
+
+Include for any issue that creates:
+- **Config dataclasses** in swarm_attack - MUST test from_dict/to_dict
+- **Agent classes** in swarm_attack - MUST test BaseAgent inheritance
+- **Manager classes** in swarm_attack - MUST test expected method signatures
+
+### Check the Issue Body
+
+If the issue body has an **Interface Contract** section, your tests MUST verify those specific methods exist and work:
+
+```
+## Interface Contract (REQUIRED)
+**Required Methods:**
+- `from_dict(cls, data: dict) -> ClassName`
+- `to_dict(self) -> dict`
+```
+
+This means your tests MUST include:
+- Test that `from_dict` exists and is callable
+- Test that `to_dict` exists and is callable
+- Test that from_dict works with empty dict
+- Test roundtrip: `from_dict(x.to_dict()) == x`

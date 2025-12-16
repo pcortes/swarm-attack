@@ -1,12 +1,259 @@
 {
   "feature_id": "chief-of-staff",
-  "phase": "BLOCKED",
-  "tasks": [],
+  "phase": "IMPLEMENTING",
+  "tasks": [
+    {
+      "issue_number": 1,
+      "stage": "DONE",
+      "title": "Create Chief of Staff data models",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 2,
+      "stage": "DONE",
+      "title": "Add ChiefOfStaffConfig configuration dataclass",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 3,
+      "stage": "BACKLOG",
+      "title": "Implement StateGatherer for repository state aggregation",
+      "dependencies": [
+        1,
+        2
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 4,
+      "stage": "BACKLOG",
+      "title": "Implement DailyLogManager for persistence",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 5,
+      "stage": "BACKLOG",
+      "title": "Implement GoalTracker with state reconciliation",
+      "dependencies": [
+        1,
+        4
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 6,
+      "stage": "BLOCKED",
+      "title": "Implement CheckpointSystem for autopilot triggers",
+      "dependencies": [
+        1,
+        2
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": "Max retries exceeded: Regression detected: 15 tests failed in full suite"
+    },
+    {
+      "issue_number": 7,
+      "stage": "BACKLOG",
+      "title": "Implement StandupGenerator for daily briefings",
+      "dependencies": [
+        3,
+        4,
+        5
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 8,
+      "stage": "BACKLOG",
+      "title": "Implement AutopilotSessionStore for pause/resume",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 9,
+      "stage": "BACKLOG",
+      "title": "Implement AutopilotRunner for autonomous execution",
+      "dependencies": [
+        5,
+        6,
+        8
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 10,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: standup",
+      "dependencies": [
+        3,
+        4,
+        5,
+        7
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 11,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: checkin",
+      "dependencies": [
+        3,
+        5
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 12,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: wrapup",
+      "dependencies": [
+        4,
+        5
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 13,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: plan",
+      "dependencies": [
+        5
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 14,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: history",
+      "dependencies": [
+        4
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 15,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: autopilot",
+      "dependencies": [
+        9
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 16,
+      "stage": "BACKLOG",
+      "title": "Add CLI command: next --all for cross-feature recommendations",
+      "dependencies": [
+        3,
+        5
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 17,
+      "stage": "BACKLOG",
+      "title": "Create __init__.py and package structure",
+      "dependencies": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 18,
+      "stage": "BACKLOG",
+      "title": "Add unit tests for Chief of Staff components",
+      "dependencies": [
+        17
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    },
+    {
+      "issue_number": 19,
+      "stage": "BACKLOG",
+      "title": "Add integration tests for Chief of Staff",
+      "dependencies": [
+        18
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null
+    }
+  ],
   "current_session": null,
-  "created_at": "2025-12-12T21:09:31.826319Z",
-  "updated_at": "2025-12-12T21:47:41.853821Z",
-  "cost_total_usd": 1.18744575,
+  "created_at": "2025-12-16T04:49:35.316644Z",
+  "updated_at": "2025-12-16T17:08:03.210449Z",
+  "cost_total_usd": 3.8836047500000004,
   "cost_by_phase": {
-    "SPEC_IN_PROGRESS": 1.18744575
+    "ISSUES": 0.46901925,
+    "IMPLEMENTATION": 3.4145855000000003
   }
 }

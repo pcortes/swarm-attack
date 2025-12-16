@@ -3,7 +3,7 @@
   "feature_id": "external-dashboard",
   "issue_number": 1,
   "started_at": "2025-12-15T23:13:45.340885Z",
-  "status": "active",
+  "status": "complete",
   "checkpoints": [
     {
       "agent": "test_writer",
@@ -27,9 +27,11 @@
       "cost_usd": 0.0
     }
   ],
-  "ended_at": null,
-  "end_status": null,
+  "ended_at": "2025-12-15T23:14:35.607799Z",
+  "end_status": "success",
   "cost_usd": 0.278715,
   "worktree_path": null,
-  "commits": []
+  "commits": [
+    "0fd1b0456d235ded998a3e47b81ef780ea2ed2b0"
+  ]
 }

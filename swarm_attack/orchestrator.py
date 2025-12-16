@@ -1548,8 +1548,20 @@ class Orchestrator:
             "issue_number": issue_number,
         })
 
+        # Track whether we've claimed the lock (for finally block cleanup)
+        lock_claimed = False
+        session_ended = False
+
         # Step 2: Claim issue lock
         if self._session_manager:
+            # Clean stale locks before attempting to claim (self-healing)
+            cleaned = self._session_manager.clean_stale_locks(feature_id)
+            if cleaned:
+                self._log("stale_locks_cleaned_on_startup", {
+                    "feature_id": feature_id,
+                    "cleaned_issues": cleaned,
+                })
+
             claimed = self._session_manager.claim_issue(feature_id, issue_number)
             if not claimed:
                 return IssueSessionResult(
@@ -1564,6 +1576,8 @@ class Orchestrator:
                     retries=0,
                     error=f"Issue {issue_number} is already claimed/locked",
                 )
+
+            lock_claimed = True
 
             # Step 3: Ensure feature branch
             self._session_manager.ensure_feature_branch(feature_id)
@@ -1597,7 +1611,8 @@ class Orchestrator:
 
                     if self._session_manager:
                         self._session_manager.end_session(session_id, "failed")
-                        self._session_manager.release_issue(feature_id, issue_number)
+                        session_ended = True
+                        # Lock release handled by finally block
 
                     return IssueSessionResult(
                         status="failed",
@@ -1649,7 +1664,8 @@ class Orchestrator:
 
                     if self._session_manager:
                         self._session_manager.end_session(session_id, "failed")
-                        self._session_manager.release_issue(feature_id, issue_number)
+                        session_ended = True
+                        # Lock release handled by finally block
 
                     return IssueSessionResult(
                         status="failed",
@@ -1730,7 +1746,8 @@ class Orchestrator:
                 # End session
                 if self._session_manager:
                     self._session_manager.end_session(session_id, "success")
-                    self._session_manager.release_issue(feature_id, issue_number)
+                    session_ended = True
+                    # Lock release handled by finally block
 
                 self._log("issue_session_success", {
                     "feature_id": feature_id,
@@ -1771,7 +1788,8 @@ class Orchestrator:
                 # End session
                 if self._session_manager:
                     self._session_manager.end_session(session_id, "failed")
-                    self._session_manager.release_issue(feature_id, issue_number)
+                    session_ended = True
+                    # Lock release handled by finally block
 
                 self._log("issue_session_blocked", {
                     "feature_id": feature_id,
@@ -1795,9 +1813,12 @@ class Orchestrator:
 
         except Exception as e:
             # Handle unexpected errors
-            if self._session_manager:
-                self._session_manager.end_session(session_id, "failed")
-                self._session_manager.release_issue(feature_id, issue_number)
+            if self._session_manager and not session_ended:
+                try:
+                    self._session_manager.end_session(session_id, "failed")
+                    session_ended = True
+                except Exception:
+                    pass  # Best effort - don't mask original error
 
             self._log("issue_session_error", {
                 "feature_id": feature_id,
@@ -1817,3 +1838,21 @@ class Orchestrator:
                 retries=retries,
                 error=str(e),
             )
+
+        finally:
+            # GUARANTEED LOCK CLEANUP: Always release the lock if we claimed it
+            # This handles KeyboardInterrupt, SystemExit, and any other uncaught exceptions
+            if lock_claimed and self._session_manager:
+                try:
+                    self._session_manager.release_issue(feature_id, issue_number)
+                    self._log("lock_released_finally", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                    })
+                except Exception as cleanup_error:
+                    # Log but don't raise - we're in cleanup
+                    self._log("lock_release_error", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "error": str(cleanup_error),
+                    }, level="warning")

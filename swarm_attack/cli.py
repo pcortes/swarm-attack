@@ -1907,6 +1907,11 @@ def unblock(
         "-f",
         help="Force unblock without verification checks.",
     ),
+    clear_locks: bool = typer.Option(
+        False,
+        "--clear-locks",
+        help="Clear ALL issue locks for this feature. Use when locks are stale after process interruption.",
+    ),
 ) -> None:
     """
     Unblock a feature that is stuck in BLOCKED state.
@@ -1916,20 +1921,37 @@ def unblock(
     - Spec pipeline timeout after successful completion
     - Failed spec debate that needs retry
     - Implementation issues that need attention
+    - Stale issue locks after Ctrl+C or process crash
 
     Use --phase to force a specific target phase, or let the command
     auto-detect based on file analysis.
+
+    Use --clear-locks to force-clear all issue locks when they persist
+    after process interruption (Ctrl+C, kill, crash).
     """
     from swarm_attack.cli_recovery import (
         check_spec_pipeline_blocked,
         handle_spec_retry,
         handle_spec_unblock,
     )
+    from swarm_attack.session_manager import SessionManager
 
     config = _get_config_or_default()
     _init_swarm_directory(config)
 
     store = get_store(config)
+
+    # Handle --clear-locks flag
+    if clear_locks:
+        session_manager = SessionManager(config, store)
+        cleared = session_manager.clear_all_locks(feature_id)
+        if cleared:
+            console.print(f"[green]Cleared {len(cleared)} lock(s) for feature '{feature_id}':[/green]")
+            for issue_num in cleared:
+                console.print(f"  - Issue #{issue_num}")
+        else:
+            console.print(f"[dim]No locks found for feature '{feature_id}'[/dim]")
+        return
 
     # Check feature exists
     state = store.load(feature_id)

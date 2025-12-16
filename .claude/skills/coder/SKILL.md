@@ -513,3 +513,101 @@ Before finalizing your output:
 > "The tests are your specification. They define what the code must do - nothing more, nothing less. Your implementation succeeds when every test passes."
 
 You are not building features. You are not designing APIs. You are not architecting systems. You are writing the minimal code that makes existing tests pass. The tests are the contract. Honor the contract.
+
+---
+
+## CRITICAL: Interface Contracts and Pattern Following
+
+When you see an **Interface Contract** section in the issue body, you MUST implement those exact methods. Interface contracts specify how your code will be CALLED by existing code.
+
+### Why This Matters
+
+Your code is called by existing `swarm_attack/` code. If you create a `FooConfig` dataclass without `from_dict()`, it will pass tests but crash at runtime when `config.py` tries to call `FooConfig.from_dict(data)`.
+
+### Interface Contract Example
+
+If the issue says:
+```
+## Interface Contract (REQUIRED)
+**Required Methods:**
+- `from_dict(cls, data: dict) -> ClassName`
+- `to_dict(self) -> dict`
+**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig`
+```
+
+Then you MUST implement:
+```python
+@classmethod
+def from_dict(cls, data: dict[str, Any]) -> "ClassName":
+    return cls(
+        field1=data.get("field1", default1),
+        field2=data.get("field2", default2),
+    )
+
+def to_dict(self) -> dict[str, Any]:
+    return {
+        "field1": self.field1,
+        "field2": self.field2,
+    }
+```
+
+### Pattern Following for swarm_attack/ Code
+
+When writing to `swarm_attack/` (internal features), follow existing patterns:
+
+#### Config Dataclasses
+All config dataclasses in swarm_attack MUST have:
+- `from_dict(cls, data: dict) -> Self` classmethod
+- `to_dict(self) -> dict` method
+- Default values for all fields
+- Use `data.get("key", default)` pattern
+
+Example pattern from `BugBashConfig`:
+```python
+@dataclass
+class BugBashConfig:
+    max_cost_per_bug_usd: float = 10.0
+    max_reproduction_attempts: int = 3
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BugBashConfig":
+        return cls(
+            max_cost_per_bug_usd=data.get("max_cost_per_bug_usd", 10.0),
+            max_reproduction_attempts=data.get("max_reproduction_attempts", 3),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_cost_per_bug_usd": self.max_cost_per_bug_usd,
+            "max_reproduction_attempts": self.max_reproduction_attempts,
+        }
+```
+
+#### Agent Classes
+All agents in swarm_attack inherit from `BaseAgent` and must:
+- Set `name = "agent_name"` class attribute
+- Implement `run(self, context: dict) -> AgentResult`
+- Use `self._log()` for logging
+- Use `self.checkpoint()` for state checkpoints
+
+#### Manager Classes
+Managers in swarm_attack follow patterns:
+- Constructor takes config or path
+- Methods return typed results
+- Use `self._log()` inherited from base or custom logging
+
+### Pre-Implementation Checklist
+
+Before writing code for `swarm_attack/`:
+1. Check issue body for **Interface Contract** section
+2. If creating a config class, implement `from_dict`/`to_dict`
+3. If creating an agent, inherit from `BaseAgent`
+4. Match the patterns of similar existing code
+5. Check tests to understand expected behavior
+
+### Regression Prevention
+
+Your code must NOT break existing tests. Before finalizing:
+1. Ensure your imports don't conflict with existing modules
+2. Ensure your class/function names don't shadow existing ones
+3. Ensure you're adding to, not replacing, existing functionality

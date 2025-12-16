@@ -108,6 +108,62 @@ Common labels:
 - Mention files to create or modify
 - Include error handling expectations
 
+---
+
+## CRITICAL: Interface Contracts (for INTERNAL_FEATURE specs)
+
+When generating issues for features that write to `swarm_attack/` (internal features), you MUST include an **Interface Contract** section in each issue body. This prevents integration bugs where code passes tests but breaks existing callers.
+
+### Why Interface Contracts Matter
+
+The Coder agent only sees:
+- The spec
+- The test file
+- The issue description
+
+It does NOT see how existing `swarm_attack/` code will CALL the generated code. Without interface contracts, the Coder may create code that passes tests but breaks integration.
+
+**Example failure:** `ChiefOfStaffConfig` was generated as a dataclass but missing `from_dict()` method. Tests passed (they only tested the dataclass structure), but `config.py:411` crashed because it expected `ChiefOfStaffConfig.from_dict(data)`.
+
+### Interface Contract Format
+
+Add this section to issue bodies for config classes, managers, or any class that will be called by existing code:
+
+```markdown
+## Interface Contract (REQUIRED)
+
+**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.
+
+**Required Methods:**
+- `from_dict(cls, data: dict) -> ClassName` - Classmethod to create from dictionary
+- `to_dict(self) -> dict` - Instance method to serialize to dictionary
+
+**Called By:**
+- `swarm_attack/config.py:_parse_chief_of_staff_config()` line ~410
+
+**Integration Test:**
+```python
+def test_can_be_parsed_from_config():
+    from swarm_attack.config import load_config
+    config = load_config("config.yaml")
+    assert config.chief_of_staff is not None
+```
+```
+
+### When to Include Interface Contracts
+
+Include for issues that create:
+- **Config dataclasses** - Always need `from_dict`/`to_dict`
+- **Manager classes** - Need consistent API with existing managers
+- **Agent classes** - Need to inherit from BaseAgent properly
+- **Any class imported by existing swarm_attack code**
+
+### How to Identify Required Interfaces
+
+1. **Check the spec** for mentions of "integrates with", "called by", "parsed by"
+2. **Look for pattern references** in the spec (e.g., "similar to BugBashConfig")
+3. **Search for existing callers** - if code says "from swarm_attack.X import Y", that Y needs stable interface
+
 ## Example
 
 Given a spec for "User Authentication", issues might be:
