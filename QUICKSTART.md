@@ -421,11 +421,71 @@ The better your PRD, the better the generated spec.
 
 ---
 
+## 10. Bug Bash - Automated Bug Investigation
+
+Swarm Attack also includes a bug investigation pipeline for fixing bugs automatically.
+
+### Step 1: Initialize a Bug Investigation
+
+```bash
+# When you have a failing test
+swarm-attack bug init "Description of the bug" \
+  --id my-bug-id \
+  --test tests/path/to_test.py::TestClass::test_method \
+  -e "Error message from the failure"
+```
+
+### Step 2: Run Analysis Pipeline
+
+```bash
+swarm-attack bug analyze my-bug-id
+```
+
+This runs:
+1. **Reproduce** - Confirms the bug exists by running the failing test
+2. **Analyze** - LLM analyzes root cause with debate validation
+3. **Plan** - Generates a comprehensive fix plan with risk assessment
+
+### Step 3: Review and Approve
+
+```bash
+# Check status
+swarm-attack bug status my-bug-id
+
+# Review the fix plan
+cat .swarm/bugs/my-bug-id/fix-plan.md
+
+# Approve for implementation
+swarm-attack bug approve my-bug-id
+```
+
+### Step 4: Apply the Fix
+
+```bash
+swarm-attack bug fix my-bug-id
+```
+
+### Bug Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack bug list` | List all bug investigations |
+| `swarm-attack bug init "desc" --id ID --test PATH -e "error"` | Create bug investigation |
+| `swarm-attack bug analyze <bug-id>` | Run full analysis pipeline |
+| `swarm-attack bug status <bug-id>` | Show bug status |
+| `swarm-attack bug approve <bug-id>` | Approve fix plan |
+| `swarm-attack bug fix <bug-id>` | Apply the fix |
+| `swarm-attack bug reject <bug-id>` | Reject (won't fix) |
+| `swarm-attack bug unblock <bug-id>` | Unblock stuck bug |
+
+---
+
 ## Need Help?
 
 ```bash
 swarm-attack --help
 swarm-attack run --help
+swarm-attack bug --help
 ```
 
 GitHub: https://github.com/pcortes/swarm-attack

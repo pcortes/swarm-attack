@@ -12,6 +12,7 @@ tests fail (enabled via analyze_failures=True in context).
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -94,12 +95,24 @@ class VerifierAgent(BaseAgent):
             cmd = ["pytest", str(test_path), "-v", "--tb=short"]
 
         try:
+            # Include repo root in PYTHONPATH so feature packages (e.g., external_dashboard/)
+            # can be imported during tests. This is necessary because code may be written
+            # to feature-specific directories rather than the main package.
+            env = os.environ.copy()
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            repo_root_str = str(self.config.repo_root)
+            if existing_pythonpath:
+                env["PYTHONPATH"] = f"{repo_root_str}:{existing_pythonpath}"
+            else:
+                env["PYTHONPATH"] = repo_root_str
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
                 cwd=self.config.repo_root,
+                env=env,
             )
 
             # Combine stdout and stderr

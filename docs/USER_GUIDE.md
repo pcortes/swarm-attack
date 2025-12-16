@@ -1,12 +1,12 @@
-# Feature Swarm: User Guide for Product Managers
+# Swarm Attack: User Guide
 
-**A step-by-step guide to automating feature development from idea to shipped code.**
+**A step-by-step guide to automating feature development and bug fixing.**
 
 ---
 
 ## Table of Contents
 
-1. [What is Feature Swarm?](#1-what-is-feature-swarm)
+1. [What is Swarm Attack?](#1-what-is-swarm-attack)
 2. [Prerequisites & Setup](#2-prerequisites--setup)
 3. [The Feature Lifecycle](#3-the-feature-lifecycle)
 4. [Quick Start: Your First Feature](#4-quick-start-your-first-feature)
@@ -16,34 +16,45 @@
 8. [Handling Failures & Recovery](#8-handling-failures--recovery)
 9. [Best Practices](#9-best-practices)
 10. [Troubleshooting](#10-troubleshooting)
+11. [Bug Bash: Automated Bug Investigation](#11-bug-bash-automated-bug-investigation)
 
 ---
 
-## 1. What is Feature Swarm?
+## 1. What is Swarm Attack?
 
-Feature Swarm is an **AI-powered automation tool** that takes your feature ideas from concept to working code. It orchestrates the entire development process:
+Swarm Attack is an **AI-powered multi-agent automation system** that handles both feature development and bug fixing. It orchestrates the entire process from idea to shipped code.
 
+### Feature Swarm Pipeline
 ```
 YOUR IDEA → PRD → ENGINEERING SPEC → GITHUB ISSUES → TESTS → CODE → DONE
               ↑           ↑                ↑
            You write   You approve    You greenlight
 ```
 
+### Bug Bash Pipeline
+```
+BUG REPORT → REPRODUCE → ANALYZE → FIX PLAN → APPROVE → FIX → VERIFY
+                                       ↑
+                                  You approve
+```
+
 ### Key Benefits
 
-- **One Command**: Just run `feature-swarm` and it figures out what to do next
+- **One Command**: Just run `swarm-attack` and it figures out what to do next
 - **Automated Spec Writing**: AI drafts engineering specs from your PRD
-- **Quality Gates**: Independent AI review ensures specs meet quality standards
+- **Automated Bug Investigation**: AI reproduces, analyzes, and plans bug fixes
+- **Quality Gates**: Independent AI review through debate system
 - **TDD Approach**: Tests are written before code, ensuring reliability
 - **Recovery Built-in**: If something fails, the system knows how to recover
 
 ### How It Works
 
-Feature Swarm uses **two different AI systems** for checks and balances:
-- **Claude** (via Claude Code CLI) - Writes specs and code
+Swarm Attack uses **multiple specialized AI agents** with debate validation:
+- **Claude** (via Claude Code CLI) - Writes specs, code, and analyzes bugs
 - **Codex/GPT** (via Codex CLI) - Reviews and critiques Claude's work
+- **Debate System** - Author-Critic rounds ensure quality analysis
 
-This "two LLM" approach ensures independent validation of all AI-generated content.
+This multi-agent approach ensures independent validation of all AI-generated content.
 
 ---
 
@@ -651,12 +662,144 @@ rm -rf .swarm/locks/<feature>/
 
 ---
 
-## Getting Help
+## 11. Bug Bash: Automated Bug Investigation
 
-- **Feature Swarm Spec**: See `FEATURE_SWARM_SPEC.md` for technical details
-- **Implementation Plan**: See `IMPLEMENTATION_PLAN.md` for architecture
-- **GitHub Issues**: Report bugs at the repo's issue tracker
+Bug Bash is Swarm Attack's automated bug investigation and fixing pipeline.
+
+### The Bug Lifecycle
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        BUG LIFECYCLE                                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  1. Created           Bug initialized with description and test      │
+│      │                                                               │
+│      ▼                                                               │
+│  2. Reproducing       Running test to confirm bug exists             │
+│      │                                                               │
+│      ▼                                                               │
+│  3. Analyzing         LLM analyzing root cause with debate           │
+│      │                                                               │
+│      ▼                                                               │
+│  4. Planned           Fix plan generated and debated                 │
+│      │                                                               │
+│      ▼                                                               │
+│  5. Approved   ★      Human approved the fix plan                    │
+│      │                                                               │
+│      ▼                                                               │
+│  6. Fixing            Applying fix via Claude Code                   │
+│      │                                                               │
+│      ▼                                                               │
+│  7. Fixed             Bug resolved, tests passing                    │
+│                                                                      │
+│  ★ = Human checkpoint                                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Quick Start: Your First Bug Fix
+
+#### Step 1: Initialize a Bug Investigation
+
+When you have a failing test:
+
+```bash
+swarm-attack bug init "Description of the bug" \
+  --id my-bug-id \
+  --test tests/path/to_test.py::TestClass::test_method \
+  -e "Error message from the failure"
+```
+
+#### Step 2: Run the Analysis Pipeline
+
+```bash
+swarm-attack bug analyze my-bug-id
+```
+
+This runs three phases:
+1. **Reproduce** - Confirms the bug by running the failing test
+2. **Analyze** - LLM analyzes root cause with debate validation
+3. **Plan** - Generates a comprehensive fix plan
+
+#### Step 3: Review and Approve
+
+```bash
+# Check status
+swarm-attack bug status my-bug-id
+
+# Review the generated fix plan
+cat .swarm/bugs/my-bug-id/fix-plan.md
+
+# Approve for implementation
+swarm-attack bug approve my-bug-id
+```
+
+The fix plan includes:
+- Summary of the fix
+- Risk assessment (low/medium/high)
+- Proposed code changes with before/after
+- Test cases to add
+- Potential side effects
+- Rollback plan
+
+#### Step 4: Apply the Fix
+
+```bash
+swarm-attack bug fix my-bug-id
+```
+
+### Bug Commands
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack bug list` | List all bug investigations |
+| `swarm-attack bug init "desc" --id ID --test PATH -e "error"` | Create bug |
+| `swarm-attack bug analyze <bug-id>` | Run full analysis pipeline |
+| `swarm-attack bug status <bug-id>` | Show detailed bug status |
+| `swarm-attack bug approve <bug-id>` | Approve fix plan |
+| `swarm-attack bug approve <bug-id> --yes` | Approve without prompt |
+| `swarm-attack bug fix <bug-id>` | Execute approved fix |
+| `swarm-attack bug reject <bug-id>` | Reject (won't fix) |
+| `swarm-attack bug unblock <bug-id>` | Unblock stuck bug |
+
+### Bug Files
+
+After analysis, you'll find these files in `.swarm/bugs/<bug-id>/`:
+
+| File | Contents |
+|------|----------|
+| `state.json` | Bug investigation state |
+| `report.md` | Initial bug report |
+| `reproduction.md` | Reproduction results |
+| `root-cause-analysis.md` | Root cause analysis |
+| `fix-plan.md` | Approved fix plan |
+
+### Cost Breakdown
+
+Bug analysis uses multiple agents with debate validation:
+
+| Agent | Typical Cost |
+|-------|--------------|
+| bug_researcher | $0.10-0.15 |
+| root_cause_analyzer | $0.08-0.12 |
+| root_cause_debate | $0.08-0.12 |
+| fix_planner | $0.08-0.12 |
+| fix_plan_debate | $0.08-0.12 |
+| **Total** | **$0.40-0.60** |
 
 ---
 
-*This guide was written for Feature Swarm v1.0. Commands and behavior may change in future versions.*
+## Getting Help
+
+- **CLAUDE.md**: See `CLAUDE.md` for system overview
+- **Implementation Plan**: See `IMPLEMENTATION_PLAN.md` for architecture
+- **GitHub Issues**: Report bugs at the repo's issue tracker
+
+```bash
+swarm-attack --help
+swarm-attack bug --help
+```
+
+---
+
+*This guide was written for Swarm Attack. Commands and behavior may change in future versions.*
