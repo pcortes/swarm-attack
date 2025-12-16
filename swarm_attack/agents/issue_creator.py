@@ -99,7 +99,8 @@ Output ONLY valid JSON (no markdown code fence, no extra text, no explanation) w
       "labels": ["enhancement", "backend"],
       "estimated_size": "small|medium|large",
       "dependencies": [],
-      "order": 1
+      "order": 1,
+      "automation_type": "automated|manual"
     }}
   ]
 }}
@@ -111,6 +112,9 @@ Requirements:
 4. Size: small (~1-2 hours), medium (~half day), large (~1+ day)
 5. Include relevant labels (enhancement, bug, backend, frontend, api, database, etc.)
 6. Body should include Description, Acceptance Criteria, and any relevant context
+7. automation_type: "automated" for code tasks, "manual" for tasks requiring human action
+   - Use "manual" for: visual testing, simulator verification, user acceptance, QA review
+   - Use "automated" for: code implementation, API work, database changes, automated tests
 
 Remember: Print the JSON directly. Do not write to files. Do not wrap in markdown code blocks.
 """
@@ -131,6 +135,43 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
 
         return json.loads(json_str)
 
+    # Keywords that indicate a task requires manual/human intervention
+    MANUAL_KEYWORDS = [
+        "manually test",
+        "manual test",
+        "visual inspection",
+        "verify on simulator",
+        "verify on emulator",
+        "user acceptance",
+        "qa review",
+        "human review",
+        "manually verify",
+        "visual verification",
+        "manual verification",
+        "ui review",
+        "ux review",
+        "demo to",
+        "present to",
+    ]
+
+    def _detect_automation_type(self, issue_body: str, issue_title: str) -> str:
+        """
+        Detect if an issue requires manual work based on keywords.
+
+        Args:
+            issue_body: The issue body/description text.
+            issue_title: The issue title text.
+
+        Returns:
+            "manual" if keywords indicate human intervention required,
+            "automated" otherwise.
+        """
+        combined = (issue_body + " " + issue_title).lower()
+        for keyword in self.MANUAL_KEYWORDS:
+            if keyword in combined:
+                return "manual"
+        return "automated"
+
     def _validate_issues(self, data: dict[str, Any]) -> list[str]:
         """
         Validate the issues data structure.
@@ -149,11 +190,17 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
             return errors
 
         required_fields = ["title", "body", "labels", "estimated_size", "dependencies", "order"]
+        valid_automation_types = {"automated", "manual"}
 
         for i, issue in enumerate(issues):
             for field in required_fields:
                 if field not in issue:
                     errors.append(f"Issue {i + 1} missing required field: {field}")
+
+            # Validate automation_type if present
+            auto_type = issue.get("automation_type")
+            if auto_type and auto_type not in valid_automation_types:
+                errors.append(f"Issue {i + 1} invalid automation_type: {auto_type}")
 
         return errors
 
@@ -249,6 +296,15 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
             issues_data["generated_at"] = (
                 datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             )
+
+        # Post-process: ensure automation_type is set for all issues
+        # Use keyword detection as fallback if LLM didn't provide it
+        for issue in issues_data.get("issues", []):
+            if "automation_type" not in issue:
+                issue["automation_type"] = self._detect_automation_type(
+                    issue.get("body", ""),
+                    issue.get("title", ""),
+                )
 
         # Write issues.json
         issues_path = self._get_issues_path(feature_id)

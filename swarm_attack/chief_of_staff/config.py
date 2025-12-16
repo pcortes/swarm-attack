@@ -97,7 +97,7 @@ class StandupConfig:
 
 
 @dataclass
-class AutopilotConfigPrefs:
+class AutopilotConfig:
     """Autopilot preferences."""
     default_budget: float = 10.0
     default_duration: str = "2h"
@@ -106,8 +106,8 @@ class AutopilotConfigPrefs:
     persist_on_checkpoint: bool = True
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> AutopilotConfigPrefs:
-        """Create AutopilotConfigPrefs from dictionary."""
+    def from_dict(cls, data: dict[str, Any]) -> AutopilotConfig:
+        """Create AutopilotConfig from dictionary."""
         return cls(
             default_budget=data.get("default_budget", 10.0),
             default_duration=data.get("default_duration", "2h"),
@@ -133,7 +133,7 @@ class ChiefOfStaffConfig:
     checkpoints: CheckpointConfig = field(default_factory=CheckpointConfig)
     priorities: PriorityConfig = field(default_factory=PriorityConfig)
     standup: StandupConfig = field(default_factory=StandupConfig)
-    autopilot: AutopilotConfigPrefs = field(default_factory=AutopilotConfigPrefs)
+    autopilot: AutopilotConfig = field(default_factory=AutopilotConfig)
     storage_path: str = ".swarm/chief-of-staff"
 
     @classmethod
@@ -143,7 +143,7 @@ class ChiefOfStaffConfig:
             checkpoints=CheckpointConfig.from_dict(data.get("checkpoints", {})),
             priorities=PriorityConfig.from_dict(data.get("priorities", {})),
             standup=StandupConfig.from_dict(data.get("standup", {})),
-            autopilot=AutopilotConfigPrefs.from_dict(data.get("autopilot", {})),
+            autopilot=AutopilotConfig.from_dict(data.get("autopilot", {})),
             storage_path=data.get("storage_path", ".swarm/chief-of-staff"),
         )
 
@@ -156,3 +156,7 @@ class ChiefOfStaffConfig:
             "autopilot": self.autopilot.to_dict(),
             "storage_path": self.storage_path,
         }
+
+
+# Backwards-compatible alias
+AutopilotConfigPrefs = AutopilotConfig

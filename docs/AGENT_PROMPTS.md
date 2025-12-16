@@ -116,7 +116,7 @@ Generate a markdown document with this exact structure:
 │                  │                                          │  │
 │      ┌───────────┼───────────┐                              │  │
 │      ▼           ▼           ▼                              │  │
-│  test_writer  coder     verifier                            │  │
+│  coder (TDD)    verifier                                    │  │
 │                                                             │  │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -274,10 +274,7 @@ SessionManager.start_session()
     ▼
 orchestrator.run_issue_session(issue)
     │
-    ├──► TestWriterAgent.run(issue)
-    │        └── Checkpoint saved
-    │
-    ├──► CoderAgent.run(issue)
+    ├──► CoderAgent.run(issue)  # TDD: writes tests + implements code
     │        └── Checkpoint saved
     │
     ├──► VerifierAgent.run(issue)

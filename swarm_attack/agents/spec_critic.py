@@ -324,6 +324,11 @@ Your output JSON MUST include these fields:
             error = f"Codex invocation error: {e}"
             self._log("spec_critic_error", {"error": error}, level="error")
             return AgentResult.failure_result(error)
+        except Exception as e:
+            # Catch-all for any unexpected exceptions to prevent pipeline crashes
+            error = f"Unexpected error during critic review: {type(e).__name__}: {e}"
+            self._log("spec_critic_unexpected_error", {"error": error, "exception_type": type(e).__name__}, level="error")
+            return AgentResult.failure_result(error)
 
         self.checkpoint("llm_complete", cost_usd=cost)
 

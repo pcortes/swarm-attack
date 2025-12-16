@@ -268,10 +268,11 @@ swarm-attack reject user-authentication --reason "Need more detail on token refr
 │       ↓                                                         │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │  IMPLEMENTATION (automatic, per issue)                   │   │
-│  │  ┌────────────┐   ┌────────┐   ┌──────────┐            │   │
-│  │  │ TestWriter │ → │ Coder  │ → │ Verifier │            │   │
-│  │  │  (Claude)  │   │(Claude)│   │ (pytest) │            │   │
-│  │  └────────────┘   └────────┘   └────┬─────┘            │   │
+│  │  ┌──────────────────────────┐   ┌──────────┐            │   │
+│  │  │  Coder (Implementation)  │ → │ Verifier │            │   │
+│  │  │  TDD: tests + code       │   │ (pytest) │            │   │
+│  │  │       (Claude)           │   │          │            │   │
+│  │  └──────────────────────────┘   └────┬─────┘            │   │
 │  │                                      │                  │   │
 │  │          Tests fail? ────────────────┘                  │   │
 │  │               │         (retry with failure feedback)   │   │

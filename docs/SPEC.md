@@ -240,10 +240,11 @@ class TaskStage(Enum):
 | **SpecModeratorAgent** | SPEC_IN_PROGRESS | Applies critic feedback, finalizes spec | Claude CLI |
 | **IssueValidatorAgent** | ISSUES_VALIDATING | Validates issues are implementable | **Codex CLI** |
 | **PrioritizationAgent** | READY_TO_IMPLEMENT | Determines issue order based on deps/value | Claude CLI |
-| **TestWriterAgent** | IN_PROGRESS | Writes failing tests for issue | Claude CLI |
-| **CoderAgent** | IN_PROGRESS | Implements code to pass tests | Claude CLI |
+| **CoderAgent** | IN_PROGRESS | Implementation Agent: TDD workflow (tests + code + iterate) in single context | Claude CLI |
 | **VerifierAgent** | VERIFYING | Runs tests, checks for regressions | Claude CLI |
 | **RecoveryAgent** | On errors | Handles failures, generates recovery plans | Claude CLI |
+
+> **Note:** CoderAgent is a "thick agent" that handles the complete TDD cycle (write tests, implement code, iterate until tests pass) in a single context window. This eliminates context loss from handoffs between separate test-writing and coding agents.
 
 ### 4.2 LLM Client Architecture
 
@@ -441,8 +442,7 @@ START → Claim Issue → Write Tests → Implement → Verify → END
     "status": "complete",
 
     "checkpoints": [
-        {"agent": "test_writer", "status": "complete", "commit": "a1b2c3d"},
-        {"agent": "coder", "status": "complete", "commit": "e4f5g6h"},
+        {"agent": "coder", "status": "complete", "commit": "a1b2c3d"},
         {"agent": "verifier", "status": "complete"}
     ],
 
@@ -536,10 +536,11 @@ repo-root/
 │   │       ├── epic.md              # Epic (created by CCPM)
 │   │       └── *.md                 # Task files
 │   └── skills/                      # Agent skill definitions
-│       ├── spec_author/
-│       ├── spec_critic/
-│       ├── test_writer/
-│       ├── coder/
+│       ├── feature-spec-author/
+│       ├── feature-spec-critic/
+│       ├── feature-spec-moderator/
+│       ├── issue-creator/
+│       ├── coder/                   # Implementation Agent (TDD)
 │       └── verifier/
 │
 ├── specs/
@@ -771,7 +772,8 @@ MODULES TO IMPLEMENT:
    - spec_author, spec_critic, spec_moderator
    - issue_validator
    - prioritization (decides issue order)
-   - test_writer, coder, verifier
+   - coder (Implementation Agent: TDD workflow in single context)
+   - verifier
    - recovery (handles edge cases)
 
 5. edge_cases.py - Error handlers
@@ -861,7 +863,7 @@ Each agent tested individually with minimal prompts.
 | `test_spec_author_generates_spec` | Creates spec file from tiny PRD |
 | `test_spec_critic_returns_json` | Returns valid JSON with scores |
 | `test_prioritization_agent_selects_correctly` | Deterministic selection works |
-| `test_test_writer_generates_tests` | Creates valid Python test file |
+| `test_coder_generates_tests_and_implementation` | Creates valid tests + implementation via TDD |
 | `test_coder_generates_implementation` | Creates implementation from tests |
 | `test_verifier_runs_tests` | Correctly reports passing tests |
 | `test_verifier_detects_failure` | Correctly reports failing tests |

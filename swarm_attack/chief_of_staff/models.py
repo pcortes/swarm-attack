@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Any, Literal
+from typing import Any, Literal, Optional
 
 
 class GoalStatus(Enum):
@@ -76,6 +76,7 @@ class CheckpointEvent:
     human_response: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
         return {
             "timestamp": self.timestamp,
             "trigger": self.trigger.value,
@@ -111,6 +112,7 @@ class AutopilotSession:
     last_persisted_at: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
         return {
             "session_id": self.session_id,
             "started_at": self.started_at,
@@ -136,4 +138,159 @@ class AutopilotSession:
             data["stop_trigger"] = CheckpointTrigger(data["stop_trigger"])
         data["goals"] = [DailyGoal.from_dict(g) for g in data.get("goals", [])]
         data["checkpoints"] = [CheckpointEvent.from_dict(c) for c in data.get("checkpoints", [])]
+        return cls(**data)
+
+
+@dataclass
+class Decision:
+    """A decision made during the day."""
+    timestamp: str
+    type: str
+    item: str
+    decision: str
+    rationale: str
+    human_override: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "timestamp": self.timestamp,
+            "type": self.type,
+            "item": self.item,
+            "decision": self.decision,
+            "rationale": self.rationale,
+            "human_override": self.human_override,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Decision":
+        """Create from dictionary."""
+        return cls(**data)
+
+
+@dataclass
+class WorkLogEntry:
+    """A single entry in the work log."""
+    timestamp: str
+    action: str
+    result: str
+    cost_usd: float = 0.0
+    duration_seconds: int = 0
+    checkpoint: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "timestamp": self.timestamp,
+            "action": self.action,
+            "result": self.result,
+            "cost_usd": self.cost_usd,
+            "duration_seconds": self.duration_seconds,
+            "checkpoint": self.checkpoint,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WorkLogEntry":
+        """Create from dictionary."""
+        return cls(**data)
+
+
+@dataclass
+class StandupSession:
+    """Record of a standup session."""
+    session_id: str
+    time: str
+    yesterday_goals: list[DailyGoal] = field(default_factory=list)
+    today_goals: list[DailyGoal] = field(default_factory=list)
+    philip_notes: str = ""
+    recommendations_accepted: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "session_id": self.session_id,
+            "time": self.time,
+            "yesterday_goals": [g.to_dict() for g in self.yesterday_goals],
+            "today_goals": [g.to_dict() for g in self.today_goals],
+            "philip_notes": self.philip_notes,
+            "recommendations_accepted": self.recommendations_accepted,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StandupSession":
+        """Create from dictionary."""
+        data = data.copy()
+        data["yesterday_goals"] = [DailyGoal.from_dict(g) for g in data.get("yesterday_goals", [])]
+        data["today_goals"] = [DailyGoal.from_dict(g) for g in data.get("today_goals", [])]
+        return cls(**data)
+
+
+@dataclass
+class DailySummary:
+    """End-of-day summary."""
+    goals_completed: int
+    goals_total: int
+    total_cost_usd: float
+    key_accomplishments: list[str] = field(default_factory=list)
+    blockers_for_tomorrow: list[str] = field(default_factory=list)
+    carryover_goals: list[DailyGoal] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "goals_completed": self.goals_completed,
+            "goals_total": self.goals_total,
+            "total_cost_usd": self.total_cost_usd,
+            "key_accomplishments": self.key_accomplishments,
+            "blockers_for_tomorrow": self.blockers_for_tomorrow,
+            "carryover_goals": [g.to_dict() for g in self.carryover_goals],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailySummary":
+        """Create from dictionary."""
+        data = data.copy()
+        data["carryover_goals"] = [DailyGoal.from_dict(g) for g in data.get("carryover_goals", [])]
+        return cls(**data)
+
+
+@dataclass
+class DailyLog:
+    """Complete daily log for a single day."""
+    date: str
+    standups: list[StandupSession] = field(default_factory=list)
+    work_log: list[WorkLogEntry] = field(default_factory=list)
+    summary: Optional[DailySummary] = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def __post_init__(self) -> None:
+        """Set timestamps if not provided."""
+        now = datetime.now().isoformat()
+        if not self.created_at:
+            self.created_at = now
+        if not self.updated_at:
+            self.updated_at = now
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "date": self.date,
+            "standups": [s.to_dict() for s in self.standups],
+            "work_log": [w.to_dict() for w in self.work_log],
+            "summary": self.summary.to_dict() if self.summary else None,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailyLog":
+        """Create from dictionary."""
+        data = data.copy()
+        data["standups"] = [StandupSession.from_dict(s) for s in data.get("standups", [])]
+        data["work_log"] = [WorkLogEntry.from_dict(w) for w in data.get("work_log", [])]
+        if data.get("summary"):
+            data["summary"] = DailySummary.from_dict(data["summary"])
         return cls(**data)

@@ -38,11 +38,22 @@ app = typer.Typer(
     name="swarm-attack",
     help="Autonomous AI-powered feature development - run from any project directory",
     add_completion=False,
-    no_args_is_help=True,
 )
 
 # Rich console for output
 console = Console()
+
+# Global project directory override (set via --project flag)
+_project_dir: Optional[str] = None
+
+
+def _get_project_dir() -> Optional[str]:
+    """Get the project directory override if set."""
+    return _project_dir
+
+
+# Note: The main callback is defined later in the file (search for @app.callback)
+# to consolidate --project and --version options in one place
 
 # Phase display names and colors
 PHASE_DISPLAY = {
@@ -200,9 +211,10 @@ def _load_config_safe() -> Optional[SwarmConfig]:
     Load config, returning None if not found (allows running without config).
 
     For status command, we can work with just the .swarm directory.
+    Uses the global --project flag if set.
     """
     try:
-        return load_config()
+        return load_config(repo_root=_get_project_dir())
     except ConfigError:
         # No config file - use defaults
         return None
@@ -224,8 +236,11 @@ def _get_config_or_default() -> SwarmConfig:
         TestRunnerConfig,
     )
 
+    # Use project directory override if set, otherwise current directory
+    effective_repo_root = _get_project_dir() or "."
+
     return SwarmConfig(
-        repo_root=".",
+        repo_root=effective_repo_root,
         specs_dir="specs",
         swarm_dir=".swarm",
         github=GitHubConfig(repo=""),
@@ -412,8 +427,15 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main(
+    ctx: typer.Context,
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        "-p",
+        help="Project directory to operate on (default: current directory)",
+    ),
     version: bool = typer.Option(
         False,
         "--version",
@@ -427,9 +449,21 @@ def main(
     Swarm Attack - Autonomous feature development orchestrator.
 
     Automates software development from PRD to shipped code using
-    AI-powered agents.
+    AI-powered agents. Use --project/-p to operate on a different project directory.
     """
-    pass
+    global _project_dir
+    if project:
+        # Validate that the project directory exists
+        project_path = Path(project)
+        if not project_path.is_dir():
+            console.print(f"[red]Error: Project directory not found: {project}[/red]")
+            raise typer.Exit(1)
+        _project_dir = str(project_path.absolute())
+
+    # If no subcommand and no --help, show help
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
+        raise typer.Exit(0)
 
 
 @app.command()

@@ -70,6 +70,7 @@ class TaskStage(Enum):
     DONE = auto()                    # Complete and verified
     BLOCKED = auto()                 # Needs human help
     SKIPPED = auto()                 # Skipped due to blocked dependency
+    MANUAL_REQUIRED = auto()         # Requires manual human verification (not automatable)
 
 
 @dataclass

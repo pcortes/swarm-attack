@@ -9,8 +9,7 @@ This package contains the AI agents that perform automated tasks:
 - IssueCreatorAgent: Generates GitHub issues from specs
 - IssueValidatorAgent: Validates generated issues
 - PrioritizationAgent: Determines which issue to work on next
-- TestWriterAgent: Generates unit tests for issues
-- CoderAgent: Implements code to make tests pass
+- CoderAgent: Implementation Agent with full TDD workflow (test + code + verify)
 - VerifierAgent: Runs tests to verify implementation correctness
 - RecoveryAgent: Analyzes failures and generates recovery plans
 - BugCriticAgent: Reviews root cause analysis and fix plans (uses Codex)
@@ -28,7 +27,6 @@ from swarm_attack.agents.recovery import RecoveryAgent
 from swarm_attack.agents.spec_author import SpecAuthorAgent
 from swarm_attack.agents.spec_critic import SpecCriticAgent
 from swarm_attack.agents.spec_moderator import SpecModeratorAgent
-from swarm_attack.agents.test_writer import TestWriterAgent
 from swarm_attack.agents.verifier import VerifierAgent
 
 __all__ = [
@@ -44,6 +42,5 @@ __all__ = [
     "SpecAuthorAgent",
     "SpecCriticAgent",
     "SpecModeratorAgent",
-    "TestWriterAgent",
     "VerifierAgent",
 ]

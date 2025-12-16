@@ -290,14 +290,16 @@ feature-swarm smart user-notifications
 ```
 
 The system will:
-1. Create GitHub issues from the spec
+1. Create GitHub issues from the spec (with Interface Contracts)
 2. Prioritize issues by dependencies and value
-3. For each issue:
-   - Write tests first (TDD)
-   - Implement code to pass tests
-   - Verify all tests pass
-   - Create a git commit
-4. Mark issues as done when complete
+3. For each issue, the **Implementation Agent** (thick-agent TDD):
+   - Reads context (issue, spec, integration points)
+   - Writes tests first (RED phase)
+   - Implements code to pass tests (GREEN phase)
+   - Iterates until all tests pass
+   - Runs full test suite for regressions
+4. Verifier validates and creates git commit
+5. Mark issues as done when complete
 
 ### Step 6: Review and Merge
 
@@ -603,9 +605,9 @@ feature-swarm init <feature-name>
 
 ### "Tests keep failing during implementation"
 
-1. Review the test file created by TestWriterAgent
+1. Review the test file created by the Implementation Agent
 2. Check if tests are reasonable for the requirements
-3. Review the CoderAgent's implementation attempt
+3. Review the Implementation Agent's code attempt
 4. Consider breaking the issue into smaller pieces
 
 ### "Session stuck"

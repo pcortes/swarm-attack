@@ -6,7 +6,7 @@ Autonomous AI-powered multi-agent development automation system. Orchestrates Cl
 
 ### Feature Swarm Pipeline
 ```
-PRD → Spec → Issues → Tests → Code → Verify → Commit
+PRD → Spec Debate → Issues → Implementation → Verify → Commit
 ```
 
 ### Bug Bash Pipeline
@@ -14,15 +14,14 @@ PRD → Spec → Issues → Tests → Code → Verify → Commit
 Bug Report → Reproduce → Analyze → Plan → Approve → Fix → Verify
 ```
 
-Swarm Attack coordinates multiple AI agents (Claude + Codex) to:
+Swarm Attack coordinates multiple AI agents to:
 
 **Feature Development:**
 1. **Generate specs** from your PRD using SpecAuthor agent
 2. **Review & improve** specs through SpecCritic/SpecModerator debate
-3. **Create GitHub issues** from approved specs
-4. **Write tests** (TDD) with TestWriter agent
-5. **Implement code** with Coder agent
-6. **Verify & commit** with Verifier agent
+3. **Create GitHub issues** from approved specs (with Interface Contracts)
+4. **Implement features** with Implementation Agent (TDD in single context)
+5. **Verify & commit** with Verifier agent
 
 **Bug Investigation:**
 1. **Reproduce bugs** with BugResearcher agent
@@ -30,6 +29,32 @@ Swarm Attack coordinates multiple AI agents (Claude + Codex) to:
 3. **Generate fix plans** with risk assessment
 4. **Apply fixes** after human approval
 5. **Verify fixes** by running tests
+
+## Architecture: Thick-Agent Model
+
+Swarm Attack uses a **thick-agent** architecture for implementation:
+
+### Why Thick-Agent?
+
+The previous **thin-agent** pipeline (`Issue Creator → Test Writer → Coder → Verifier`) had a critical flaw: **context loss at each handoff (~40% per transition)**.
+
+**Old Pipeline Problems:**
+- Test Writer couldn't see what code would call the implementation
+- Coder couldn't iterate with tests—had to get them right first try
+- Missing interface methods (e.g., `from_dict()`) because no agent saw the full picture
+
+**New Pipeline Solution:**
+```
+Issue Creator → Implementation Agent (Coder) → Verifier
+                        ↓
+            Single context window handles:
+            1. Read context (issue, spec, integration points)
+            2. Write tests (RED phase)
+            3. Implement code (GREEN phase)
+            4. Iterate until tests pass
+```
+
+The **Implementation Agent** is a "thick" agent with full context—it sees the issue, spec, integration points, tests, and implementation all at once. This eliminates handoff losses and enables real TDD iteration.
 
 ## Installation
 
@@ -47,19 +72,14 @@ Now `swarm-attack` works from any directory.
 # Claude CLI (requires Anthropic Max subscription)
 # Install from: https://docs.anthropic.com/claude-code
 
-# Codex CLI (requires OpenAI ChatGPT subscription)
-npm install -g @openai/codex
-
-# Authenticate both
+# Authenticate
 claude auth login
-codex auth
 ```
 
 ### Verify Setup
 ```bash
 claude --version
 claude doctor
-codex --version
 ```
 
 ## Quick Start
@@ -161,11 +181,6 @@ claude:
   max_turns: 6
   timeout_seconds: 300
 
-codex:
-  binary: "codex"
-  model: "gpt-5.1-codex"
-  timeout_seconds: 120
-
 spec_debate:
   max_rounds: 5
   success_threshold: 0.85
@@ -181,17 +196,30 @@ your-project/
 ├── .claude/
 │   ├── prds/               # Your PRDs go here
 │   │   └── my-feature.md
-│   ├── specs/              # Generated specs
-│   │   └── my-feature/
-│   │       ├── spec-draft.md
-│   │       ├── spec-review.json
-│   │       └── spec-rubric.json
+│   ├── specs/              # Generated specs (legacy)
 │   └── skills/             # Agent skill definitions
+│       ├── coder/          # Implementation Agent (TDD)
+│       ├── verifier/
+│       ├── issue-creator/
 │       ├── feature-spec-author/
 │       ├── feature-spec-critic/
+│       ├── feature-spec-moderator/
 │       └── ...
+├── specs/                  # Generated specs
+│   └── my-feature/
+│       ├── spec-draft.md
+│       └── spec-final.md
+├── tests/
+│   └── generated/          # Generated test files
+│       └── my-feature/
+│           └── test_issue_1.py
 └── .swarm/                 # State tracking
-    └── state.json
+    ├── state/
+    │   └── my-feature.json
+    └── bugs/
+        └── bug-id/
+            ├── state.json
+            └── fix-plan.md
 ```
 
 ## The Debate Pipeline
@@ -199,7 +227,7 @@ your-project/
 ```
 ┌────────────┐     ┌────────────┐     ┌────────────┐
 │ SpecAuthor │ ──▶ │ SpecCritic │ ──▶ │SpecModerator│
-│  (Claude)  │     │  (Codex)   │     │  (Claude)   │
+│  (Claude)  │     │  (Claude)  │     │  (Claude)   │
 └────────────┘     └────────────┘     └─────┬──────┘
                                             │
                         ┌───────────────────┘
@@ -217,6 +245,70 @@ your-project/
               Stalemate (manual intervention)
 ```
 
+## Implementation Pipeline (Thick-Agent TDD)
+
+```
+┌──────────────────────────────────────────────────────┐
+│            Implementation Agent (Coder)               │
+├──────────────────────────────────────────────────────┤
+│  Phase 1: Read Context                                │
+│  - Read issue with Interface Contract                 │
+│  - Read spec/PRD for broader context                  │
+│  - Find integration points (who calls this code?)     │
+│  - Find pattern references (existing similar code)    │
+├──────────────────────────────────────────────────────┤
+│  Phase 2: Write Tests First (RED)                     │
+│  - Create tests/generated/{feature}/test_issue_N.py   │
+│  - Tests verify interface contracts                   │
+│  - Tests should FAIL initially                        │
+├──────────────────────────────────────────────────────┤
+│  Phase 3: Run Tests (Expect Failure)                  │
+│  - pytest tests/generated/{feature}/test_issue_N.py   │
+│  - Verify failures are for right reasons              │
+├──────────────────────────────────────────────────────┤
+│  Phase 4: Implement Code (GREEN)                      │
+│  - Write minimal code to pass tests                   │
+│  - Follow existing patterns in codebase               │
+│  - Include all interface methods                      │
+├──────────────────────────────────────────────────────┤
+│  Phase 5: Iterate Until Tests Pass                    │
+│  - Run tests, fix failures                            │
+│  - Maximum 5 iteration cycles                         │
+├──────────────────────────────────────────────────────┤
+│  Phase 6: Run Full Test Suite                         │
+│  - pytest tests/ -v                                   │
+│  - All tests must pass (no regressions)               │
+├──────────────────────────────────────────────────────┤
+│  Phase 7: Mark Complete                               │
+│  - All tests pass                                     │
+│  - Interface contracts satisfied                      │
+└──────────────────────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────┐
+│                    Verifier                           │
+│  - Runs full test suite                               │
+│  - Validates implementation meets spec                │
+│  - Creates commit if all passes                       │
+└──────────────────────────────────────────────────────┘
+```
+
+## Interface Contracts
+
+Issues created by Swarm Attack include **Interface Contracts** that specify exactly what methods must be implemented:
+
+```markdown
+## Interface Contract (REQUIRED)
+
+**Required Methods:**
+- `from_dict(cls, data: dict) -> ClassName`
+- `to_dict(self) -> dict`
+
+**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig`
+```
+
+This ensures the Implementation Agent knows the exact interface requirements before writing tests and code.
+
 ## Recovery & Troubleshooting
 
 If a feature gets stuck in BLOCKED state (e.g., due to timeout after successful completion):
@@ -233,6 +325,33 @@ swarm-attack unblock my-feature --phase SPEC_NEEDS_APPROVAL
 ```
 
 The `unblock` command analyzes spec files on disk to determine if the debate actually succeeded despite the timeout, and automatically transitions to the correct phase.
+
+### Debug Mode
+
+```bash
+# Enable debug output
+SWARM_DEBUG=1 swarm-attack run my-feature
+
+# Check feature state
+cat .swarm/state/my-feature.json | python -m json.tool
+
+# Check bug state
+swarm-attack bug status bug-id
+```
+
+## Agent Overview
+
+| Agent | Purpose |
+|-------|---------|
+| **SpecAuthor** | Generates engineering specs from PRDs |
+| **SpecCritic** | Reviews specs and scores them |
+| **SpecModerator** | Improves specs based on feedback |
+| **IssueCreator** | Creates GitHub issues with Interface Contracts |
+| **Implementation Agent** | TDD in single context (tests + code + iteration) |
+| **Verifier** | Validates implementations and creates commits |
+| **BugResearcher** | Reproduces bugs and gathers evidence |
+| **RootCauseAnalyzer** | Identifies root cause of bugs |
+| **FixPlanner** | Generates comprehensive fix plans |
 
 ## License
 

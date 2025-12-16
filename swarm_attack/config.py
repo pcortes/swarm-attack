@@ -411,13 +411,16 @@ def _parse_chief_of_staff_config(data: dict[str, Any]) -> ChiefOfStaffConfig:
     return ChiefOfStaffConfig.from_dict(data)
 
 
-def load_config(config_path: Optional[str] = None) -> SwarmConfig:
+def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = None) -> SwarmConfig:
     """
     Load configuration from config.yaml.
 
     Args:
         config_path: Optional path to config file. If not provided,
-                     looks for config.yaml in current directory.
+                     looks for config.yaml in current directory or repo_root.
+        repo_root: Optional project directory override. If provided, this
+                   directory will be used as the repo_root instead of ".".
+                   Enables running swarm-attack on external projects.
 
     Returns:
         SwarmConfig: Loaded and validated configuration.
@@ -425,8 +428,12 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     Raises:
         ConfigError: If config is invalid or cannot be loaded.
     """
+    # Determine the config file path
     if config_path is None:
-        config_path = "config.yaml"
+        if repo_root:
+            config_path = str(Path(repo_root) / "config.yaml")
+        else:
+            config_path = "config.yaml"
 
     path = Path(config_path)
     if not path.exists():
@@ -464,8 +471,11 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     bug_bash_config = _parse_bug_bash_config(data.get("bug_bash", {}))
     chief_of_staff_config = _parse_chief_of_staff_config(data.get("chief_of_staff", {}))
 
+    # Use CLI repo_root override if provided, otherwise use config file value or "."
+    actual_repo_root = repo_root if repo_root else data.get("repo_root", ".")
+
     return SwarmConfig(
-        repo_root=data.get("repo_root", "."),
+        repo_root=actual_repo_root,
         specs_dir=data.get("specs_dir", "specs"),
         swarm_dir=data.get("swarm_dir", ".swarm"),
         github=github_config,

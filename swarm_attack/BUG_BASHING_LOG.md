@@ -66,13 +66,15 @@ tests/unit/test_spec_author_edge_cases.py - 9 tests
 IMPORTANT: You MUST use the Write tool to save both files.
 ```
 
-**Fix 2: Created test-writer skill in source**
-- File: `.claude/skills/test-writer/SKILL.md`
+**Fix 2: Created test-writer skill in source** [DEPRECATED - removed in thick-agent cutover]
+- File: `.claude/skills/test-writer/SKILL.md` [DELETED]
 - Created new skill file with explicit Write tool instructions
+- NOTE: test-writer is now part of CoderAgent (Implementation Agent with TDD)
 
-**Fix 3: test-writer and coder skills in conftest.py**
+**Fix 3: test-writer and coder skills in conftest.py** [test-writer portion DEPRECATED]
 - File: `tests/integration/conftest.py`
 - Added explicit Write tool instructions to both skills
+- NOTE: test-writer skill merged into coder skill (thick-agent architecture)
 
 **Fix 4: SpecModeratorAgent extraction logic**
 - File: `swarm_attack/agents/spec_moderator.py`
@@ -139,8 +141,8 @@ tests/unit/ (all tests) - 1032 passed ✅
 
 | File | Type | Changes |
 |------|------|---------|
-| `tests/integration/conftest.py` | Test | Added Write instructions to feature-spec-moderator, test-writer, coder skills |
-| `.claude/skills/test-writer/SKILL.md` | Source | Created new skill file |
+| `tests/integration/conftest.py` | Test | Added Write instructions to feature-spec-moderator, coder skills |
+| `.claude/skills/test-writer/SKILL.md` | Source | [DELETED - merged into coder skill] |
 | `swarm_attack/agents/spec_moderator.py` | Source | Fixed extraction logic to check file-first |
 | `tests/unit/test_spec_agents.py` | Test | Updated mock content to be > 50 chars |
 | `tests/unit/test_llm_clients.py` | Test | Updated to use `--` separator instead of `-p` flag |
@@ -175,7 +177,7 @@ python -m pytest tests/unit/ -v --tb=short
 
 **All tests passing** ✅
 
-**Warnings Note**: 21 PytestCollectionWarnings about `TestRunnerConfig` and `TestWriterAgent` classes. These are false positives - pytest sees classes starting with "Test" but they're config dataclasses and agent classes, not test classes. Not a bug, just a naming convention issue.
+**Warnings Note**: 21 PytestCollectionWarnings about `TestRunnerConfig` classes. These are false positives - pytest sees classes starting with "Test" but they're config dataclasses, not test classes. Not a bug, just a naming convention issue. (Note: `TestWriterAgent` warning no longer applies - class removed in thick-agent cutover)
 
 ---
 
@@ -183,7 +185,7 @@ python -m pytest tests/unit/ -v --tb=short
 
 1. ~~**LLM Client Tests**: `test_llm_clients.py` has 5 failing tests expecting `-p` flag~~ ✅ FIXED
 2. **Integration Tests with Real Claude**: Not yet run to verify fixes work end-to-end
-3. **PytestCollectionWarnings**: `TestRunnerConfig` and `TestWriterAgent` trigger false positive warnings (cosmetic, not blocking)
+3. **PytestCollectionWarnings**: `TestRunnerConfig` triggers false positive warnings (cosmetic, not blocking). Note: `TestWriterAgent` removed in thick-agent cutover.
 
 ---
 

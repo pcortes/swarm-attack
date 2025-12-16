@@ -62,7 +62,7 @@
     },
     {
       "issue_number": 6,
-      "stage": "BLOCKED",
+      "stage": "DONE",
       "title": "Implement CheckpointSystem for autopilot triggers",
       "dependencies": [
         1,
@@ -71,7 +71,7 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": "Max retries exceeded: Regression detected: 15 tests failed in full suite"
+      "blocked_reason": null
     },
     {
       "issue_number": 7,
@@ -248,9 +248,9 @@
       "blocked_reason": null
     }
   ],
-  "current_session": null,
+  "current_session": "sess_20251216_215419_934128",
   "created_at": "2025-12-16T04:49:35.316644Z",
-  "updated_at": "2025-12-16T17:08:03.210449Z",
+  "updated_at": "2025-12-16T21:53:33.062300Z",
   "cost_total_usd": 3.8836047500000004,
   "cost_by_phase": {
     "ISSUES": 0.46901925,

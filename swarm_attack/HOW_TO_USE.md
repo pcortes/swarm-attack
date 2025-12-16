@@ -249,9 +249,8 @@ python -m swarm_attack greenlight <feature-id>
 
 ### What Happens
 For each issue, agents collaborate:
-1. **Test Writer** - Writes failing tests first (TDD)
-2. **Coder** - Implements code to pass tests
-3. **Verifier** - Runs tests and validates
+1. **Coder (Implementation Agent)** - Full TDD workflow: writes tests, implements code, iterates until passing
+2. **Verifier** - Runs tests and validates
 
 ### Command
 ```bash
@@ -332,8 +331,7 @@ ls .claude/skills/
 # - feature-spec-author/SKILL.md
 # - feature-spec-critic/SKILL.md
 # - feature-spec-moderator/SKILL.md
-# - coder/SKILL.md
-# - test-writer/SKILL.md
+# - coder/SKILL.md (Implementation Agent with TDD)
 # - verifier/SKILL.md
 # - recovery/SKILL.md
 ```

@@ -8,11 +8,13 @@ This module orchestrates:
    - SpecModerator applies feedback and improves spec
    - Loop continues until success, stalemate, or timeout
 
-2. Issue session orchestration:
+2. Issue session orchestration (thick-agent architecture):
    - Claim issue and ensure feature branch
-   - TestWriterAgent generates tests
-   - CoderAgent implements code
-   - VerifierAgent runs tests
+   - CoderAgent (Implementation Agent) handles full TDD workflow:
+     - Writes tests first (RED phase)
+     - Implements code (GREEN phase)
+     - Iterates until tests pass
+   - VerifierAgent runs full test suite
    - Retry logic with max retries
    - Git commit and GitHub issue update
 """
@@ -32,7 +34,6 @@ from swarm_attack.agents import (
     SpecAuthorAgent,
     SpecCriticAgent,
     SpecModeratorAgent,
-    TestWriterAgent,
     VerifierAgent,
 )
 from swarm_attack.models import FeaturePhase, TaskStage
@@ -92,8 +93,9 @@ class Orchestrator:
     Coordinates:
     1. Spec debate pipeline: SpecAuthor, SpecCritic, and SpecModerator agents
        to iteratively improve a spec until it meets quality thresholds.
-    2. Issue session: PrioritizationAgent, TestWriterAgent, CoderAgent, and
-       VerifierAgent to implement issues with TDD and retry logic.
+    2. Issue session: PrioritizationAgent and CoderAgent (Implementation Agent)
+       to implement issues with full TDD workflow in a single context window.
+       The CoderAgent handles test writing + implementation + verification iteration.
     """
 
     def __init__(
@@ -106,7 +108,6 @@ class Orchestrator:
         state_store: Optional[StateStore] = None,
         # Implementation agents (optional, auto-created if not provided)
         prioritization: Optional[PrioritizationAgent] = None,
-        test_writer: Optional[TestWriterAgent] = None,
         coder: Optional[CoderAgent] = None,
         verifier: Optional[VerifierAgent] = None,
         # Progress callback for CLI output
@@ -123,8 +124,7 @@ class Orchestrator:
             moderator: Optional SpecModeratorAgent (created if not provided).
             state_store: Optional state store for persistence.
             prioritization: Optional PrioritizationAgent (created if not provided).
-            test_writer: Optional TestWriterAgent (created if not provided).
-            coder: Optional CoderAgent (created if not provided).
+            coder: Optional CoderAgent - Implementation Agent with full TDD workflow.
             verifier: Optional VerifierAgent (created if not provided).
             progress_callback: Optional callback function(event: str, data: dict) for progress.
         """
@@ -139,9 +139,10 @@ class Orchestrator:
         self._moderator = moderator or SpecModeratorAgent(config, logger)
 
         # Issue session agents (auto-created if not provided)
+        # Note: Thick-agent architecture - CoderAgent handles full TDD workflow
+        # (test writing + implementation + verification iteration)
         self._session_manager: Optional[SessionManager] = None
         self._prioritization = prioritization or PrioritizationAgent(config, logger)
-        self._test_writer = test_writer or TestWriterAgent(config, logger)
         self._coder = coder or CoderAgent(config, logger)
         self._verifier = verifier or VerifierAgent(config, logger)
         self._github_client: Optional[GitHubClient] = None
@@ -1293,7 +1294,7 @@ class Orchestrator:
         previous_failures: Optional[list[dict[str, Any]]] = None,
     ) -> tuple[bool, AgentResult, float]:
         """
-        Run one test_writer → coder → verifier cycle.
+        Run one implementation cycle (coder → verifier).
 
         Args:
             feature_id: The feature identifier.
@@ -1482,17 +1483,20 @@ class Orchestrator:
         """
         Run a complete issue implementation session.
 
-        The session workflow:
+        The session workflow (thick-agent architecture):
         1. Select issue (if not specified) using PrioritizationAgent
         2. Claim issue lock
         3. Ensure feature branch
-        4. Run TestWriterAgent to generate tests
-        5. Run CoderAgent to implement code
-        6. Run VerifierAgent to verify tests pass
-        7. If tests fail, retry up to max_implementation_retries
-        8. On success: commit, update GitHub issue, mark task done
-        9. On blocked: mark task blocked
-        10. Release issue lock
+        4. Run CoderAgent (Implementation Agent) with full TDD workflow:
+           - Reads context (issue, spec, integration points)
+           - Writes tests first (RED phase)
+           - Implements code (GREEN phase)
+           - Iterates until all tests pass
+        5. Run VerifierAgent to verify full test suite passes
+        6. If tests fail, retry up to max_implementation_retries
+        7. On success: commit, update GitHub issue, mark task done
+        8. On blocked: mark task blocked
+        9. Release issue lock
 
         Args:
             feature_id: The feature identifier.
@@ -1587,49 +1591,9 @@ class Orchestrator:
             session_id = session.session_id
 
         try:
-            # Step 4: Run TestWriterAgent
-            if self._test_writer:
-                context = {
-                    "feature_id": feature_id,
-                    "issue_number": issue_number,
-                }
-                self._test_writer.reset()
-                test_writer_result = self._test_writer.run(context)
-                total_cost += test_writer_result.cost_usd
-
-                if self._session_manager:
-                    self._session_manager.checkpoint(
-                        session_id, "test_writer", "complete", cost_usd=test_writer_result.cost_usd
-                    )
-
-                if not test_writer_result.success:
-                    self._log("test_writer_failure", {
-                        "feature_id": feature_id,
-                        "issue_number": issue_number,
-                        "error": test_writer_result.errors,
-                    }, level="error")
-
-                    if self._session_manager:
-                        self._session_manager.end_session(session_id, "failed")
-                        session_ended = True
-                        # Lock release handled by finally block
-
-                    return IssueSessionResult(
-                        status="failed",
-                        issue_number=issue_number,
-                        session_id=session_id,
-                        tests_written=0,
-                        tests_passed=0,
-                        tests_failed=0,
-                        commits=[],
-                        cost_usd=total_cost,
-                        retries=0,
-                        error=f"Test writer failed: {test_writer_result.errors[0] if test_writer_result.errors else 'Unknown error'}",
-                    )
-
-                tests_written = test_writer_result.output.get("tests_generated", 0)
-
-            # Step 5-7: Implementation cycle with retries
+            # Step 4: Implementation cycle with retries
+            # Thick-agent architecture: CoderAgent handles full TDD workflow
+            # (test writing + implementation + verification iteration)
             max_retries = getattr(self.config.sessions, "max_implementation_retries", 3)
             success = False
             verifier_result: Optional[AgentResult] = None

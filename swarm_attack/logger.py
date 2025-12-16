@@ -139,7 +139,7 @@ class SwarmLogger:
 
         Example:
             with logger.session_context("sess_001") as log:
-                log.info("checkpoint", {"agent": "test_writer"})
+                log.info("checkpoint", {"agent": "coder"})
         """
         old_session_id = self._current_session_id
         self._current_session_id = session_id

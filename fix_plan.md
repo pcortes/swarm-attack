@@ -28,8 +28,8 @@ The development appears to have followed a pattern of implementing the backend f
 |-----------|------|--------|----------------|
 | IssueCreatorAgent | `/swarm_attack/agents/issue_creator.py` | ✅ Fully implemented | Lines 1-276 |
 | IssueValidatorAgent | `/swarm_attack/agents/issue_validator.py` | ✅ Fully implemented | Lines 1-505 |
-| CoderAgent | `/swarm_attack/agents/coder.py` | ✅ Implemented | Exported in `__init__.py:19` |
-| TestWriterAgent | `/swarm_attack/agents/test_writer.py` | ✅ Implemented | Exported in `__init__.py:27` |
+| CoderAgent (Implementation Agent) | `/swarm_attack/agents/coder.py` | ✅ Implemented | Exported in `__init__.py:19` - Now handles full TDD workflow |
+| ~~TestWriterAgent~~ | ~~`/swarm_attack/agents/test_writer.py`~~ | REMOVED | Merged into CoderAgent (thick-agent architecture) |
 | VerifierAgent | `/swarm_attack/agents/verifier.py` | ✅ Implemented | Exported in `__init__.py:28` |
 | `run_issue_session()` | `/swarm_attack/orchestrator.py` | ✅ Fully implemented | Lines 564-877 |
 | StateMachine issue handling | `/swarm_attack/state_machine.py` | ✅ Fully implemented | Lines 397-535 |

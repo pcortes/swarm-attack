@@ -24,8 +24,7 @@ Feature Swarm is a Python CLI orchestrator that automates the full software deve
 | Spec Moderator Agent | Applies feedback, finalizes spec | Medium |
 | Issue Validator Agent | Validates issues are implementable | Medium |
 | Prioritization Agent | Determines issue order based on deps/value | Medium |
-| Test Writer Agent | Writes failing tests for issue | Medium |
-| Coder Agent | Implements code to pass tests | Medium |
+| Coder Agent (Implementation Agent) | TDD workflow: writes tests + implements code in single context | Medium |
 | Verifier Agent | Runs tests, checks for regressions | Medium |
 | Recovery Agent | Handles failures, generates recovery plans | High |
 | Edge Case Handlers (edge_cases.py) | Retry logic, recovery plans | Medium |
@@ -1129,60 +1128,47 @@ implementation_notes: |
   - Returns highest-priority ready issue
 ```
 
-#### Issue 21: Test Writer Agent ✅ COMPLETE
+#### Issue 21: Test Writer Agent ✅ COMPLETE → DEPRECATED
+
+> **ARCHITECTURE CHANGE (Dec 2025):** TestWriterAgent was removed in the thick-agent cutover.
+> Test writing is now part of CoderAgent (Implementation Agent) which handles the complete
+> TDD workflow (tests + code + iteration) in a single context window to eliminate handoff losses.
+> See: specs/thick-agent-cutover/spec.md
 
 ```yaml
-title: "Implement Test Writer agent (agents/test_writer.py)"
+title: "[DEPRECATED] Implement Test Writer agent (agents/test_writer.py)"
 priority: P1
 size: medium (2-3 hours)
 dependencies: [8]
-status: COMPLETE
+status: DEPRECATED - Merged into CoderAgent
 
 description: |
-  Agent that writes failing tests for an issue before implementation.
+  [HISTORICAL] Agent that writes failing tests for an issue before implementation.
+  This functionality is now part of CoderAgent's TDD workflow.
 
 files:
-  - feature_swarm/agents/test_writer.py ✅
-  - tests/unit/test_test_writer_agent.py ✅ (24 tests)
-
-acceptance_criteria:
-  - [x] TestWriterAgent extends BaseAgent
-  - [x] Read issue description and acceptance criteria
-  - [x] Generate test file(s) using Claude
-  - [x] Tests should initially fail (TDD approach)
-  - [x] Checkpoint after test creation
-  - [x] Return list of created test files
-  - [x] Unit tests with mocked LLM (24 tests)
-
-spec_reference: "Section 4.1"
-
-integration_points:
-  - Used by: orchestrator (issue session)
-  - Uses: agent_base, llm_clients, session_manager
-
-test_strategy: |
-  - Test generates valid test code ✅
-  - Test checkpoint created ✅
-
-implementation_notes: |
-  TestWriterAgent generates unit tests via Claude CLI:
-  - Reads issue content and spec context
-  - Supports skill prompts from .claude/skills/
-  - Checkpoint support for recovery
-  - Test file path generation
+  - feature_swarm/agents/test_writer.py  # DELETED
+  - tests/unit/test_test_writer_agent.py # DELETED
 ```
 
-#### Issue 22: Coder Agent ✅ COMPLETE
+#### Issue 22: Coder Agent ✅ COMPLETE → UPDATED (Implementation Agent)
+
+> **ARCHITECTURE CHANGE (Dec 2025):** CoderAgent is now the "Implementation Agent" with full TDD workflow.
+> It writes tests AND implements code in a single context window (thick-agent architecture).
 
 ```yaml
-title: "Implement Coder agent (agents/coder.py)"
+title: "Implement Coder agent (agents/coder.py) - Implementation Agent with TDD"
 priority: P1
 size: medium (2-3 hours)
 dependencies: [8]
-status: COMPLETE
+status: COMPLETE + ENHANCED
 
 description: |
-  Agent that implements code to pass the tests written by TestWriterAgent.
+  Implementation Agent (formerly just "Coder") that handles the complete TDD workflow:
+  1. Read context (issue, spec, integration points)
+  2. Write tests first (RED phase)
+  3. Implement code (GREEN phase)
+  4. Iterate until all tests pass
 
 files:
   - feature_swarm/agents/coder.py ✅
@@ -1295,7 +1281,7 @@ acceptance_criteria:
   - [x] run_issue_session(feature_id, issue_number=None) method
   - [x] If no issue_number, use PrioritizationAgent
   - [x] Start session, claim issue
-  - [x] Run TestWriterAgent with checkpoint
+  - [x] Run CoderAgent (Implementation Agent) with TDD workflow
   - [x] Run CoderAgent with checkpoint
   - [x] Run VerifierAgent
   - [x] On success: mark issue DONE, end session
@@ -1774,7 +1760,7 @@ tests:
   - test_spec_author_generates_spec: Creates spec file from tiny PRD
   - test_spec_critic_returns_json: Returns valid JSON with scores
   - test_prioritization_agent_selects_correctly: Deterministic selection (no LLM)
-  - test_test_writer_generates_tests: Creates valid Python test file
+  - test_coder_generates_tests_and_implementation: TDD workflow validation
   - test_coder_generates_implementation: Creates implementation from tests
   - test_verifier_runs_tests: Correctly reports passing tests
   - test_verifier_detects_failure: Correctly reports failing tests
@@ -1915,7 +1901,7 @@ files:
   - .claude/skills/feature-spec-moderator/SKILL.md
   - .claude/skills/feature-issue-validator/SKILL.md
   - .claude/skills/feature-prioritizer/SKILL.md
-  - .claude/skills/feature-test-writer/SKILL.md
+  - .claude/skills/coder/SKILL.md  # Implementation Agent with TDD
   - .claude/skills/feature-coder/SKILL.md
   - .claude/skills/feature-verifier/SKILL.md
   - .claude/skills/feature-recovery/SKILL.md
@@ -2006,7 +1992,7 @@ example_skill: |
 | spec_moderator.py | specs/*/* | specs/*/spec-*.md, spec-rubric.json | agent_base | orchestrator |
 | issue_validator.py | GitHub issues | specs/*/issue-validation.json | agent_base, github | orchestrator |
 | prioritization.py | state | - | agent_base, state_store | orchestrator |
-| test_writer.py | issues, code | test files | agent_base | orchestrator |
+| coder.py (Implementation Agent) | issues, code, spec | tests + implementation files | agent_base | orchestrator |
 | coder.py | issues, tests, code | implementation files | agent_base | orchestrator |
 | verifier.py | tests | - | agent_base | orchestrator |
 | recovery.py | session, errors | recovery plans | agent_base | orchestrator, cli |
@@ -2118,9 +2104,9 @@ SessionManager.start_session(issue)
     ▼
 orchestrator.run_issue_session(issue)
     │
-    ├──► TestWriterAgent.run(issue)
+    ├──► CoderAgent.run(issue)  # TDD workflow in single context
     │        │
-    │        ├── Generate tests
+    │        ├── Read context, write tests (RED), implement code (GREEN)
     │        └── Checkpoint saved
     │
     ├──► CoderAgent.run(issue)
@@ -2197,7 +2183,7 @@ orchestrator.run_issue_session(issue)
 | spec_*.py | test_spec_agents.py | Agent execution (mocked LLM) |
 | issue_validator.py | test_issue_validator.py | Validation scoring |
 | prioritization.py | test_prioritization.py | Scoring, filtering |
-| test_writer.py | test_test_writer.py | Test generation |
+| coder.py | test_coder.py | Implementation Agent: TDD workflow |
 | coder.py | test_coder.py | Implementation generation |
 | verifier.py | test_verifier.py | Test execution, result parsing |
 | recovery.py | test_recovery.py | Recovery plan generation |
@@ -2453,7 +2439,7 @@ The reviewing agent should verify:
 **Milestone 4: Implementation Pipeline** ✅ COMPLETE
 - Issue 19: Session Manager ✅ (64 tests)
 - Issue 20: Prioritization Agent ✅ (30 tests)
-- Issue 21: Test Writer Agent ✅ (24 tests)
+- Issue 21: Test Writer Agent ✅ DEPRECATED (merged into Coder Agent)
 - Issue 22: Coder Agent ✅ (31 tests)
 - Issue 23: Verifier Agent ✅ (55 tests)
 - Issue 24: Issue Session Orchestration ✅ (66 tests)

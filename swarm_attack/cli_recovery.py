@@ -209,7 +209,8 @@ def get_resume_agent(checkpoints: list[CheckpointData]) -> str:
     """
     Determine which agent to resume from based on checkpoints.
 
-    The agent order is: test_writer -> coder -> verifier
+    The agent order is: coder -> verifier
+    (thick-agent architecture: coder handles full TDD workflow)
 
     If last checkpoint is:
     - "complete": resume from next agent
@@ -219,12 +220,12 @@ def get_resume_agent(checkpoints: list[CheckpointData]) -> str:
         checkpoints: List of CheckpointData from the session.
 
     Returns:
-        Agent name to resume from ("test_writer", "coder", or "verifier").
+        Agent name to resume from ("coder" or "verifier").
     """
-    agent_order = ["test_writer", "coder", "verifier"]
+    agent_order = ["coder", "verifier"]
 
     if not checkpoints:
-        return "test_writer"
+        return "coder"
 
     last_checkpoint = checkpoints[-1]
     agent = last_checkpoint.agent
@@ -244,7 +245,7 @@ def get_resume_agent(checkpoints: list[CheckpointData]) -> str:
             return "verifier"
         except ValueError:
             # Unknown agent, start from beginning
-            return "test_writer"
+            return "coder"
 
     # Default to the agent at the last checkpoint
     return agent
