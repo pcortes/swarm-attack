@@ -122,10 +122,21 @@ Title: {issue.get('title', 'Unknown')}
 Generate comprehensive unit tests for the issue above.
 
 CRITICAL TDD RULES - MUST FOLLOW:
-1. Tests MUST use Path.cwd() to check real project files, NOT tmp_path
-2. Tests MUST FAIL initially before the Coder implements the code
-3. DO NOT create fixtures that write files then assert they exist - that's self-mocking
-4. Import from real module paths (lib.*, src.*) that the Coder will create
+1. Tests MUST call methods on the class under test - no mocking the system being tested
+2. Tests MUST FAIL initially before the Coder implements the code (import errors count as failing)
+3. For file-based components, use tmp_path for isolation - this is CORRECT
+4. Import from real module paths that the Coder will create (e.g., from swarm_attack.chief_of_staff.daily_log import DailyLogManager)
+
+GOOD PATTERN (for file persistence components):
+    manager = DailyLogManager(tmp_path)  # Pass tmp_path to system under test
+    manager.save_log(some_log)           # System creates file
+    assert (tmp_path / "file.json").exists()  # Verify side effect
+    saved = json.loads((tmp_path / "file.json").read_text())  # Verify content
+    assert saved["key"] == expected_value
+
+BAD PATTERN (self-mocking - never do this):
+    (tmp_path / "file.json").write_text('{{}}')  # Test creates file directly
+    assert (tmp_path / "file.json").exists()   # Meaningless - always passes
 
 Requirements:
 1. Write pytest-style test code
@@ -133,8 +144,9 @@ Requirements:
 3. Include positive and negative test cases
 4. Use descriptive test function names
 5. Add docstrings explaining what each test verifies
-6. Use Path.cwd() for file existence checks, NOT tmp_path
+6. Use tmp_path for file-based components to avoid polluting real directories
 7. Structure tests logically (can use test classes if appropriate)
+8. Verify both existence AND content of created files (round-trip testing)
 
 Output ONLY the Python test code. Do not include explanations outside of code comments.
 If you need to explain anything, do so in docstrings or comments within the code.
@@ -169,68 +181,16 @@ If you need to explain anything, do so in docstrings or comments within the code
         """
         Validate generated tests for self-mocking anti-patterns.
 
-        Self-mocking tests create their own fixtures (e.g., write files to tmp_path)
-        and then assert those fixtures exist. These tests always pass and break TDD.
+        NOTE: This validation has been disabled. Static analysis cannot reliably
+        distinguish between:
+        - Legitimate: test calls system-under-test which writes files, test verifies
+        - Self-mocking: test directly writes files then asserts they exist
 
-        Returns list of warnings found.
+        Both patterns contain the same keywords (tmp_path, write_text, exists).
+        We rely on clear prompts and the TDD cycle itself to catch issues.
         """
-        warnings = []
-        lines = code.split('\n')
-
-        # Track if we see tmp_path usage combined with write operations and existence checks
-        has_tmp_path = "tmp_path" in code
-        has_write_text = ".write_text(" in code
-        has_mkdir = ".mkdir(" in code
-        has_exists_check = ".exists()" in code or ".is_dir()" in code or ".is_file()" in code
-
-        # Pattern 1: tmp_path + write_text/mkdir + exists assertion = self-mocking
-        if has_tmp_path and (has_write_text or has_mkdir) and has_exists_check:
-            warnings.append(
-                "SELF-MOCKING DETECTED: Tests use tmp_path to create files/directories, "
-                "then assert they exist. This always passes and breaks TDD. "
-                "Tests should check REAL project paths using Path.cwd(), not tmp_path fixtures."
-            )
-
-        # Pattern 2: Check for missing real path usage
-        # Good tests should use Path.cwd() to check real project files
-        has_path_cwd = "Path.cwd()" in code or "Path(__file__)" in code
-        has_real_imports = (
-            "from lib." in code or
-            "from src." in code or
-            "import lib." in code or
-            "import src." in code
-        )
-
-        # If no real paths and no real imports, tests might not be testing implementation
-        if not has_path_cwd and not has_real_imports:
-            # Check if tests are purely unit tests on passed-in data (which is OK)
-            # vs tests that should be checking file existence (which need Path.cwd())
-            file_check_indicators = [
-                "exists()", "is_dir()", "is_file()",
-                "pubspec", "main.dart", ".yaml", ".dart"
-            ]
-            if any(indicator in code for indicator in file_check_indicators):
-                warnings.append(
-                    "NO REAL PATH USAGE: Tests check file existence but don't use Path.cwd() "
-                    "or import from real module paths. Tests should verify files exist at "
-                    "actual project locations, not in temporary fixtures."
-                )
-
-        # Pattern 3: Count ratio of tmp_path methods vs test methods
-        # High tmp_path usage is a red flag
-        tmp_path_def_count = len(re.findall(r'def\s+test_\w+\s*\([^)]*tmp_path', code))
-        total_test_count = self._count_tests(code)
-
-        if total_test_count > 0 and tmp_path_def_count > 0:
-            tmp_path_ratio = tmp_path_def_count / total_test_count
-            if tmp_path_ratio > 0.5:
-                warnings.append(
-                    f"HIGH tmp_path USAGE: {tmp_path_def_count}/{total_test_count} tests "
-                    f"({tmp_path_ratio:.0%}) use tmp_path fixtures. For TDD to work, tests "
-                    "should fail initially by checking real implementation paths, not temp fixtures."
-                )
-
-        return warnings
+        # Disabled - was causing false positives for legitimate file persistence tests
+        return []
 
     def run(self, context: dict[str, Any]) -> AgentResult:
         """

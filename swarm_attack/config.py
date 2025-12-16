@@ -19,6 +19,8 @@ from typing import Any, Optional
 
 import yaml
 
+from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+
 
 class ConfigError(Exception):
     """Raised when configuration is invalid or cannot be loaded."""
@@ -191,6 +193,7 @@ class SwarmConfig:
     tests: TestRunnerConfig = field(default_factory=lambda: TestRunnerConfig(command=""))
     git: GitConfig = field(default_factory=GitConfig)
     bug_bash: BugBashConfig = field(default_factory=BugBashConfig)
+    chief_of_staff: ChiefOfStaffConfig = field(default_factory=ChiefOfStaffConfig)
 
     def __post_init__(self) -> None:
         """Convert paths to absolute paths based on repo_root."""
@@ -403,6 +406,11 @@ def _parse_bug_bash_config(data: dict[str, Any]) -> BugBashConfig:
     )
 
 
+def _parse_chief_of_staff_config(data: dict[str, Any]) -> ChiefOfStaffConfig:
+    """Parse Chief of Staff configuration from dict."""
+    return ChiefOfStaffConfig.from_dict(data)
+
+
 def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     """
     Load configuration from config.yaml.
@@ -454,6 +462,7 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
     tests_config = _parse_tests_config(data.get("tests", {}))
     git_config = _parse_git_config(data.get("git", {}))
     bug_bash_config = _parse_bug_bash_config(data.get("bug_bash", {}))
+    chief_of_staff_config = _parse_chief_of_staff_config(data.get("chief_of_staff", {}))
 
     return SwarmConfig(
         repo_root=data.get("repo_root", "."),
@@ -470,6 +479,7 @@ def load_config(config_path: Optional[str] = None) -> SwarmConfig:
         tests=tests_config,
         git=git_config,
         bug_bash=bug_bash_config,
+        chief_of_staff=chief_of_staff_config,
     )
 
 

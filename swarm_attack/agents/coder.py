@@ -33,6 +33,21 @@ class CoderAgent(BaseAgent):
 
     name = "coder"
 
+    # Protected paths that should never be overwritten by generated code
+    # These are the tool's own codebase directories
+    PROTECTED_PATHS = [
+        "swarm_attack/",
+        ".claude/",
+        ".swarm/",
+        ".git/",
+    ]
+
+    # Internal features that ARE part of swarm-attack itself
+    # These features CAN write to swarm_attack/ directory (bypassing protection)
+    INTERNAL_FEATURES = frozenset([
+        "chief-of-staff",
+    ])
+
     def __init__(
         self,
         config: SwarmConfig,
@@ -43,6 +58,73 @@ class CoderAgent(BaseAgent):
         """Initialize the Coder agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
+
+    def _is_protected_path(self, file_path: str, feature_id: str = "") -> bool:
+        """
+        Check if a file path is in a protected directory.
+
+        Protected paths include the tool's own codebase (swarm_attack/),
+        configuration directories (.claude/, .swarm/), and git internals.
+
+        Internal features (those in INTERNAL_FEATURES) bypass protection for
+        swarm_attack/ since they ARE part of the tool itself.
+
+        Args:
+            file_path: Relative file path to check.
+            feature_id: The feature being implemented (used to check if internal).
+
+        Returns:
+            True if the path is protected and should not be written to.
+        """
+        # Normalize the path - only strip leading "./" not just "."
+        normalized = file_path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        # Internal features can write to swarm_attack/ (they ARE part of it)
+        if feature_id in self.INTERNAL_FEATURES:
+            # Still protect .git/ even for internal features
+            return normalized.startswith(".git/")
+
+        for protected in self.PROTECTED_PATHS:
+            if normalized.startswith(protected):
+                return True
+        return False
+
+    def _rewrite_protected_path(self, file_path: str, feature_id: str) -> str:
+        """
+        Rewrite a protected path to use the feature's output directory.
+
+        If the LLM tries to write to swarm_attack/models/user.py,
+        this rewrites it to <feature_id>/models/user.py instead.
+
+        Internal features (those in INTERNAL_FEATURES) do NOT get rewritten
+        since they ARE part of swarm_attack/ by design.
+
+        Args:
+            file_path: Original file path from LLM output.
+            feature_id: The feature being implemented.
+
+        Returns:
+            Rewritten path in the feature output directory, or original path
+            for internal features.
+        """
+        # Internal features: no rewriting needed (they write to swarm_attack/)
+        if feature_id in self.INTERNAL_FEATURES:
+            return file_path
+
+        # Normalize the path - only strip leading "./" not just "."
+        normalized = file_path.replace("\\", "/")
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+
+        for protected in self.PROTECTED_PATHS:
+            if normalized.startswith(protected):
+                # Strip the protected prefix and prepend feature_id
+                remainder = normalized[len(protected):]
+                return f"{feature_id}/{remainder}"
+
+        return file_path
 
     def _get_spec_path(self, feature_id: str) -> Path:
         """Get the path to the spec-final.md file."""
@@ -706,9 +788,22 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # Write implementation files
         files_created: list[str] = []
         files_modified: list[str] = []
+        paths_rewritten: list[tuple[str, str]] = []  # (original, rewritten) for logging
 
         for file_path, content in files.items():
             try:
+                # Check if path is protected and rewrite if necessary
+                # Internal features (like chief-of-staff) bypass protection for swarm_attack/
+                original_path = file_path
+                if self._is_protected_path(file_path, feature_id):
+                    file_path = self._rewrite_protected_path(file_path, feature_id)
+                    paths_rewritten.append((original_path, file_path))
+                    self._log("coder_path_rewrite", {
+                        "original": original_path,
+                        "rewritten": file_path,
+                        "reason": "Protected path - redirecting to feature output directory",
+                    }, level="warning")
+
                 full_path = Path(self.config.repo_root) / file_path
                 is_new = not file_exists(full_path)
 
@@ -723,6 +818,14 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 error = f"Failed to write file {file_path}: {e}"
                 self._log("coder_error", {"error": error}, level="error")
                 return AgentResult.failure_result(error, cost_usd=cost)
+
+        # Log summary of path rewrites if any occurred
+        if paths_rewritten:
+            self._log("coder_protected_paths", {
+                "count": len(paths_rewritten),
+                "rewrites": paths_rewritten,
+                "message": f"Redirected {len(paths_rewritten)} file(s) from protected paths to feature directory",
+            }, level="warning")
 
         self.checkpoint("files_written", cost_usd=0)
 
