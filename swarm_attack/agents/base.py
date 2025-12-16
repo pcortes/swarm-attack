@@ -229,6 +229,92 @@ class BaseAgent(ABC):
         except FileSystemError as e:
             raise SkillNotFoundError(f"Failed to load skill {skill_name}: {e}")
 
+    def load_skill_with_metadata(self, skill_name: str) -> tuple[str, dict]:
+        """
+        Load a skill prompt and parse YAML frontmatter metadata.
+
+        Skill files may contain YAML frontmatter with metadata like:
+        ---
+        name: skill-name
+        allowed-tools: Read,Glob,Bash
+        ---
+
+        This method strips the frontmatter from the content and returns
+        the parsed metadata separately, allowing agents to access tool
+        permissions and other configuration.
+
+        Args:
+            skill_name: Name of the skill (directory name).
+
+        Returns:
+            Tuple of (content, metadata):
+                - content: Skill prompt with frontmatter stripped
+                - metadata: Dict of parsed YAML frontmatter (empty if none)
+
+        Raises:
+            SkillNotFoundError: If the skill file doesn't exist.
+        """
+        import yaml
+
+        # Load raw content using existing method
+        raw_content = self.load_skill(skill_name)
+
+        # Check for YAML frontmatter (starts with ---)
+        if not raw_content.startswith("---"):
+            return raw_content, {}
+
+        # Find the closing ---
+        end_idx = raw_content.find("---", 3)
+        if end_idx == -1:
+            # Malformed frontmatter - return raw content
+            return raw_content, {}
+
+        # Extract and parse frontmatter
+        frontmatter_str = raw_content[3:end_idx].strip()
+        content = raw_content[end_idx + 3:].lstrip()
+
+        # Handle empty frontmatter
+        if not frontmatter_str:
+            return content, {}
+
+        # Parse YAML - handle invalid YAML gracefully
+        try:
+            metadata = yaml.safe_load(frontmatter_str)
+            if metadata is None:
+                metadata = {}
+        except yaml.YAMLError:
+            # Invalid YAML - log warning and return empty metadata
+            self._log(
+                "skill_frontmatter_parse_error",
+                {"skill": skill_name, "error": "Invalid YAML in frontmatter"},
+                level="warning",
+            )
+            metadata = {}
+
+        return content, metadata
+
+    def get_allowed_tools_from_metadata(self, metadata: dict) -> list[str]:
+        """
+        Parse allowed-tools from skill metadata.
+
+        Extracts the 'allowed-tools' key from metadata and splits it into
+        a list of tool names. Handles comma-separated values with optional
+        whitespace.
+
+        Args:
+            metadata: Dict of skill metadata (from load_skill_with_metadata).
+
+        Returns:
+            List of tool names (e.g., ['Read', 'Glob', 'Bash']).
+            Returns empty list if allowed-tools not in metadata.
+        """
+        tools_str = metadata.get("allowed-tools", "")
+        if not tools_str:
+            return []
+
+        # Split on comma and strip whitespace from each tool name
+        return [tool.strip() for tool in tools_str.split(",") if tool.strip()]
+
     def checkpoint(
         self,
         status: str,

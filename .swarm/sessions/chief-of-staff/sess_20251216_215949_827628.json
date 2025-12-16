@@ -1,0 +1,21 @@
+{
+  "session_id": "sess_20251216_215949_827628",
+  "feature_id": "chief-of-staff",
+  "issue_number": 5,
+  "started_at": "2025-12-16T21:59:49.827650Z",
+  "status": "complete",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-16T21:59:58.525614Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": "2025-12-16T21:59:58.526349Z",
+  "end_status": "failed",
+  "cost_usd": 0.0,
+  "worktree_path": null,
+  "commits": []
+}

@@ -1,41 +1,23 @@
 {
   "feature_id": "chief-of-staff",
-  "validated_at": "2025-12-16T04:52:45.702064Z",
+  "validated_at": "2025-12-16T23:24:43.245177Z",
   "valid": false,
-  "summary": "Found 3 errors and 2 warnings across 19 issues",
+  "summary": "Found 2 errors and 0 warnings across 35 issues",
   "problems": [
     {
       "issue_order": 1,
       "severity": "error",
-      "type": "insufficient_detail",
-      "description": "Only class names are listed; required fields, relationships, and serialization details are deferred to \u201cSection 3,\u201d so developers lack the information needed to build the models."
-    },
-    {
-      "issue_order": 1,
-      "severity": "warning",
-      "type": "ambiguous_requirements",
-      "description": "Enums such as CheckpointTrigger are said to include \u201call trigger types\u201d without enumerating them, making the scope unclear."
+      "type": "missing_context",
+      "description": "Issue references \"data models defined in the engineering spec\" but does not list any of the fields/structures for these dataclasses, so engineers cannot implement the classes or their serializers without additional specification details."
     },
     {
       "issue_order": 2,
       "severity": "error",
       "type": "missing_context",
-      "description": "The configuration schema (especially PriorityConfig\u2019s weight parameters and the contents of ChiefOfStaffConfig) isn\u2019t described, so the dataclasses and YAML parsing logic cannot be implemented."
-    },
-    {
-      "issue_order": 2,
-      "severity": "warning",
-      "type": "vague_acceptance_criteria",
-      "description": "\u201cProvide sensible defaults\u201d is not testable because no concrete default values are specified."
-    },
-    {
-      "issue_order": 4,
-      "severity": "error",
-      "type": "missing_context",
-      "description": "The required Markdown/JSON/JSONL formats and weekly-summary structure are only referenced via other document sections, so the persistence layer cannot be implemented or tested without that undisclosed detail."
+      "description": "Configuration objects and default values are said to be in \"spec Section 9.1\" but no concrete field names, weight keys, or defaults are provided, leaving implementers without the information required to build the dataclasses."
     }
   ],
-  "issues_checked": 19,
-  "passed": 16,
-  "failed": 3
+  "issues_checked": 35,
+  "passed": 33,
+  "failed": 2
 }

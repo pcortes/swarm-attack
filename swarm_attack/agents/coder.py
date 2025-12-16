@@ -170,9 +170,18 @@ class CoderAgent(BaseAgent):
         return tests_dir / f"test_issue_{issue_number}{test_ext}"
 
     def _load_skill_prompt(self) -> str:
-        """Load and cache the skill prompt."""
+        """Load and cache the skill prompt, stripping YAML frontmatter.
+
+        The skill file may contain YAML frontmatter with metadata like
+        'allowed-tools: Read,Glob,Bash,Write,Edit'. Since we run with
+        allowed_tools=[] (no tools), this frontmatter can confuse Claude
+        into attempting tool use, burning through max_turns.
+
+        We use load_skill_with_metadata() from BaseAgent to strip frontmatter.
+        """
         if self._skill_prompt is None:
-            self._skill_prompt = self.load_skill("coder")
+            content, _ = self.load_skill_with_metadata("coder")
+            self._skill_prompt = content
         return self._skill_prompt
 
     def _load_issues(self, feature_id: str) -> dict[str, Any]:
@@ -531,6 +540,33 @@ Test Requirements:
 - Use appropriate test framework ({code_fence_lang} tests for this project)
 - Include edge cases mentioned in the issue"""
 
+    def _format_spec_context(self, spec_content: str) -> str:
+        """
+        Format spec context for prompt - truncate large specs.
+
+        Large specs (>20k chars) blow up the prompt and cause max_turns errors.
+        The issue body should be self-contained with all needed context.
+
+        Args:
+            spec_content: Full spec content.
+
+        Returns:
+            Formatted spec section or empty string for large specs.
+        """
+        # 20k chars ~= 5k tokens - leave room for issue, skill prompt, and output
+        MAX_SPEC_CHARS = 20000
+
+        if len(spec_content) <= MAX_SPEC_CHARS:
+            return f"""**Engineering Spec Context:**
+
+```markdown
+{spec_content}
+```"""
+        else:
+            # Large spec - issue body should have all context needed
+            return """**Note:** Full spec is large ({:,} chars). Issue body contains relevant context.
+Refer to spec sections mentioned in issue body if needed.""".format(len(spec_content))
+
     def _build_prompt(
         self,
         feature_id: str,
@@ -604,11 +640,7 @@ Title: {issue.get('title', 'Unknown')}
 **Expected Module Paths (based on test imports):**
 {modules_str}
 
-**Engineering Spec Context:**
-
-```markdown
-{spec_content}
-```
+{self._format_spec_context(spec_content)}
 
 ---
 
@@ -887,10 +919,11 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         try:
             # No tools - all context is in prompt, just generate code with # FILE: markers
             # Using Write/Edit tools causes result.text to be empty, breaking file parsing
+            # max_turns=10 allows for large code output generation
             result = self.llm.run(
                 prompt,
                 allowed_tools=[],
-                max_turns=1,
+                max_turns=10,
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:

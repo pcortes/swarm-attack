@@ -1,29 +1,55 @@
-"""Chief of Staff agent module."""
+"""Chief of Staff agent for strategic orchestration."""
 
-from .models import (
+from swarm_attack.chief_of_staff.daily_log import DailyLogManager
+from swarm_attack.chief_of_staff.goal_tracker import GoalTracker
+from swarm_attack.chief_of_staff.models import (
+    AttentionItem,
     AutopilotSession,
+    BugSummary,
     CheckpointEvent,
     CheckpointTrigger,
     DailyGoal,
     DailyLog,
     DailySummary,
     Decision,
+    FeatureSummary,
+    GitHubState,
+    GitState,
     GoalStatus,
+    InterruptedSession,
+    PRDSummary,
+    Recommendation,
+    RepoStateSnapshot,
+    SpecSummary,
+    StandupReport,
     StandupSession,
+    TestState,
     WorkLogEntry,
 )
-from .autopilot_store import AutopilotSessionStore
 
 __all__ = [
+    "AttentionItem",
     "AutopilotSession",
-    "AutopilotSessionStore",
+    "BugSummary",
     "CheckpointEvent",
     "CheckpointTrigger",
     "DailyGoal",
     "DailyLog",
+    "DailyLogManager",
     "DailySummary",
     "Decision",
+    "FeatureSummary",
+    "GitHubState",
+    "GitState",
     "GoalStatus",
+    "GoalTracker",
+    "InterruptedSession",
+    "PRDSummary",
+    "Recommendation",
+    "RepoStateSnapshot",
+    "SpecSummary",
+    "StandupReport",
     "StandupSession",
+    "TestState",
     "WorkLogEntry",
 ]

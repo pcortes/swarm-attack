@@ -55,9 +55,18 @@ class IssueCreatorAgent(BaseAgent):
         return self.config.specs_path / feature_id / "issues.json"
 
     def _load_skill_prompt(self) -> str:
-        """Load and cache the skill prompt."""
+        """Load and cache the skill prompt, stripping YAML frontmatter.
+
+        The skill file may contain YAML frontmatter with metadata like
+        'allowed-tools: Read,Glob'. Since we run with allowed_tools=[]
+        (no tools - we output JSON directly), this frontmatter in the prompt
+        can confuse Claude into attempting tool use, burning through max_turns.
+
+        We strip the frontmatter to avoid this confusion.
+        """
         if self._skill_prompt is None:
-            self._skill_prompt = self.load_skill("issue-creator")
+            content, _ = self.load_skill_with_metadata("issue-creator")
+            self._skill_prompt = content
         return self._skill_prompt
 
     def _build_prompt(self, feature_id: str, spec_content: str) -> str:

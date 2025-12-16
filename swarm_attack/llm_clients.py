@@ -171,6 +171,7 @@ class ClaudeCliRunner:
             "max_turns": max_turns or self.config.claude.max_turns,
             "allowed_tools": allowed_tools,
             "timeout": timeout_seconds,
+            "cli_command": " ".join(cmd[:5]) + " ..." if len(cmd) > 5 else " ".join(cmd),
         })
 
         try:
