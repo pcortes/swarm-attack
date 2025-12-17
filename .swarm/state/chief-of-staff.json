@@ -11,63 +11,7 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": {
-        "files_created": [
-          "tests/generated/chief-of-staff/test_issue_1.py",
-          "swarm_attack/chief_of_staff/__init__.py",
-          "swarm_attack/chief_of_staff/models.py"
-        ],
-        "classes_defined": {
-          "tests/generated/chief-of-staff/test_issue_1.py": [
-            "TestGoalStatus",
-            "TestCheckpointTrigger",
-            "TestDailyGoal",
-            "TestDecision",
-            "TestWorkLogEntry",
-            "TestStandupSession",
-            "TestDailySummary",
-            "TestDailyLog",
-            "TestGitState",
-            "TestFeatureSummary",
-            "TestBugSummary",
-            "TestPRDSummary",
-            "TestSpecSummary",
-            "TestTestState",
-            "TestGitHubState",
-            "TestInterruptedSession",
-            "TestRepoStateSnapshot",
-            "TestRecommendation",
-            "TestAttentionItem",
-            "TestStandupReport",
-            "TestCheckpointEvent",
-            "TestAutopilotSession"
-          ],
-          "swarm_attack/chief_of_staff/models.py": [
-            "GoalStatus",
-            "CheckpointTrigger",
-            "DailyGoal",
-            "Decision",
-            "WorkLogEntry",
-            "StandupSession",
-            "DailySummary",
-            "DailyLog",
-            "GitState",
-            "FeatureSummary",
-            "BugSummary",
-            "PRDSummary",
-            "SpecSummary",
-            "TestState",
-            "GitHubState",
-            "InterruptedSession",
-            "RepoStateSnapshot",
-            "Recommendation",
-            "AttentionItem",
-            "StandupReport",
-            "CheckpointEvent",
-            "AutopilotSession"
-          ]
-        }
-      }
+      "outputs": null
     },
     {
       "issue_number": 2,
@@ -347,12 +291,12 @@
       "outputs": null
     }
   ],
-  "current_session": "sess_20251217_194017_122299",
+  "current_session": "sess_20251217_195859_119158",
   "created_at": "2025-12-16T04:49:35.316644Z",
-  "updated_at": "2025-12-17T19:40:17.109108Z",
-  "cost_total_usd": 12.10917785,
+  "updated_at": "2025-12-17T19:58:59.105332Z",
+  "cost_total_usd": 12.6997646,
   "cost_by_phase": {
     "ISSUES": 3.3629372,
-    "IMPLEMENTATION": 8.746240649999999
+    "IMPLEMENTATION": 9.336827399999999
   }
 }

@@ -204,6 +204,45 @@ class CoderAgent(BaseAgent):
                 return issue
         return None
 
+    def _check_tests_pass(self, test_path: Path) -> bool:
+        """
+        Check if tests at the given path pass.
+
+        This is used for pre-implementation checks to detect already-implemented
+        issues and avoid wasting compute re-implementing them.
+
+        Args:
+            test_path: Path to the test file.
+
+        Returns:
+            True if tests exist and pass, False otherwise.
+        """
+        import subprocess
+
+        try:
+            # Run pytest on the specific test file with quick timeout
+            result = subprocess.run(
+                ["python", "-m", "pytest", str(test_path), "-v", "--tb=no", "-q"],
+                capture_output=True,
+                text=True,
+                timeout=60,  # 60 second timeout for pre-check
+                cwd=str(self.config.repo_root),
+            )
+            # Return True only if pytest exits with code 0 (all tests pass)
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            self._log("coder_precheck_timeout", {
+                "message": "Pre-implementation test check timed out",
+                "test_path": str(test_path),
+            }, level="warning")
+            return False
+        except Exception as e:
+            self._log("coder_precheck_error", {
+                "message": f"Pre-implementation test check failed: {e}",
+                "test_path": str(test_path),
+            }, level="warning")
+            return False
+
     def _extract_expected_modules(self, test_content: str) -> list[str]:
         """
         Extract module paths from import statements.
@@ -915,6 +954,28 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                     "warning": f"Could not read existing test file: {e}",
                     "test_path": str(test_path),
                 }, level="warning")
+
+            # PRE-IMPLEMENTATION CHECK: If tests already exist and pass, skip implementation
+            # This prevents wasting compute on already-implemented issues
+            if retry_number == 0 and test_content:  # Only on first attempt with existing tests
+                tests_pass = self._check_tests_pass(test_path)
+                if tests_pass:
+                    self._log("coder_already_implemented", {
+                        "message": "Tests already pass - implementation complete",
+                        "test_path": str(test_path),
+                        "issue_number": issue_number,
+                    })
+                    return AgentResult(
+                        success=True,
+                        output={
+                            "message": "Implementation already complete - all tests pass",
+                            "files_created": [],
+                            "files_modified": [],
+                            "skipped_reason": "tests_already_pass",
+                        },
+                        errors=[],
+                        cost_usd=0.0,
+                    )
         else:
             self._log("coder_no_test_file", {
                 "message": "Test file not found - coder will create tests (TDD mode)",

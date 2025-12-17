@@ -1130,6 +1130,20 @@ def _run_implementation(
     """Run the implementation pipeline for an issue."""
     from swarm_attack.session_manager import SessionManager
 
+    # Check if specified issue is already DONE or SKIPPED (avoid re-running completed work)
+    if issue_number is not None:
+        task = next((t for t in state.tasks if t.issue_number == issue_number), None)
+        if task and task.stage == TaskStage.DONE:
+            console.print(f"[green]Issue #{issue_number} is already completed.[/green]")
+            console.print(f"[dim]Title: {task.title}[/dim]")
+            console.print(f"[dim]Use 'swarm-attack run {feature_id}' to auto-select next available issue.[/dim]")
+            raise typer.Exit(0)
+        elif task and task.stage == TaskStage.SKIPPED:
+            console.print(f"[yellow]Issue #{issue_number} was skipped.[/yellow]")
+            console.print(f"[dim]Title: {task.title}[/dim]")
+            console.print(f"[dim]Use 'swarm-attack unblock {feature_id}' to reset if needed.[/dim]")
+            raise typer.Exit(0)
+
     # Update phase to IMPLEMENTING if it was READY_TO_IMPLEMENT
     if state.phase == FeaturePhase.READY_TO_IMPLEMENT:
         state.update_phase(FeaturePhase.IMPLEMENTING)
@@ -1400,23 +1414,45 @@ def greenlight(
         issues_data = json.loads(issues_content)
         issues_list = issues_data.get("issues", [])
 
-        # Clear existing tasks and load from issues.json
-        state.tasks = []
-        for issue in issues_list:
-            # Determine initial stage based on dependencies
-            deps = issue.get("dependencies", [])
-            initial_stage = TaskStage.READY if not deps else TaskStage.BACKLOG
+        # MERGE strategy: preserve existing task progress (DONE status, outputs, commits)
+        # Build a map of existing progress by issue_number
+        existing_progress = {t.issue_number: t for t in state.tasks}
+        preserved_count = 0
 
-            task = TaskRef(
-                issue_number=issue.get("order", 0),
-                stage=initial_stage,
-                title=issue.get("title", "Untitled"),
-                dependencies=deps,
-                estimated_size=issue.get("estimated_size", "medium"),
-            )
-            state.tasks.append(task)
+        new_tasks = []
+        for issue in issues_list:
+            issue_num = issue.get("order", 0)
+            deps = issue.get("dependencies", [])
+
+            # Check if we have existing progress for this issue
+            existing = existing_progress.get(issue_num)
+
+            if existing and existing.stage in (TaskStage.DONE, TaskStage.SKIPPED):
+                # Preserve completed/skipped task progress
+                # Update metadata from issues.json but keep stage and outputs
+                existing.title = issue.get("title", existing.title)
+                existing.dependencies = deps
+                existing.estimated_size = issue.get("estimated_size", existing.estimated_size)
+                new_tasks.append(existing)
+                preserved_count += 1
+            else:
+                # Create new task or reset non-completed task
+                initial_stage = TaskStage.READY if not deps else TaskStage.BACKLOG
+
+                task = TaskRef(
+                    issue_number=issue_num,
+                    stage=initial_stage,
+                    title=issue.get("title", "Untitled"),
+                    dependencies=deps,
+                    estimated_size=issue.get("estimated_size", "medium"),
+                )
+                new_tasks.append(task)
+
+        state.tasks = new_tasks
 
         console.print(f"[dim]Loaded {len(state.tasks)} tasks from issues.json[/dim]")
+        if preserved_count > 0:
+            console.print(f"[dim]Preserved progress for {preserved_count} completed/skipped tasks[/dim]")
     except Exception as e:
         console.print(f"[red]Error:[/red] Failed to load issues: {e}")
         raise typer.Exit(1)
