@@ -1,23 +1,17 @@
 {
   "feature_id": "chief-of-staff",
-  "validated_at": "2025-12-16T23:24:43.245177Z",
+  "validated_at": "2025-12-17T19:29:12.425965Z",
   "valid": false,
-  "summary": "Found 2 errors and 0 warnings across 35 issues",
+  "summary": "Found 1 errors and 0 warnings across 33 issues",
   "problems": [
     {
-      "issue_order": 1,
+      "issue_order": 22,
       "severity": "error",
-      "type": "missing_context",
-      "description": "Issue references \"data models defined in the engineering spec\" but does not list any of the fields/structures for these dataclasses, so engineers cannot implement the classes or their serializers without additional specification details."
-    },
-    {
-      "issue_order": 2,
-      "severity": "error",
-      "type": "missing_context",
-      "description": "Configuration objects and default values are said to be in \"spec Section 9.1\" but no concrete field names, weight keys, or defaults are provided, leaving implementers without the information required to build the dataclasses."
+      "type": "ambiguous_requirements",
+      "description": "Acceptance criteria conflict on how `--resume` behaves without a session ID (auto resume most recent vs listing paused sessions). Clarify the exact flow so command behavior can be implemented and tested."
     }
   ],
-  "issues_checked": 35,
-  "passed": 33,
-  "failed": 2
+  "issues_checked": 33,
+  "passed": 32,
+  "failed": 1
 }

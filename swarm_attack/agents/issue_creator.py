@@ -130,19 +130,78 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
 
     def _parse_json_response(self, text: str) -> dict[str, Any]:
         """
-        Parse JSON from LLM response.
+        Parse JSON from LLM response with robust extraction.
 
-        Handles responses that may be wrapped in markdown code fences.
+        Handles various response formats:
+        - Raw JSON
+        - JSON wrapped in markdown code fences
+        - JSON with prose before/after
+        - Empty responses (raises clear error)
+
+        Raises:
+            json.JSONDecodeError: If no valid JSON can be extracted
         """
-        # Try to extract JSON from code fence
+        if not text or not text.strip():
+            raise json.JSONDecodeError(
+                "Empty response from LLM - no JSON to parse",
+                text or "",
+                0
+            )
+
+        text = text.strip()
+
+        # Strategy 1: Try raw JSON parsing first (fastest path)
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Strategy 2: Extract from markdown code fence (```json ... ```)
         code_fence_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
         match = re.search(code_fence_pattern, text)
         if match:
-            json_str = match.group(1)
-        else:
-            json_str = text.strip()
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
 
-        return json.loads(json_str)
+        # Strategy 3: Find JSON object with "issues" key (handles prose before/after)
+        # Look for { ... "issues": [ ... ] ... }
+        issues_pattern = r'\{[^{}]*"issues"\s*:\s*\[[^\]]*\](?:[^{}]*|\{[^{}]*\})*\}'
+        match = re.search(issues_pattern, text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 4: Find any JSON object that starts with { and ends with }
+        # This handles cases where there's explanation text before/after
+        brace_start = text.find('{')
+        if brace_start != -1:
+            # Find matching closing brace by counting braces
+            brace_count = 0
+            for i, char in enumerate(text[brace_start:], start=brace_start):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        json_candidate = text[brace_start:i + 1]
+                        try:
+                            return json.loads(json_candidate)
+                        except json.JSONDecodeError:
+                            pass
+                        break
+
+        # All strategies failed - raise with helpful context
+        preview = text[:500] + "..." if len(text) > 500 else text
+        raise json.JSONDecodeError(
+            f"Failed to extract JSON from LLM response. "
+            f"Response preview: {preview}",
+            text,
+            0
+        )
 
     # Keywords that indicate a task requires manual/human intervention
     MANUAL_KEYWORDS = [

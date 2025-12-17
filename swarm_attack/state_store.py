@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Optional
 
 from swarm_attack.models import (
     FeaturePhase,
+    IssueOutput,
     RunState,
     SessionState,
+    TaskStage,
     model_to_json,
 )
 from swarm_attack.utils.fs import (
@@ -441,6 +443,89 @@ class StateStore:
                 return session
 
         return None
+
+    # Issue Output and Module Registry Operations
+
+    def save_issue_outputs(
+        self,
+        feature_id: str,
+        issue_number: int,
+        outputs: IssueOutput
+    ) -> None:
+        """
+        Save outputs from a completed issue to state.
+
+        Updates the task's outputs field with files/classes created.
+        This enables context handoff to subsequent issues.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue that created these outputs.
+            outputs: IssueOutput with files_created and classes_defined.
+
+        Raises:
+            StateStoreError: If feature doesn't exist.
+        """
+        state = self.load(feature_id)
+        if state is None:
+            raise StateStoreError(f"Feature '{feature_id}' not found")
+
+        # Find the task and update its outputs
+        for task in state.tasks:
+            if task.issue_number == issue_number:
+                task.outputs = outputs
+                break
+
+        self.save(state)
+        self._log("issue_outputs_saved", {
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+            "files_created": len(outputs.files_created),
+            "classes_defined": sum(len(v) for v in outputs.classes_defined.values()),
+        })
+
+    def get_module_registry(self, feature_id: str) -> dict[str, any]:
+        """
+        Build module registry from all completed issues.
+
+        Creates a map of files and classes created by prior issues,
+        enabling context handoff to subsequent issues.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            Dict with structure:
+            {
+                "feature_id": "...",
+                "modules": {
+                    "path/to/file.py": {
+                        "created_by_issue": 1,
+                        "classes": ["ClassName", ...]
+                    },
+                    ...
+                }
+            }
+        """
+        state = self.load(feature_id)
+        if state is None:
+            return {"feature_id": feature_id, "modules": {}}
+
+        registry: dict[str, any] = {
+            "feature_id": feature_id,
+            "modules": {}
+        }
+
+        for task in state.tasks:
+            # Only include outputs from DONE tasks
+            if task.stage == TaskStage.DONE and task.outputs:
+                for file_path in task.outputs.files_created:
+                    registry["modules"][file_path] = {
+                        "created_by_issue": task.issue_number,
+                        "classes": task.outputs.classes_defined.get(file_path, []),
+                    }
+
+        return registry
 
 
 # Module-level singleton for convenience

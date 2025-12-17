@@ -1,179 +1,252 @@
-"""DailyLogManager: Manages daily log persistence."""
+"""DailyLogManager for reading/writing daily logs and decision log."""
 
-import json
-import shutil
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+import json
+import os
+import tempfile
 
 from swarm_attack.chief_of_staff.models import (
     DailyLog,
+    DailyGoal,
     DailySummary,
     Decision,
+    GoalStatus,
     StandupSession,
     WorkLogEntry,
 )
 
 
 class DailyLogManager:
-    """Manages daily log persistence."""
+    """Manages daily logs and the append-only decision log."""
 
     def __init__(self, base_path: Path) -> None:
-        """Initialize with base storage path."""
-        self._base_path = Path(base_path)
-        self._daily_log_path = self._base_path / "daily-log"
-        self._daily_log_path.mkdir(parents=True, exist_ok=True)
-        self._weekly_summary_path = self._base_path / "weekly-summary"
-        self._weekly_summary_path.mkdir(parents=True, exist_ok=True)
-        self._decisions_path = self._base_path / "decisions.jsonl"
+        """Initialize storage at the given base path.
+        
+        Args:
+            base_path: Base directory for storing logs
+        """
+        self.base_path = Path(base_path)
+        self.daily_log_path = self.base_path / "daily-log"
+        self.decisions_path = self.base_path / "decisions.jsonl"
+        
+        # Ensure directories exist
+        self.daily_log_path.mkdir(parents=True, exist_ok=True)
 
-    def _log_path_json(self, log_date: date) -> Path:
-        """Get JSON log path for a date."""
-        return self._daily_log_path / f"{log_date.isoformat()}.json"
-
-    def _log_path_md(self, log_date: date) -> Path:
-        """Get markdown log path for a date."""
-        return self._daily_log_path / f"{log_date.isoformat()}.md"
+    def _get_log_paths(self, log_date: date) -> tuple[Path, Path]:
+        """Get the JSON and Markdown paths for a given date."""
+        date_str = log_date.isoformat()
+        json_path = self.daily_log_path / f"{date_str}.json"
+        md_path = self.daily_log_path / f"{date_str}.md"
+        return json_path, md_path
 
     def get_log(self, log_date: date) -> Optional[DailyLog]:
-        """Get daily log for a specific date."""
-        json_path = self._log_path_json(log_date)
+        """Retrieve log for a specific date.
+        
+        Args:
+            log_date: The date to retrieve the log for
+            
+        Returns:
+            DailyLog if exists, None otherwise
+        """
+        json_path, _ = self._get_log_paths(log_date)
+        
         if not json_path.exists():
             return None
-        
+            
         try:
-            data = json.loads(json_path.read_text())
+            with open(json_path, "r") as f:
+                data = json.load(f)
             return DailyLog.from_dict(data)
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError):
             return None
 
     def get_today(self) -> DailyLog:
-        """Get or create today's log."""
+        """Get or create today's log.
+        
+        Returns:
+            Today's DailyLog (created if doesn't exist)
+        """
         today = date.today()
         log = self.get_log(today)
+        
         if log is None:
             log = DailyLog(date=today.isoformat())
             self.save_log(log)
+            
         return log
 
     def get_yesterday(self) -> Optional[DailyLog]:
-        """Get yesterday's log if it exists."""
+        """Get yesterday's log.
+        
+        Returns:
+            Yesterday's DailyLog if exists, None otherwise
+        """
         yesterday = date.today() - timedelta(days=1)
         return self.get_log(yesterday)
 
     def save_log(self, log: DailyLog) -> None:
-        """Save daily log to disk (both .md and .json)."""
-        log.updated_at = datetime.now().isoformat()
-        log_date = date.fromisoformat(log.date)
+        """Save log as both .json and .md versions using atomic writes.
         
-        json_path = self._log_path_json(log_date)
-        md_path = self._log_path_md(log_date)
+        Args:
+            log: The DailyLog to save
+        """
+        log_date = date.fromisoformat(log.date)
+        json_path, md_path = self._get_log_paths(log_date)
         
         # Atomic write for JSON
-        self._save_atomic(json_path, json.dumps(log.to_dict(), indent=2))
+        self._atomic_write(json_path, json.dumps(log.to_dict(), indent=2))
         
-        # Generate and save markdown
-        md_content = self._generate_markdown(log)
-        self._save_atomic(md_path, md_content)
+        # Atomic write for Markdown
+        self._atomic_write(md_path, self._generate_markdown(log))
 
-    def _save_atomic(self, path: Path, content: str) -> None:
-        """Atomic write with temp file and rename."""
-        temp_path = path.with_suffix(".tmp")
-        backup_path = path.with_suffix(".bak")
+    def _atomic_write(self, path: Path, content: str) -> None:
+        """Write content to file atomically using temp file pattern.
         
+        Args:
+            path: Target file path
+            content: Content to write
+        """
+        # Create temp file in same directory for atomic rename
+        fd, temp_path = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp"
+        )
         try:
-            temp_path.write_text(content)
-            
-            if path.exists():
-                shutil.copy2(path, backup_path)
-            
-            temp_path.rename(path)
-            backup_path.unlink(missing_ok=True)
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+            # Atomic rename
+            os.replace(temp_path, path)
         except Exception:
-            if backup_path.exists():
-                backup_path.rename(path)
+            # Clean up temp file on failure
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
             raise
 
+    def _get_status_icon(self, status: GoalStatus) -> str:
+        """Get markdown icon for goal status."""
+        icons = {
+            GoalStatus.PENDING: "⬜",
+            GoalStatus.IN_PROGRESS: "🔄",
+            GoalStatus.DONE: "✅",
+            GoalStatus.BLOCKED: "🚫",
+            GoalStatus.PARTIAL: "🔶",
+            GoalStatus.CARRIED_OVER: "➡️",
+        }
+        return icons.get(status, "⬜")
+
     def _generate_markdown(self, log: DailyLog) -> str:
-        """Generate markdown representation of log."""
+        """Generate markdown for a daily log per spec Section 10.3 format.
+        
+        Args:
+            log: The DailyLog to render
+            
+        Returns:
+            Markdown string
+        """
         lines = [f"# Daily Log: {log.date}", ""]
         
-        for standup in log.standups:
-            lines.append(f"## Standup - {standup.time}")
-            lines.append(f"- **Session ID:** {standup.session_id}")
+        # Standups section
+        if log.standups:
+            lines.append("## Standups")
             lines.append("")
-            
-            if standup.yesterday_goals:
-                lines.append("### Yesterday's Goals")
-                lines.append("| Goal | Status |")
-                lines.append("|------|--------|")
-                for goal in standup.yesterday_goals:
-                    lines.append(f"| {goal.content} | {goal.status.value} |")
+            for standup in log.standups:
+                lines.append(f"### Standup at {standup.time}")
                 lines.append("")
-            
-            if standup.today_goals:
-                lines.append("### Today's Goals")
-                lines.append("| Priority | Goal | Status |")
-                lines.append("|----------|------|--------|")
-                for goal in standup.today_goals:
-                    lines.append(f"| {goal.priority} | {goal.content} | {goal.status.value} |")
-                lines.append("")
-            
-            if standup.philip_notes:
-                lines.append("### Notes")
-                lines.append(f"> {standup.philip_notes}")
-                lines.append("")
+                if standup.yesterday_goals:
+                    lines.append("**Yesterday's Goals:**")
+                    for goal in standup.yesterday_goals:
+                        icon = self._get_status_icon(goal.status)
+                        lines.append(f"- {icon} [{goal.priority}] {goal.content}")
+                    lines.append("")
+                if standup.today_goals:
+                    lines.append("**Today's Goals:**")
+                    for goal in standup.today_goals:
+                        icon = self._get_status_icon(goal.status)
+                        time_str = f" ({goal.estimated_minutes}m)" if goal.estimated_minutes else ""
+                        lines.append(f"- {icon} [{goal.priority}] {goal.content}{time_str}")
+                    lines.append("")
+                if standup.notes:
+                    lines.append(f"**Notes:** {standup.notes}")
+                    lines.append("")
         
+        # Work log section
         if log.work_log:
             lines.append("## Work Log")
             lines.append("")
             for entry in log.work_log:
-                lines.append(f"### {entry.timestamp}")
-                lines.append(f"- **Action:** {entry.action}")
-                lines.append(f"- **Result:** {entry.result}")
-                if entry.cost_usd > 0:
-                    lines.append(f"- **Cost:** ${entry.cost_usd:.2f}")
-                lines.append("")
+                duration = f" ({entry.duration_minutes}m)" if entry.duration_minutes else ""
+                lines.append(f"- **{entry.time}**{duration}: {entry.description}")
+                if entry.outcome:
+                    lines.append(f"  - Outcome: {entry.outcome}")
+            lines.append("")
         
+        # Summary section
         if log.summary:
             lines.append("## Summary")
-            lines.append(f"- **Goals Completed:** {log.summary.goals_completed}/{log.summary.goals_total}")
-            lines.append(f"- **Total Cost:** ${log.summary.total_cost_usd:.2f}")
             lines.append("")
-            if log.summary.key_accomplishments:
-                lines.append("### Key Accomplishments")
-                for item in log.summary.key_accomplishments:
+            if log.summary.accomplishments:
+                lines.append("### Accomplishments")
+                for item in log.summary.accomplishments:
                     lines.append(f"- {item}")
                 lines.append("")
-            if log.summary.blockers_for_tomorrow:
-                lines.append("### Blockers for Tomorrow")
-                for item in log.summary.blockers_for_tomorrow:
+            if log.summary.blockers:
+                lines.append("### Blockers")
+                for item in log.summary.blockers:
                     lines.append(f"- {item}")
                 lines.append("")
+            if log.summary.learnings:
+                lines.append("### Learnings")
+                for item in log.summary.learnings:
+                    lines.append(f"- {item}")
+                lines.append("")
+            if log.summary.mood:
+                lines.append(f"**Mood:** {log.summary.mood}")
+            if log.summary.productivity_score is not None:
+                lines.append(f"**Productivity Score:** {log.summary.productivity_score}/10")
         
         return "\n".join(lines)
 
     def add_standup(self, standup: StandupSession) -> None:
-        """Add a standup session to today's log."""
+        """Add a standup session to today's log.
+        
+        Args:
+            standup: The StandupSession to add
+        """
         log = self.get_today()
         log.standups.append(standup)
         self.save_log(log)
 
     def add_work_entry(self, entry: WorkLogEntry) -> None:
-        """Add a work log entry to today's log."""
+        """Add a work log entry to today's log.
+        
+        Args:
+            entry: The WorkLogEntry to add
+        """
         log = self.get_today()
         log.work_log.append(entry)
         self.save_log(log)
 
     def set_summary(self, summary: DailySummary) -> None:
-        """Set end-of-day summary."""
+        """Set the end-of-day summary for today's log.
+        
+        Args:
+            summary: The DailySummary to set
+        """
         log = self.get_today()
         log.summary = summary
         self.save_log(log)
 
     def append_decision(self, decision: Decision) -> None:
-        """Append decision to decisions.jsonl."""
-        with open(self._decisions_path, "a") as f:
+        """Append a decision to the decisions.jsonl file.
+        
+        Args:
+            decision: The Decision to append
+        """
+        with open(self.decisions_path, "a") as f:
             f.write(json.dumps(decision.to_dict()) + "\n")
 
     def get_decisions(
@@ -181,12 +254,20 @@ class DailyLogManager:
         since: Optional[datetime] = None,
         decision_type: Optional[str] = None,
     ) -> list[Decision]:
-        """Query decisions from the JSONL log."""
-        if not self._decisions_path.exists():
+        """Query the decision log.
+        
+        Args:
+            since: Only return decisions after this timestamp
+            decision_type: Only return decisions of this type
+            
+        Returns:
+            List of matching decisions
+        """
+        if not self.decisions_path.exists():
             return []
         
         decisions = []
-        with open(self._decisions_path, "r") as f:
+        with open(self.decisions_path, "r") as f:
             for line in f:
                 line = line.strip()
                 if not line:
@@ -195,15 +276,16 @@ class DailyLogManager:
                     data = json.loads(line)
                     decision = Decision.from_dict(data)
                     
+                    # Filter by timestamp
                     if since is not None:
                         decision_time = datetime.fromisoformat(decision.timestamp)
-                        # Normalize: strip timezone for comparison (handle TZ-aware vs naive)
-                        decision_time_naive = decision_time.replace(tzinfo=None)
-                        if decision_time_naive < since:
+                        if decision_time < since:
                             continue
                     
-                    if decision_type is not None and decision.type != decision_type:
-                        continue
+                    # Filter by type
+                    if decision_type is not None:
+                        if decision.decision_type != decision_type:
+                            continue
                     
                     decisions.append(decision)
                 except (json.JSONDecodeError, KeyError):
@@ -211,41 +293,22 @@ class DailyLogManager:
         
         return decisions
 
-    def get_history(self, days: int = 7) -> list[DailyLog]:
-        """Get logs for the last N days."""
+    def get_history(self, days: int) -> list[DailyLog]:
+        """Get logs for the last N days.
+        
+        Args:
+            days: Number of days to retrieve
+            
+        Returns:
+            List of DailyLog objects (most recent first)
+        """
         logs = []
         today = date.today()
+        
         for i in range(days):
             log_date = today - timedelta(days=i)
             log = self.get_log(log_date)
             if log is not None:
                 logs.append(log)
+        
         return logs
-
-    def generate_weekly_summary(self, week: int, year: int) -> str:
-        """Generate weekly summary markdown."""
-        lines = [f"# Weekly Summary: {year}-W{week:02d}", ""]
-        
-        # Get logs for this week
-        from datetime import date as date_cls
-        week_start = date_cls.fromisocalendar(year, week, 1)
-        
-        total_goals_completed = 0
-        total_goals = 0
-        total_cost = 0.0
-        
-        for i in range(7):
-            log_date = week_start + timedelta(days=i)
-            log = self.get_log(log_date)
-            if log is not None and log.summary is not None:
-                total_goals_completed += log.summary.goals_completed
-                total_goals += log.summary.goals_total
-                total_cost += log.summary.total_cost_usd
-        
-        lines.append(f"- **Goals Completed:** {total_goals_completed}/{total_goals}")
-        if total_goals > 0:
-            rate = total_goals_completed / total_goals * 100
-            lines.append(f"- **Completion Rate:** {rate:.1f}%")
-        lines.append(f"- **Total Cost:** ${total_cost:.2f}")
-        
-        return "\n".join(lines)

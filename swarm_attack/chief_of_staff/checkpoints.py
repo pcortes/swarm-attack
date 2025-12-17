@@ -3,10 +3,7 @@
 from typing import Optional
 
 from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
-from swarm_attack.chief_of_staff.models import (
-    AutopilotSession,
-    CheckpointTrigger,
-)
+from swarm_attack.chief_of_staff.models import AutopilotSession, CheckpointTrigger
 
 
 class CheckpointSystem:

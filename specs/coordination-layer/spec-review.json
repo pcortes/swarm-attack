@@ -1,0 +1,22 @@
+{
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/coordination-layer/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/coordination-layer.md",
+  "reviewed_at": "2025-12-17T17:22:56.308815Z",
+  "scores": {
+    "clarity": 0.9,
+    "coverage": 0.85,
+    "architecture": 0.85,
+    "risk": 0.8
+  },
+  "issues": [],
+  "disputed_issues": [],
+  "strengths": [
+    "Direct fix focused only on missing context datum",
+    "Reuses existing orchestrator/test-writer flow with minimal tweaks",
+    "Includes pragmatic test plan for the new context behavior",
+    "Explicit fallback logic avoids breaking older runs"
+  ],
+  "summary": "Spec is tight and pragmatic: it captures the bug, routes the actual test path through existing structures, adds a lightweight guard, and backs it with targeted tests. No over-engineering spotted.",
+  "recommendation": "APPROVE",
+  "pass_threshold_met": true
+}

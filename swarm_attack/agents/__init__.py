@@ -20,6 +20,7 @@ from swarm_attack.agents.base import AgentResult, BaseAgent
 from swarm_attack.agents.bug_critic import BugCriticAgent
 from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.coder import CoderAgent
+from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.issue_creator import IssueCreatorAgent
 from swarm_attack.agents.issue_validator import IssueValidatorAgent
 from swarm_attack.agents.prioritization import PrioritizationAgent
@@ -35,6 +36,8 @@ __all__ = [
     "BugCriticAgent",
     "BugModeratorAgent",
     "CoderAgent",
+    "GateAgent",
+    "GateResult",
     "IssueCreatorAgent",
     "IssueValidatorAgent",
     "PrioritizationAgent",

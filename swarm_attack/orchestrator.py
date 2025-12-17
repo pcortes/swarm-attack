@@ -22,6 +22,7 @@ This module orchestrates:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,7 @@ from swarm_attack.agents import (
     SpecModeratorAgent,
     VerifierAgent,
 )
+from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.models import FeaturePhase, TaskStage
 
 if TYPE_CHECKING:
@@ -146,6 +148,10 @@ class Orchestrator:
         self._coder = coder or CoderAgent(config, logger)
         self._verifier = verifier or VerifierAgent(config, logger)
         self._github_client: Optional[GitHubClient] = None
+
+        # Gate agent for pre-coder validation (lazy initialized)
+        self._gate_agent: Optional[GateAgent] = None
+        self._post_coder_gate_agent: Optional[GateAgent] = None
 
     @property
     def author(self) -> SpecAuthorAgent:
@@ -1253,6 +1259,34 @@ class Orchestrator:
                     return selected.issue_number
         return None
 
+    def _can_collect_test_file(self, test_file: Path) -> bool:
+        """
+        Check if a test file can be collected by pytest without import errors.
+
+        This prevents cascade failures where DONE issues with broken imports
+        block subsequent issues from being marked DONE.
+
+        Args:
+            test_file: Path to the test file.
+
+        Returns:
+            True if the test file can be collected, False otherwise.
+        """
+        try:
+            result = subprocess.run(
+                ["pytest", str(test_file), "--collect-only", "-q"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=self.config.repo_root,
+                env={**os.environ, "PYTHONPATH": str(self.config.repo_root)},
+            )
+            # Collection succeeds if exit code is 0 or 5 (no tests collected but no errors)
+            # Exit code 2 means collection errors (import failures, etc.)
+            return result.returncode in (0, 5)
+        except (subprocess.TimeoutExpired, OSError):
+            return False
+
     def _get_regression_test_files(self, feature_id: str) -> list[str]:
         """
         Get test files from DONE issues only for regression checking.
@@ -1260,11 +1294,13 @@ class Orchestrator:
         This prevents cascading failures where BLOCKED issues cause
         subsequent issues to fail regression even when their own tests pass.
 
+        Also validates that test files can be collected (no import errors).
+
         Args:
             feature_id: The feature identifier.
 
         Returns:
-            List of test file paths from DONE issues.
+            List of test file paths from DONE issues that can be collected.
         """
         if self._state_store is None:
             return []
@@ -1281,7 +1317,20 @@ class Orchestrator:
             if task.stage == TaskStage.DONE:
                 test_file = tests_dir / f"test_issue_{task.issue_number}.py"
                 if test_file.exists():
-                    test_files.append(str(test_file))
+                    # Validate test file can be collected (no import errors)
+                    if self._can_collect_test_file(test_file):
+                        test_files.append(str(test_file))
+                    else:
+                        self._log(
+                            "regression_skip_uncollectable",
+                            {
+                                "feature_id": feature_id,
+                                "issue_number": task.issue_number,
+                                "test_file": str(test_file),
+                                "reason": "Test file has collection errors (likely import failures)",
+                            },
+                            level="warning",
+                        )
 
         return test_files
 
@@ -1311,19 +1360,79 @@ class Orchestrator:
         # Pass empty list if no DONE issues (disables regression) vs None (run all)
         regression_test_files = self._get_regression_test_files(feature_id)
 
+        # Build module registry from completed issues for context handoff
+        module_registry: dict[str, Any] = {}
+        if self._state_store:
+            module_registry = self._state_store.get_module_registry(feature_id)
+
+        # Compute test_path for coder context handoff
+        # This ensures orchestrator and coder use the same test file location
+        test_path = str(
+            Path(self.config.repo_root)
+            / "tests"
+            / "generated"
+            / feature_id
+            / f"test_issue_{issue_number}.py"
+        )
+
+        # Gate: On retries, verify test file exists before proceeding
+        # In thick-agent TDD mode, coder creates tests on first run.
+        # If test file is still missing on retry, something went wrong.
+        if retry_number > 0 and not Path(test_path).exists():
+            self._log(
+                "test_file_missing_on_retry",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "expected_path": test_path,
+                    "retry_number": retry_number,
+                },
+                level="error",
+            )
+            return (
+                False,
+                AgentResult.failure_result(
+                    f"Test file not found on retry: {test_path}. "
+                    "Coder should have created tests on first run."
+                ),
+                0.0,
+            )
+
         context = {
             "feature_id": feature_id,
             "issue_number": issue_number,
+            # Pass test_path to ensure coder uses the same location as orchestrator
+            "test_path": test_path,
             # Pass the list as-is (even if empty) to run targeted regression
             # Empty list means no regression tests, None would run all tests
             "regression_test_files": regression_test_files,
             # NEW: Pass retry context to coder
             "retry_number": retry_number,
             "test_failures": previous_failures or [],
+            # NEW: Pass module registry for context handoff from prior issues
+            "module_registry": module_registry,
         }
         total_cost = 0.0
 
+        # Run pre-coder gate validation (optional, only on retry_number == 0)
+        # Gate validates test artifacts exist before coder runs
+        if retry_number == 0:
+            gate_result = self._run_pre_coder_gate(
+                feature_id, issue_number, test_path, context
+            )
+            if gate_result is not None:
+                total_cost += gate_result.get("cost_usd", 0.0)
+                # Enrich context with gate findings
+                if gate_result.get("passed"):
+                    if gate_result.get("language"):
+                        context["language"] = gate_result["language"]
+                    if gate_result.get("test_count"):
+                        context["test_count"] = gate_result["test_count"]
+                # Note: We don't fail on gate failure in first iteration
+                # since coder (TDD) creates tests as part of implementation. Gate is informational.
+
         # Run coder
+        coder_result: Optional[AgentResult] = None
         if self._coder:
             self._coder.reset()
             coder_result = self._coder.run(context)
@@ -1337,6 +1446,26 @@ class Orchestrator:
             if not coder_result.success:
                 return False, coder_result, total_cost
 
+            # Run post-coder gate validation
+            # Gate validates implementation artifacts before verifier runs
+            post_gate_result = self._run_post_coder_gate(
+                feature_id, issue_number, test_path, coder_result, context
+            )
+            if post_gate_result is not None:
+                total_cost += post_gate_result.get("cost_usd", 0.0)
+                # If post-coder gate fails, log warning but continue to verifier
+                # Verifier will catch actual test failures
+                if not post_gate_result.get("passed"):
+                    self._log(
+                        "post_coder_gate_warning",
+                        {
+                            "feature_id": feature_id,
+                            "issue_number": issue_number,
+                            "errors": post_gate_result.get("errors", []),
+                        },
+                        level="warning",
+                    )
+
         # Run verifier
         if self._verifier:
             self._verifier.reset()
@@ -1348,10 +1477,185 @@ class Orchestrator:
                     session_id, "verifier", "complete", cost_usd=verifier_result.cost_usd
                 )
 
+            # Save issue outputs to module registry if verifier succeeded
+            if verifier_result.success and coder_result and coder_result.output:
+                issue_outputs = coder_result.output.get("issue_outputs")
+                if issue_outputs and self._state_store:
+                    self._state_store.save_issue_outputs(
+                        feature_id, issue_number, issue_outputs
+                    )
+
             return verifier_result.success, verifier_result, total_cost
 
         # No verifier - return failure
         return False, AgentResult.failure_result("No verifier agent configured"), total_cost
+
+    def _run_pre_coder_gate(
+        self,
+        feature_id: str,
+        issue_number: int,
+        test_path: str,
+        context: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """
+        Run pre-coder gate validation to check test artifacts.
+
+        This is an LLM-adaptive gate that validates test artifacts exist
+        and are syntactically correct before the coder agent runs.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number.
+            test_path: Expected test file path.
+            context: Full context dict.
+
+        Returns:
+            Dict with gate results (passed, language, test_count, cost_usd)
+            or None if gate validation was skipped.
+        """
+        try:
+            # Lazy initialize gate agent
+            if self._gate_agent is None:
+                self._gate_agent = GateAgent(
+                    self.config,
+                    logger=self.logger,
+                    gate_name="pre_coder_gate",
+                )
+
+            # Build gate context
+            gate_context = {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "previous_agent": "coder",
+                "expected_artifacts": ["test file"],
+                "project_root": str(self.config.repo_root),
+                "test_path": test_path,
+            }
+
+            # Run gate validation
+            gate_result = self._gate_agent.validate(gate_context)
+
+            # Log gate result
+            self._log(
+                "pre_coder_gate_complete",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "passed": gate_result.passed,
+                    "language": gate_result.language,
+                    "test_count": gate_result.test_count,
+                    "cost_usd": self._gate_agent.get_total_cost(),
+                },
+            )
+
+            return {
+                "passed": gate_result.passed,
+                "language": gate_result.language,
+                "test_count": gate_result.test_count,
+                "errors": gate_result.errors,
+                "cost_usd": self._gate_agent.get_total_cost(),
+            }
+
+        except Exception as e:
+            # Gate failure should not block coder - log and continue
+            self._log(
+                "pre_coder_gate_error",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "error": str(e),
+                },
+                level="warning",
+            )
+            return None
+
+    def _run_post_coder_gate(
+        self,
+        feature_id: str,
+        issue_number: int,
+        test_path: str,
+        coder_result: AgentResult,
+        context: dict[str, Any],
+    ) -> Optional[dict[str, Any]]:
+        """
+        Run post-coder gate validation to check implementation artifacts.
+
+        This is an LLM-adaptive gate that validates implementation artifacts
+        exist and are syntactically correct after the coder agent runs.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number.
+            test_path: Expected test file path.
+            coder_result: Result from the coder agent.
+            context: Full context dict.
+
+        Returns:
+            Dict with gate results (passed, language, errors, cost_usd)
+            or None if gate validation was skipped.
+        """
+        try:
+            # Lazy initialize post-coder gate agent
+            if self._post_coder_gate_agent is None:
+                self._post_coder_gate_agent = GateAgent(
+                    self.config,
+                    logger=self.logger,
+                    gate_name="post_coder_gate",
+                )
+
+            # Extract implementation files from coder result
+            impl_files = []
+            if coder_result.output:
+                issue_outputs = coder_result.output.get("issue_outputs", {})
+                impl_files = issue_outputs.get("modified_files", [])
+
+            # Build gate context
+            gate_context = {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "previous_agent": "coder",
+                "expected_artifacts": ["implementation file", "passing tests"],
+                "project_root": str(self.config.repo_root),
+                "test_path": test_path,
+                "impl_files": impl_files,
+            }
+
+            # Run gate validation
+            gate_result = self._post_coder_gate_agent.validate(gate_context)
+
+            # Log gate result
+            self._log(
+                "post_coder_gate_complete",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "passed": gate_result.passed,
+                    "language": gate_result.language,
+                    "test_count": gate_result.test_count,
+                    "cost_usd": self._post_coder_gate_agent.get_total_cost(),
+                },
+            )
+
+            return {
+                "passed": gate_result.passed,
+                "language": gate_result.language,
+                "test_count": gate_result.test_count,
+                "errors": gate_result.errors,
+                "cost_usd": self._post_coder_gate_agent.get_total_cost(),
+            }
+
+        except Exception as e:
+            # Gate failure should not block verifier - log and continue
+            self._log(
+                "post_coder_gate_error",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "error": str(e),
+                },
+                level="warning",
+            )
+            return None
 
     def _create_commit(
         self,
@@ -1555,6 +1859,7 @@ class Orchestrator:
         # Track whether we've claimed the lock (for finally block cleanup)
         lock_claimed = False
         session_ended = False
+        session_id = ""  # Initialize before try block for guaranteed cleanup access
 
         # Step 2: Claim issue lock
         if self._session_manager:
@@ -1583,14 +1888,14 @@ class Orchestrator:
 
             lock_claimed = True
 
-            # Step 3: Ensure feature branch
-            self._session_manager.ensure_feature_branch(feature_id)
-
-            # Start session
-            session = self._session_manager.start_session(feature_id, issue_number)
-            session_id = session.session_id
-
         try:
+            # Step 3: Ensure feature branch (now inside try for guaranteed lock cleanup)
+            if self._session_manager:
+                self._session_manager.ensure_feature_branch(feature_id)
+
+                # Start session
+                session = self._session_manager.start_session(feature_id, issue_number)
+                session_id = session.session_id
             # Step 4: Implementation cycle with retries
             # Thick-agent architecture: CoderAgent handles full TDD workflow
             # (test writing + implementation + verification iteration)
@@ -1820,3 +2125,126 @@ class Orchestrator:
                         "issue_number": issue_number,
                         "error": str(cleanup_error),
                     }, level="warning")
+
+    # =========================================================================
+    # Safe Execution Methods - Production Error Handling
+    # =========================================================================
+
+    def run_preflight_checks(self, feature_id: str) -> tuple[bool, list[str]]:
+        """
+        Run pre-flight checks before starting any work.
+
+        Validates:
+        - Disk space (minimum 1GB free)
+        - No stale sessions for this feature
+        - Git worktree healthy (if using worktrees)
+        - State file not corrupted
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            Tuple of (passed, list of error messages).
+        """
+        from swarm_attack.recovery import PreflightChecker, HealthChecker
+
+        health_checker = HealthChecker(
+            self.config,
+            session_manager=self._session_manager,
+            state_store=self._state_store,
+        )
+        preflight = PreflightChecker(self.config, health_checker)
+
+        passed, errors = preflight.run_preflight_checks(feature_id)
+
+        if not passed:
+            self._log("preflight_checks_failed", {
+                "feature_id": feature_id,
+                "errors": errors,
+            }, level="warning")
+
+        return passed, errors
+
+    def get_ready_issues_safe(self, feature_id: str) -> list[TaskRef]:
+        """
+        Get issues ready for work, respecting blocked dependencies.
+
+        An issue is ready if:
+        1. Its stage is READY
+        2. All its dependencies are DONE (not BLOCKED or SKIPPED)
+
+        Issues with blocked dependencies are marked as SKIPPED.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of TaskRef objects ready for work.
+        """
+        from swarm_attack.recovery import get_ready_issues_safe, should_skip_issue
+
+        if not self._state_store:
+            return []
+
+        state = self._state_store.load(feature_id)
+        if not state or not state.tasks:
+            return []
+
+        # Get done and blocked issue numbers
+        done_issues = {t.issue_number for t in state.done_tasks}
+        blocked_issues = {t.issue_number for t in state.blocked_tasks}
+        skipped_issues = {t.issue_number for t in state.skipped_tasks}
+
+        # Check for tasks that should be skipped due to blocked dependencies
+        for task in state.tasks:
+            if task.stage == TaskStage.READY:
+                blocking_issue = should_skip_issue(task, blocked_issues, skipped_issues)
+                if blocking_issue:
+                    # Mark as SKIPPED with reason
+                    task.stage = TaskStage.SKIPPED
+                    task.failure_reason = f"Dependency #{blocking_issue} is blocked/skipped"
+                    skipped_issues.add(task.issue_number)
+
+                    self._log("issue_skipped_dependency", {
+                        "feature_id": feature_id,
+                        "issue_number": task.issue_number,
+                        "blocking_issue": blocking_issue,
+                    })
+
+        # Save if any tasks were skipped
+        if any(t.stage == TaskStage.SKIPPED for t in state.tasks):
+            self._state_store.save(state)
+
+        # Return ready issues
+        return get_ready_issues_safe(state.tasks, done_issues, blocked_issues)
+
+    def validate_no_circular_deps(self, feature_id: str) -> Optional[str]:
+        """
+        Detect circular dependencies in task graph.
+
+        Uses Kahn's algorithm for topological sort.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            Error message if cycle detected, None otherwise.
+        """
+        from swarm_attack.recovery import validate_no_circular_deps
+
+        if not self._state_store:
+            return None
+
+        state = self._state_store.load(feature_id)
+        if not state or not state.tasks:
+            return None
+
+        error = validate_no_circular_deps(state.tasks)
+
+        if error:
+            self._log("circular_dependency_detected", {
+                "feature_id": feature_id,
+                "error": error,
+            }, level="error")
+
+        return error

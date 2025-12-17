@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from .models import AutopilotSession
+from .autopilot import AutopilotSession
 
 
 class AutopilotSessionStore:

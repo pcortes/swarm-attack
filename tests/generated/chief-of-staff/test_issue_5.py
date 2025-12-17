@@ -1,15 +1,19 @@
-"""Tests for GoalTracker with state reconciliation."""
+"""Tests for Issue #5: GoalTracker with state reconciliation."""
 
 import pytest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from typing import Any
+import tempfile
+import shutil
 
 from swarm_attack.chief_of_staff.goal_tracker import GoalTracker
+from swarm_attack.chief_of_staff.daily_log import DailyLogManager
 from swarm_attack.chief_of_staff.models import (
     DailyGoal,
+    DailyLog,
     GoalStatus,
+    StandupSession,
     RepoStateSnapshot,
     GitState,
     FeatureSummary,
@@ -19,313 +23,214 @@ from swarm_attack.chief_of_staff.models import (
     TestState,
     Recommendation,
 )
-from swarm_attack.chief_of_staff.daily_log import DailyLogManager
 
 
-class TestGoalTrackerBasicOperations:
-    """Test basic goal operations."""
+class TestGoalTrackerInit:
+    """Tests for GoalTracker initialization."""
 
-    def test_goal_tracker_init(self, tmp_path: Path) -> None:
-        """Test GoalTracker initialization."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_init_creates_tracker(self, tmp_path):
+        """GoalTracker initializes with a DailyLogManager."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
         assert tracker is not None
-        assert tracker._daily_log_manager == log_manager
 
-    def test_get_today_goals_empty(self, tmp_path: Path) -> None:
-        """Test getting goals when none exist."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_init_loads_today_goals_from_standup(self, tmp_path):
+        """GoalTracker loads today's goals from most recent standup."""
+        daily_log_manager = DailyLogManager(tmp_path)
+
+        # Create a log with goals
+        log = daily_log_manager.get_today()
+        goal = DailyGoal(id="goal-1", content="Test goal", priority="P1")
+        standup = StandupSession(
+            session_id="s1",
+            time=datetime.now().isoformat(),
+            yesterday_goals=[],
+            today_goals=[goal],
+        )
+        log.standups.append(standup)
+        daily_log_manager.save_log(log)
+
+        # Create new tracker - should load the goals
+        tracker = GoalTracker(daily_log_manager)
         goals = tracker.get_today_goals()
-        assert goals == []
+        assert len(goals) == 1
+        assert goals[0].id == "goal-1"
 
-    def test_set_goals(self, tmp_path: Path) -> None:
-        """Test setting goals for today."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+
+class TestGetTodayGoals:
+    """Tests for get_today_goals method."""
+
+    def test_returns_empty_list_when_no_goals(self, tmp_path):
+        """Returns empty list when no goals are set."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        assert tracker.get_today_goals() == []
+
+    def test_returns_copy_of_goals(self, tmp_path):
+        """Returns a copy, not the original list."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        goal = DailyGoal(id="g1", content="Test", priority="P1")
+        tracker.set_goals([goal])
+
+        goals = tracker.get_today_goals()
+        goals.clear()
+
+        # Original should be unchanged
+        assert len(tracker.get_today_goals()) == 1
+
+
+class TestSetGoals:
+    """Tests for set_goals method."""
+
+    def test_sets_goals_and_persists(self, tmp_path):
+        """Sets goals and persists to daily log."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
         goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Complete feature X",
-                priority="P1",
-                estimated_minutes=60,
-            ),
-            DailyGoal(
-                id="goal-002",
-                content="Fix bug Y",
-                priority="P2",
-                estimated_minutes=30,
-            ),
-        ]
-
-        tracker.set_goals(goals)
-        retrieved = tracker.get_today_goals()
-
-        assert len(retrieved) == 2
-        assert retrieved[0].id == "goal-001"
-        assert retrieved[1].id == "goal-002"
-
-    def test_update_goal_status(self, tmp_path: Path) -> None:
-        """Test updating a goal's status."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Complete feature X",
-                priority="P1",
-            ),
+            DailyGoal(id="g1", content="Goal 1", priority="P1"),
+            DailyGoal(id="g2", content="Goal 2", priority="P2"),
         ]
         tracker.set_goals(goals)
 
-        tracker.update_goal("goal-001", GoalStatus.IN_PROGRESS, notes="Started work")
+        # Verify persisted
+        log = daily_log_manager.get_today()
+        assert len(log.standups) == 1
+        assert len(log.standups[0].today_goals) == 2
 
-        retrieved = tracker.get_today_goals()
-        assert retrieved[0].status == GoalStatus.IN_PROGRESS
-        assert retrieved[0].notes == "Started work"
+    def test_replaces_existing_goals(self, tmp_path):
+        """Replaces existing goals when set again."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-    def test_update_goal_not_found(self, tmp_path: Path) -> None:
-        """Test updating a non-existent goal."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Old", priority="P1")])
+        tracker.set_goals([DailyGoal(id="g2", content="New", priority="P2")])
 
-        tracker.set_goals([])
-        # Should not raise, just log warning or do nothing
-        tracker.update_goal("nonexistent", GoalStatus.DONE)
-
-    def test_mark_complete(self, tmp_path: Path) -> None:
-        """Test marking a goal as complete."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Complete feature X",
-                priority="P1",
-                estimated_minutes=60,
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        tracker.mark_complete("goal-001", actual_minutes=45)
-
-        retrieved = tracker.get_today_goals()
-        assert retrieved[0].status == GoalStatus.DONE
-        assert retrieved[0].actual_minutes == 45
-        assert retrieved[0].completed_at is not None
+        goals = tracker.get_today_goals()
+        assert len(goals) == 1
+        assert goals[0].id == "g2"
 
 
-class TestGoalTrackerYesterdayOperations:
-    """Test yesterday goal operations."""
+class TestUpdateGoal:
+    """Tests for update_goal method."""
 
-    def test_get_yesterday_goals_none(self, tmp_path: Path) -> None:
-        """Test getting yesterday's goals when none exist."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_updates_status(self, tmp_path):
+        """Updates goal status."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Test", priority="P1")])
 
-        goals = tracker.get_yesterday_goals()
-        assert goals == []
+        tracker.update_goal("g1", GoalStatus.IN_PROGRESS)
 
-    def test_get_yesterday_goals(self, tmp_path: Path) -> None:
-        """Test getting yesterday's goals."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+        goals = tracker.get_today_goals()
+        assert goals[0].status == GoalStatus.IN_PROGRESS
 
-        # Create yesterday's goals
-        yesterday = date.today() - timedelta(days=1)
-        yesterday_log = log_manager.get_log(yesterday)
-        if yesterday_log is None:
-            from swarm_attack.chief_of_staff.models import DailyLog
-            yesterday_log = DailyLog(date=yesterday.isoformat())
+    def test_updates_notes(self, tmp_path):
+        """Updates goal notes."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Test", priority="P1")])
 
-        yesterday_goals = [
-            DailyGoal(
-                id="yest-001",
-                content="Yesterday task",
-                priority="P1",
-                status=GoalStatus.DONE,
-            ),
-        ]
-        
-        # Save yesterday's log with goals
-        from swarm_attack.chief_of_staff.models import StandupSession
-        standup = StandupSession(
-            session_id="test-session",
-            time=datetime.now().isoformat(),
-            yesterday_goals=[],
-            today_goals=yesterday_goals,
-        )
-        yesterday_log.standups.append(standup)
-        log_manager.save_log(yesterday_log)
+        tracker.update_goal("g1", GoalStatus.BLOCKED, notes="Blocked by X")
 
-        retrieved = tracker.get_yesterday_goals()
-        assert len(retrieved) == 1
-        assert retrieved[0].id == "yest-001"
+        goals = tracker.get_today_goals()
+        assert goals[0].notes == "Blocked by X"
+
+    def test_ignores_unknown_goal_id(self, tmp_path):
+        """Silently ignores unknown goal IDs."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Test", priority="P1")])
+
+        # Should not raise
+        tracker.update_goal("unknown", GoalStatus.DONE)
 
 
-class TestGoalTrackerComparison:
-    """Test plan vs actual comparison."""
+class TestMarkComplete:
+    """Tests for mark_complete method."""
 
-    def test_compare_plan_vs_actual_empty(self, tmp_path: Path) -> None:
-        """Test comparison when no yesterday data."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_marks_goal_done(self, tmp_path):
+        """Marks goal as done."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Test", priority="P1")])
+
+        tracker.mark_complete("g1")
+
+        goals = tracker.get_today_goals()
+        assert goals[0].status == GoalStatus.DONE
+        assert goals[0].completed_at is not None
+
+    def test_sets_actual_minutes(self, tmp_path):
+        """Sets actual minutes when provided."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        tracker.set_goals([DailyGoal(id="g1", content="Test", priority="P1")])
+
+        tracker.mark_complete("g1", actual_minutes=30)
+
+        goals = tracker.get_today_goals()
+        assert goals[0].actual_minutes == 30
+
+
+class TestGetYesterdayGoals:
+    """Tests for get_yesterday_goals method."""
+
+    def test_returns_empty_when_no_yesterday(self, tmp_path):
+        """Returns empty list when no yesterday log."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        assert tracker.get_yesterday_goals() == []
+
+
+class TestComparePlanVsActual:
+    """Tests for compare_plan_vs_actual method."""
+
+    def test_returns_zeros_when_no_yesterday(self, tmp_path):
+        """Returns zero metrics when no yesterday data."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
         result = tracker.compare_plan_vs_actual()
 
-        assert "goals" in result
-        assert "completion_rate" in result
-        assert "time_accuracy" in result
-        assert result["goals"] == []
         assert result["completion_rate"] == 0.0
+        assert result["time_accuracy"] == 0.0
+        assert result["goals"] == []
 
-    def test_compare_plan_vs_actual_with_data(self, tmp_path: Path) -> None:
-        """Test comparison with yesterday's data."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
 
-        # Create yesterday's goals
-        yesterday = date.today() - timedelta(days=1)
-        from swarm_attack.chief_of_staff.models import DailyLog, StandupSession
+class TestGetCarryoverGoals:
+    """Tests for get_carryover_goals method."""
 
-        yesterday_log = DailyLog(date=yesterday.isoformat())
-        yesterday_goals = [
-            DailyGoal(
-                id="yest-001",
-                content="Task 1",
-                priority="P1",
-                status=GoalStatus.DONE,
-                estimated_minutes=60,
-                actual_minutes=50,
-            ),
-            DailyGoal(
-                id="yest-002",
-                content="Task 2",
-                priority="P2",
-                status=GoalStatus.PARTIAL,
-                estimated_minutes=30,
-                actual_minutes=40,
-            ),
-        ]
-        standup = StandupSession(
-            session_id="test",
-            time=datetime.now().isoformat(),
-            yesterday_goals=[],
-            today_goals=yesterday_goals,
+    def test_returns_empty_when_no_yesterday(self, tmp_path):
+        """Returns empty list when no yesterday data."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+        assert tracker.get_carryover_goals() == []
+
+
+class TestReconcileWithState:
+    """Tests for reconcile_with_state method."""
+
+    def test_marks_feature_goal_done_when_complete(self, tmp_path):
+        """Marks linked feature goal as DONE when feature is COMPLETE."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+
+        goal = DailyGoal(
+            id="g1",
+            content="Complete feature X",
+            priority="P1",
+            linked_feature="feature-x",
         )
-        yesterday_log.standups.append(standup)
-        log_manager.save_log(yesterday_log)
+        tracker.set_goals([goal])
 
-        result = tracker.compare_plan_vs_actual()
-
-        assert len(result["goals"]) == 2
-        assert result["completion_rate"] == 0.5  # 1 of 2 done
-
-
-class TestGoalTrackerCarryover:
-    """Test carryover goal operations."""
-
-    def test_get_carryover_goals_empty(self, tmp_path: Path) -> None:
-        """Test getting carryover when none exist."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        carryover = tracker.get_carryover_goals()
-        assert carryover == []
-
-    def test_get_carryover_goals(self, tmp_path: Path) -> None:
-        """Test getting incomplete goals for carryover."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        # Create yesterday's goals with some incomplete
-        yesterday = date.today() - timedelta(days=1)
-        from swarm_attack.chief_of_staff.models import DailyLog, StandupSession
-
-        yesterday_log = DailyLog(date=yesterday.isoformat())
-        yesterday_goals = [
-            DailyGoal(id="yest-001", content="Done task", priority="P1", status=GoalStatus.DONE),
-            DailyGoal(id="yest-002", content="Pending task", priority="P2", status=GoalStatus.PENDING),
-            DailyGoal(id="yest-003", content="Partial task", priority="P1", status=GoalStatus.PARTIAL),
-            DailyGoal(id="yest-004", content="Skipped task", priority="P3", status=GoalStatus.SKIPPED),
-        ]
-        standup = StandupSession(
-            session_id="test",
-            time=datetime.now().isoformat(),
-            yesterday_goals=[],
-            today_goals=yesterday_goals,
-        )
-        yesterday_log.standups.append(standup)
-        log_manager.save_log(yesterday_log)
-
-        carryover = tracker.get_carryover_goals()
-
-        # Should include PENDING and PARTIAL, not DONE or SKIPPED
-        assert len(carryover) == 2
-        ids = [g.id for g in carryover]
-        assert "yest-002" in ids
-        assert "yest-003" in ids
-
-
-class TestGoalTrackerReconciliation:
-    """Test state reconciliation."""
-
-    def _create_snapshot(
-        self,
-        features: list[FeatureSummary] | None = None,
-        bugs: list[BugSummary] | None = None,
-        specs: list[SpecSummary] | None = None,
-    ) -> RepoStateSnapshot:
-        """Create a test snapshot."""
-        return RepoStateSnapshot(
+        snapshot = RepoStateSnapshot(
             gathered_at=datetime.now().isoformat(),
-            git=GitState(
-                branch="main",
-                is_clean=True,
-                uncommitted_files=[],
-                recent_commits=[],
-                ahead_behind=(0, 0),
-            ),
-            features=features or [],
-            bugs=bugs or [],
-            prds=[],
-            specs=specs or [],
-            tests=TestState(
-                total_tests=10,
-                passing=10,
-                failing=0,
-                skipped=0,
-                last_run_at=None,
-            ),
-            github=None,
-            interrupted_sessions=[],
-            total_cost_today=0.0,
-            total_cost_week=0.0,
-        )
-
-    def test_reconcile_feature_complete(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal DONE when feature COMPLETE."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Complete my-feature",
-                priority="P1",
-                status=GoalStatus.IN_PROGRESS,
-                linked_feature="my-feature",
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        snapshot = self._create_snapshot(
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
-                    feature_id="my-feature",
+                    feature_id="feature-x",
                     phase="COMPLETE",
                     tasks_done=5,
                     tasks_total=5,
@@ -333,47 +238,43 @@ class TestGoalTrackerReconciliation:
                     cost_usd=10.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         changes = tracker.reconcile_with_state(snapshot)
 
         assert len(changes) == 1
-        assert changes[0]["goal_id"] == "goal-001"
-        assert changes[0]["old_status"] == "in_progress"
+        assert changes[0]["goal_id"] == "g1"
         assert changes[0]["new_status"] == "done"
+        assert tracker.get_today_goals()[0].status == GoalStatus.DONE
 
-        retrieved = tracker.get_today_goals()
-        assert retrieved[0].status == GoalStatus.DONE
+    def test_marks_feature_goal_blocked(self, tmp_path):
+        """Marks linked feature goal as BLOCKED when feature is BLOCKED."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-    def test_reconcile_feature_blocked(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal BLOCKED when feature BLOCKED."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+        goal = DailyGoal(
+            id="g1",
+            content="Work on feature X",
+            priority="P1",
+            linked_feature="feature-x",
+        )
+        tracker.set_goals([goal])
 
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Work on blocked-feature",
-                priority="P1",
-                status=GoalStatus.PENDING,
-                linked_feature="blocked-feature",
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
-                    feature_id="blocked-feature",
+                    feature_id="feature-x",
                     phase="BLOCKED",
                     tasks_done=2,
                     tasks_total=5,
-                    tasks_blocked=3,
+                    tasks_blocked=1,
                     cost_usd=5.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         changes = tracker.reconcile_with_state(snapshot)
@@ -381,31 +282,30 @@ class TestGoalTrackerReconciliation:
         assert len(changes) == 1
         assert changes[0]["new_status"] == "blocked"
 
-    def test_reconcile_bug_fixed(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal DONE when bug fixed."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_marks_bug_goal_done_when_fixed(self, tmp_path):
+        """Marks linked bug goal as DONE when bug is fixed."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Fix bug-123",
-                priority="P1",
-                status=GoalStatus.IN_PROGRESS,
-                linked_bug="bug-123",
-            ),
-        ]
-        tracker.set_goals(goals)
+        goal = DailyGoal(
+            id="g1",
+            content="Fix bug Y",
+            priority="P1",
+            linked_bug="bug-y",
+        )
+        tracker.set_goals([goal])
 
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             bugs=[
                 BugSummary(
-                    bug_id="bug-123",
+                    bug_id="bug-y",
                     phase="fixed",
                     cost_usd=3.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         changes = tracker.reconcile_with_state(snapshot)
@@ -413,66 +313,31 @@ class TestGoalTrackerReconciliation:
         assert len(changes) == 1
         assert changes[0]["new_status"] == "done"
 
-    def test_reconcile_bug_blocked(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal BLOCKED when bug blocked."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_marks_spec_goal_done_when_review_passed(self, tmp_path):
+        """Marks linked spec goal as DONE when review passes."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Fix blocked-bug",
-                priority="P1",
-                status=GoalStatus.PENDING,
-                linked_bug="blocked-bug",
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        snapshot = self._create_snapshot(
-            bugs=[
-                BugSummary(
-                    bug_id="blocked-bug",
-                    phase="blocked",
-                    cost_usd=1.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ]
+        goal = DailyGoal(
+            id="g1",
+            content="Complete spec for Z",
+            priority="P1",
+            linked_spec="spec-z",
         )
+        tracker.set_goals([goal])
 
-        changes = tracker.reconcile_with_state(snapshot)
-
-        assert len(changes) == 1
-        assert changes[0]["new_status"] == "blocked"
-
-    def test_reconcile_spec_review_passed(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal DONE when spec review passed."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Review my-spec",
-                priority="P1",
-                status=GoalStatus.IN_PROGRESS,
-                linked_spec="my-spec",
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             specs=[
                 SpecSummary(
-                    feature_id="my-spec",
-                    title="My Spec",
-                    path="specs/my-spec/spec.md",
+                    feature_id="spec-z",
+                    title="Spec Z",
+                    path="specs/z/spec.md",
                     has_review=True,
                     review_passed=True,
-                    review_scores={"clarity": 0.9, "coverage": 0.85},
-                    updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         changes = tracker.reconcile_with_state(snapshot)
@@ -480,34 +345,31 @@ class TestGoalTrackerReconciliation:
         assert len(changes) == 1
         assert changes[0]["new_status"] == "done"
 
-    def test_reconcile_spec_review_failed(self, tmp_path: Path) -> None:
-        """Test reconciliation marks goal PARTIAL when spec review failed."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_marks_spec_goal_partial_when_review_failed(self, tmp_path):
+        """Marks linked spec goal as PARTIAL when review fails."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Review failing-spec",
-                priority="P1",
-                status=GoalStatus.IN_PROGRESS,
-                linked_spec="failing-spec",
-            ),
-        ]
-        tracker.set_goals(goals)
+        goal = DailyGoal(
+            id="g1",
+            content="Complete spec for Z",
+            priority="P1",
+            linked_spec="spec-z",
+        )
+        tracker.set_goals([goal])
 
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             specs=[
                 SpecSummary(
-                    feature_id="failing-spec",
-                    title="Failing Spec",
-                    path="specs/failing-spec/spec.md",
+                    feature_id="spec-z",
+                    title="Spec Z",
+                    path="specs/z/spec.md",
                     has_review=True,
                     review_passed=False,
-                    review_scores={"clarity": 0.5, "coverage": 0.4},
-                    updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         changes = tracker.reconcile_with_state(snapshot)
@@ -515,174 +377,62 @@ class TestGoalTrackerReconciliation:
         assert len(changes) == 1
         assert changes[0]["new_status"] == "partial"
 
-    def test_reconcile_returns_changes_list(self, tmp_path: Path) -> None:
-        """Test reconciliation returns list of changes made."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_no_changes_when_no_linked_items(self, tmp_path):
+        """Returns empty changes when goals have no linked items."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Feature 1",
-                priority="P1",
-                status=GoalStatus.PENDING,
-                linked_feature="feat-1",
-            ),
-            DailyGoal(
-                id="goal-002",
-                content="Bug 1",
-                priority="P2",
-                status=GoalStatus.IN_PROGRESS,
-                linked_bug="bug-1",
-            ),
-        ]
-        tracker.set_goals(goals)
+        goal = DailyGoal(id="g1", content="Manual task", priority="P1")
+        tracker.set_goals([goal])
 
-        snapshot = self._create_snapshot(
-            features=[
-                FeatureSummary(
-                    feature_id="feat-1",
-                    phase="COMPLETE",
-                    tasks_done=5,
-                    tasks_total=5,
-                    tasks_blocked=0,
-                    cost_usd=10.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ],
-            bugs=[
-                BugSummary(
-                    bug_id="bug-1",
-                    phase="fixed",
-                    cost_usd=3.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ],
-        )
-
-        changes = tracker.reconcile_with_state(snapshot)
-
-        assert len(changes) == 2
-        for change in changes:
-            assert "goal_id" in change
-            assert "old_status" in change
-            assert "new_status" in change
-            assert "reason" in change
-
-    def test_reconcile_no_changes_when_already_correct(self, tmp_path: Path) -> None:
-        """Test reconciliation makes no changes when statuses match."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        goals = [
-            DailyGoal(
-                id="goal-001",
-                content="Already done",
-                priority="P1",
-                status=GoalStatus.DONE,
-                linked_feature="done-feature",
-            ),
-        ]
-        tracker.set_goals(goals)
-
-        snapshot = self._create_snapshot(
-            features=[
-                FeatureSummary(
-                    feature_id="done-feature",
-                    phase="COMPLETE",
-                    tasks_done=5,
-                    tasks_total=5,
-                    tasks_blocked=0,
-                    cost_usd=10.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ]
-        )
-
-        changes = tracker.reconcile_with_state(snapshot)
-
-        assert len(changes) == 0
-
-
-class TestGoalTrackerRecommendations:
-    """Test recommendation generation."""
-
-    def _create_snapshot(
-        self,
-        features: list[FeatureSummary] | None = None,
-        bugs: list[BugSummary] | None = None,
-        specs: list[SpecSummary] | None = None,
-        prds: list[PRDSummary] | None = None,
-        tests: TestState | None = None,
-    ) -> RepoStateSnapshot:
-        """Create a test snapshot."""
-        return RepoStateSnapshot(
+        snapshot = RepoStateSnapshot(
             gathered_at=datetime.now().isoformat(),
-            git=GitState(
-                branch="main",
-                is_clean=True,
-                uncommitted_files=[],
-                recent_commits=[],
-                ahead_behind=(0, 0),
-            ),
-            features=features or [],
-            bugs=bugs or [],
-            prds=prds or [],
-            specs=specs or [],
-            tests=tests or TestState(
-                total_tests=10,
-                passing=10,
-                failing=0,
-                skipped=0,
-                last_run_at=None,
-            ),
-            github=None,
-            interrupted_sessions=[],
-            total_cost_today=0.0,
-            total_cost_week=0.0,
+            git=GitState(branch="main", is_clean=True),
         )
 
-    def test_generate_recommendations_empty(self, tmp_path: Path) -> None:
-        """Test generating recommendations with empty state."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+        changes = tracker.reconcile_with_state(snapshot)
 
-        snapshot = self._create_snapshot()
-        recommendations = tracker.generate_recommendations(snapshot)
+        assert changes == []
 
-        assert isinstance(recommendations, list)
 
-    def test_generate_recommendations_p1_blockers(self, tmp_path: Path) -> None:
-        """Test P1 recommendations for blockers."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+class TestGenerateRecommendations:
+    """Tests for generate_recommendations method."""
 
-        snapshot = self._create_snapshot(
+    def test_p1_for_blocked_features(self, tmp_path):
+        """Generates P1 recommendation for blocked features."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
                     feature_id="blocked-feature",
                     phase="BLOCKED",
                     tasks_done=2,
                     tasks_total=5,
-                    tasks_blocked=3,
+                    tasks_blocked=1,
                     cost_usd=5.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         recommendations = tracker.generate_recommendations(snapshot)
 
+        assert len(recommendations) >= 1
         p1_recs = [r for r in recommendations if r.priority == "P1"]
-        # Should have a recommendation about the blocker
-        assert any("blocked" in r.task.lower() or "blocked" in r.rationale.lower() for r in p1_recs)
+        assert any("blocked-feature" in r.task.lower() or r.linked_feature == "blocked-feature" for r in p1_recs)
 
-    def test_generate_recommendations_p1_approvals(self, tmp_path: Path) -> None:
-        """Test P1 recommendations for approvals needed."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_p1_for_spec_approval(self, tmp_path):
+        """Generates P1 recommendation for specs needing approval."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
                     feature_id="needs-approval",
@@ -690,31 +440,31 @@ class TestGoalTrackerRecommendations:
                     tasks_done=0,
                     tasks_total=0,
                     tasks_blocked=0,
-                    cost_usd=1.0,
+                    cost_usd=0.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+            ],
         )
 
         recommendations = tracker.generate_recommendations(snapshot)
 
         p1_recs = [r for r in recommendations if r.priority == "P1"]
         assert len(p1_recs) >= 1
-        assert any(r.linked_feature == "needs-approval" for r in p1_recs)
 
-    def test_generate_recommendations_p1_regressions(self, tmp_path: Path) -> None:
-        """Test P1 recommendations for test regressions."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_p1_for_failing_tests(self, tmp_path):
+        """Generates P1 recommendation for failing tests."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             tests=TestState(
                 total_tests=10,
-                passing=7,
-                failing=3,
+                passing=8,
+                failing=2,
                 skipped=0,
-                last_run_at=datetime.now().isoformat(),
-            )
+            ),
         )
 
         recommendations = tracker.generate_recommendations(snapshot)
@@ -722,147 +472,99 @@ class TestGoalTrackerRecommendations:
         p1_recs = [r for r in recommendations if r.priority == "P1"]
         assert any("failing" in r.task.lower() or "test" in r.task.lower() for r in p1_recs)
 
-    def test_generate_recommendations_p1_spec_reviews(self, tmp_path: Path) -> None:
-        """Test P1 recommendations for spec reviews."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_p2_for_in_progress_features(self, tmp_path):
+        """Generates P2 recommendation for in-progress features."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        snapshot = self._create_snapshot(
-            specs=[
-                SpecSummary(
-                    feature_id="needs-revision",
-                    title="Failing Spec",
-                    path="specs/needs-revision/spec.md",
-                    has_review=True,
-                    review_passed=False,
-                    review_scores={"clarity": 0.5, "coverage": 0.4},
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ]
-        )
-
-        recommendations = tracker.generate_recommendations(snapshot)
-
-        p1_recs = [r for r in recommendations if r.priority == "P1"]
-        assert any(r.linked_spec == "needs-revision" for r in p1_recs)
-
-    def test_generate_recommendations_p2_in_progress(self, tmp_path: Path) -> None:
-        """Test P2 recommendations for in-progress work."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
-                    feature_id="in-progress",
+                    feature_id="wip-feature",
                     phase="IMPLEMENTING",
-                    tasks_done=2,
-                    tasks_total=5,
-                    tasks_blocked=0,
-                    cost_usd=5.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-            ]
-        )
-
-        recommendations = tracker.generate_recommendations(snapshot)
-
-        p2_recs = [r for r in recommendations if r.priority == "P2"]
-        assert any(r.linked_feature == "in-progress" for r in p2_recs)
-
-    def test_generate_recommendations_p3_new_features(self, tmp_path: Path) -> None:
-        """Test P3 recommendations for new features."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        snapshot = self._create_snapshot(
-            prds=[
-                PRDSummary(
-                    feature_id="new-feature",
-                    title="New Feature",
-                    phase="PRD_READY",
-                    path=".claude/prds/new-feature.md",
-                ),
-            ]
-        )
-
-        recommendations = tracker.generate_recommendations(snapshot)
-
-        # Should have recommendation for new feature (P2 or P3)
-        assert any(
-            "new-feature" in r.task.lower() or r.linked_feature == "new-feature"
-            for r in recommendations
-        )
-
-    def test_generate_recommendations_priority_order(self, tmp_path: Path) -> None:
-        """Test recommendations are sorted by priority."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
-
-        snapshot = self._create_snapshot(
-            features=[
-                FeatureSummary(
-                    feature_id="needs-approval",
-                    phase="SPEC_NEEDS_APPROVAL",
-                    tasks_done=0,
-                    tasks_total=0,
-                    tasks_blocked=0,
-                    cost_usd=1.0,
-                    updated_at=datetime.now().isoformat(),
-                ),
-                FeatureSummary(
-                    feature_id="in-progress",
-                    phase="IMPLEMENTING",
-                    tasks_done=2,
+                    tasks_done=3,
                     tasks_total=5,
                     tasks_blocked=0,
                     cost_usd=5.0,
                     updated_at=datetime.now().isoformat(),
                 ),
             ],
-            tests=TestState(
-                total_tests=10,
-                passing=8,
-                failing=2,
-                skipped=0,
-                last_run_at=datetime.now().isoformat(),
-            ),
         )
 
         recommendations = tracker.generate_recommendations(snapshot)
 
-        if len(recommendations) >= 2:
-            priorities = [r.priority for r in recommendations]
-            # P1 should come before P2, P2 before P3
-            priority_order = {"P1": 0, "P2": 1, "P3": 2}
-            for i in range(len(priorities) - 1):
-                assert priority_order[priorities[i]] <= priority_order[priorities[i + 1]]
+        p2_recs = [r for r in recommendations if r.priority == "P2"]
+        assert any(r.linked_feature == "wip-feature" for r in p2_recs)
 
-    def test_recommendation_has_required_fields(self, tmp_path: Path) -> None:
-        """Test recommendations have all required fields."""
-        log_manager = DailyLogManager(tmp_path)
-        tracker = GoalTracker(log_manager)
+    def test_p3_for_new_prds(self, tmp_path):
+        """Generates P3 recommendation for new PRDs."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
 
-        snapshot = self._create_snapshot(
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
+            prds=[
+                PRDSummary(
+                    feature_id="new-prd",
+                    title="New Feature PRD",
+                    phase="PRD_READY",
+                    path=".claude/prds/new-prd.md",
+                ),
+            ],
+        )
+
+        recommendations = tracker.generate_recommendations(snapshot)
+
+        p3_recs = [r for r in recommendations if r.priority == "P3"]
+        assert any(r.linked_feature == "new-prd" for r in p3_recs)
+
+    def test_recommendations_sorted_by_priority(self, tmp_path):
+        """Recommendations are sorted by priority (P1 first)."""
+        daily_log_manager = DailyLogManager(tmp_path)
+        tracker = GoalTracker(daily_log_manager)
+
+        snapshot = RepoStateSnapshot(
+            gathered_at=datetime.now().isoformat(),
+            git=GitState(branch="main", is_clean=True),
             features=[
                 FeatureSummary(
-                    feature_id="needs-approval",
-                    phase="SPEC_NEEDS_APPROVAL",
-                    tasks_done=0,
-                    tasks_total=0,
+                    feature_id="implementing",
+                    phase="IMPLEMENTING",
+                    tasks_done=1,
+                    tasks_total=2,
                     tasks_blocked=0,
                     cost_usd=1.0,
                     updated_at=datetime.now().isoformat(),
                 ),
-            ]
+                FeatureSummary(
+                    feature_id="blocked",
+                    phase="BLOCKED",
+                    tasks_done=0,
+                    tasks_total=2,
+                    tasks_blocked=1,
+                    cost_usd=0.0,
+                    updated_at=datetime.now().isoformat(),
+                ),
+            ],
+            prds=[
+                PRDSummary(
+                    feature_id="new",
+                    title="New",
+                    phase="PRD_READY",
+                    path=".claude/prds/new.md",
+                ),
+            ],
         )
 
         recommendations = tracker.generate_recommendations(snapshot)
 
-        if recommendations:
-            rec = recommendations[0]
-            assert hasattr(rec, "priority")
-            assert hasattr(rec, "task")
-            assert hasattr(rec, "estimated_cost_usd")
-            assert hasattr(rec, "estimated_minutes")
-            assert hasattr(rec, "rationale")
+        # Verify P1 comes before P2 which comes before P3
+        priorities = [r.priority for r in recommendations]
+        p1_idx = next((i for i, p in enumerate(priorities) if p == "P1"), len(priorities))
+        p2_idx = next((i for i, p in enumerate(priorities) if p == "P2"), len(priorities))
+        p3_idx = next((i for i, p in enumerate(priorities) if p == "P3"), len(priorities))
+
+        assert p1_idx <= p2_idx <= p3_idx

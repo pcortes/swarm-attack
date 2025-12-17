@@ -1,7 +1,9 @@
-"""GoalTracker: Manages daily goals, tracks completion, and reconciles with state."""
+"""GoalTracker for managing daily goals with state reconciliation."""
 
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional
+import uuid
 
 from swarm_attack.chief_of_staff.daily_log import DailyLogManager
 from swarm_attack.chief_of_staff.models import (
@@ -15,348 +17,308 @@ from swarm_attack.chief_of_staff.models import (
 
 
 class GoalTracker:
-    """Tracks daily goals and their completion with automatic state reconciliation."""
+    """Tracks daily goals with state reconciliation capabilities."""
 
     def __init__(self, daily_log_manager: DailyLogManager) -> None:
-        """Initialize with log manager."""
+        """Initialize with a DailyLogManager.
+        
+        Args:
+            daily_log_manager: Manager for daily log persistence
+        """
         self._daily_log_manager = daily_log_manager
+        self._goals: list[DailyGoal] = []
+        
+        # Load today's goals from most recent standup
+        self._load_today_goals()
+
+    def _load_today_goals(self) -> None:
+        """Load today's goals from the most recent standup."""
+        log = self._daily_log_manager.get_today()
+        if log.standups:
+            # Get goals from most recent standup
+            latest_standup = log.standups[-1]
+            self._goals = list(latest_standup.today_goals)
 
     def get_today_goals(self) -> list[DailyGoal]:
-        """Get current goals for today."""
-        today_log = self._daily_log_manager.get_today()
-        if not today_log.standups:
-            return []
-        # Return goals from most recent standup
-        return today_log.standups[-1].today_goals
+        """Get a copy of today's goals.
+        
+        Returns:
+            Copy of the current goals list
+        """
+        return list(self._goals)
 
     def set_goals(self, goals: list[DailyGoal]) -> None:
-        """Set goals for today."""
-        today_log = self._daily_log_manager.get_today()
+        """Set goals and persist to daily log.
         
-        # Create or update standup session with goals
+        Args:
+            goals: List of goals to set for today
+        """
+        self._goals = list(goals)
+        
+        # Create a new standup session with these goals
         standup = StandupSession(
-            session_id=f"cos-{date.today().isoformat()}-{len(today_log.standups) + 1:03d}",
+            session_id=str(uuid.uuid4()),
             time=datetime.now().isoformat(),
-            yesterday_goals=self.get_yesterday_goals(),
-            today_goals=goals,
+            yesterday_goals=[],
+            today_goals=list(goals),
         )
-        today_log.standups.append(standup)
-        self._daily_log_manager.save_log(today_log)
-
-    def update_goal(self, goal_id: str, status: GoalStatus, notes: str = "") -> None:
-        """Update a goal's status."""
-        today_log = self._daily_log_manager.get_today()
-        if not today_log.standups:
-            return
         
-        # Find and update the goal in the most recent standup
-        for goal in today_log.standups[-1].today_goals:
+        self._daily_log_manager.add_standup(standup)
+
+    def update_goal(
+        self,
+        goal_id: str,
+        status: GoalStatus,
+        notes: Optional[str] = None,
+    ) -> None:
+        """Update a goal's status and optionally notes.
+        
+        Args:
+            goal_id: ID of the goal to update
+            status: New status
+            notes: Optional notes to add
+        """
+        for goal in self._goals:
             if goal.id == goal_id:
                 goal.status = status
-                if notes:
+                if notes is not None:
                     goal.notes = notes
-                break
-        
-        today_log.updated_at = datetime.now().isoformat()
-        self._daily_log_manager.save_log(today_log)
+                self._persist_goals()
+                return
 
-    def mark_complete(self, goal_id: str, actual_minutes: Optional[int] = None) -> None:
-        """Mark a goal as complete."""
-        today_log = self._daily_log_manager.get_today()
-        if not today_log.standups:
-            return
+    def mark_complete(
+        self,
+        goal_id: str,
+        actual_minutes: Optional[int] = None,
+    ) -> None:
+        """Mark a goal as complete.
         
-        for goal in today_log.standups[-1].today_goals:
+        Args:
+            goal_id: ID of the goal to complete
+            actual_minutes: Optional actual time spent
+        """
+        for goal in self._goals:
             if goal.id == goal_id:
                 goal.status = GoalStatus.DONE
                 goal.completed_at = datetime.now().isoformat()
                 if actual_minutes is not None:
                     goal.actual_minutes = actual_minutes
-                break
-        
-        today_log.updated_at = datetime.now().isoformat()
-        self._daily_log_manager.save_log(today_log)
+                self._persist_goals()
+                return
+
+    def _persist_goals(self) -> None:
+        """Persist current goals state to daily log."""
+        log = self._daily_log_manager.get_today()
+        if log.standups:
+            # Update the most recent standup
+            log.standups[-1].today_goals = list(self._goals)
+            self._daily_log_manager.save_log(log)
 
     def get_yesterday_goals(self) -> list[DailyGoal]:
-        """Get yesterday's goals for comparison."""
+        """Get yesterday's goals.
+        
+        Returns:
+            List of yesterday's goals, empty if no yesterday log
+        """
         yesterday_log = self._daily_log_manager.get_yesterday()
-        if not yesterday_log or not yesterday_log.standups:
+        if yesterday_log is None or not yesterday_log.standups:
             return []
-        # Return goals from the last standup of yesterday
-        return yesterday_log.standups[-1].today_goals
+        
+        # Return goals from the most recent standup
+        return list(yesterday_log.standups[-1].today_goals)
 
     def compare_plan_vs_actual(self) -> dict[str, Any]:
-        """
-        Compare yesterday's plan vs actual results.
-
+        """Compare planned goals vs actual completion from yesterday.
+        
         Returns:
-            Dictionary with:
-            - goals: list of {goal, planned, actual, status}
-            - completion_rate: float (0-1)
-            - time_accuracy: float (planned vs actual time)
+            Dictionary with completion_rate, time_accuracy, and goals list
         """
         yesterday_goals = self.get_yesterday_goals()
         
         if not yesterday_goals:
             return {
-                "goals": [],
                 "completion_rate": 0.0,
                 "time_accuracy": 0.0,
+                "goals": [],
             }
         
-        goal_comparisons = []
-        completed_count = 0
-        time_ratios = []
+        completed = sum(1 for g in yesterday_goals if g.status == GoalStatus.DONE)
+        completion_rate = completed / len(yesterday_goals) if yesterday_goals else 0.0
         
-        for goal in yesterday_goals:
-            comparison = {
-                "goal": goal.content,
-                "planned": goal.estimated_minutes,
-                "actual": goal.actual_minutes,
-                "status": goal.status.value,
-            }
-            goal_comparisons.append(comparison)
-            
-            if goal.status == GoalStatus.DONE:
-                completed_count += 1
-            
-            # Calculate time accuracy if both estimated and actual exist
-            if goal.estimated_minutes and goal.actual_minutes:
-                min_time = min(goal.estimated_minutes, goal.actual_minutes)
-                max_time = max(goal.estimated_minutes, goal.actual_minutes)
-                if max_time > 0:
-                    time_ratios.append(min_time / max_time)
-        
-        completion_rate = completed_count / len(yesterday_goals) if yesterday_goals else 0.0
-        time_accuracy = sum(time_ratios) / len(time_ratios) if time_ratios else 0.0
+        # Calculate time accuracy for goals with estimates and actuals
+        time_goals = [
+            g for g in yesterday_goals
+            if g.estimated_minutes and g.actual_minutes
+        ]
+        if time_goals:
+            accuracies = []
+            for g in time_goals:
+                if g.estimated_minutes and g.actual_minutes:
+                    ratio = min(g.estimated_minutes, g.actual_minutes) / max(g.estimated_minutes, g.actual_minutes)
+                    accuracies.append(ratio)
+            time_accuracy = sum(accuracies) / len(accuracies) if accuracies else 0.0
+        else:
+            time_accuracy = 0.0
         
         return {
-            "goals": goal_comparisons,
             "completion_rate": completion_rate,
             "time_accuracy": time_accuracy,
+            "goals": [g.to_dict() for g in yesterday_goals],
         }
 
     def get_carryover_goals(self) -> list[DailyGoal]:
-        """Get incomplete goals that should carry over."""
-        yesterday_goals = self.get_yesterday_goals()
+        """Get incomplete goals from yesterday that should carry over.
         
-        # Carryover: PENDING, PARTIAL, IN_PROGRESS, BLOCKED
-        # Don't carryover: DONE, SKIPPED
-        carryover_statuses = {
-            GoalStatus.PENDING,
-            GoalStatus.PARTIAL,
-            GoalStatus.IN_PROGRESS,
-            GoalStatus.BLOCKED,
-        }
+        Returns:
+            List of goals that weren't completed yesterday
+        """
+        yesterday_goals = self.get_yesterday_goals()
         
         carryover = []
         for goal in yesterday_goals:
-            if goal.status in carryover_statuses:
-                carryover.append(goal)
+            if goal.status not in (GoalStatus.DONE, GoalStatus.CARRIED_OVER):
+                # Create a copy with carried over status
+                carryover_goal = DailyGoal(
+                    id=goal.id,
+                    content=goal.content,
+                    priority=goal.priority,
+                    status=GoalStatus.CARRIED_OVER,
+                    estimated_minutes=goal.estimated_minutes,
+                    notes=goal.notes,
+                    linked_feature=goal.linked_feature,
+                    linked_bug=goal.linked_bug,
+                    linked_spec=goal.linked_spec,
+                )
+                carryover.append(carryover_goal)
         
         return carryover
 
     def reconcile_with_state(self, snapshot: RepoStateSnapshot) -> list[dict[str, Any]]:
-        """
-        Reconcile goal statuses with actual repository state.
-
-        For goals with linked_feature:
-        - If feature phase is COMPLETE -> mark goal DONE
-        - If feature phase is BLOCKED -> mark goal BLOCKED
-        - If feature phase advanced -> mark goal PARTIAL or IN_PROGRESS
-
-        For goals with linked_bug:
-        - If bug phase is "fixed" -> mark goal DONE
-        - If bug phase is "blocked" -> mark goal BLOCKED
-
-        For goals with linked_spec:
-        - If spec has passing review -> mark goal DONE
-        - If spec has failing review -> mark goal PARTIAL
-
+        """Reconcile goals with current repository state.
+        
         Args:
-            snapshot: Current repository state.
-
+            snapshot: Current state of the repository
+            
         Returns:
-            List of changes made: [{"goal_id": str, "old_status": str, "new_status": str, "reason": str}]
+            List of changes made to goals
         """
         changes = []
-        today_goals = self.get_today_goals()
-
+        
         # Build lookup maps
-        feature_phases = {f.feature_id: f.phase for f in snapshot.features}
-        bug_phases = {b.bug_id: b.phase for b in snapshot.bugs}
-        spec_reviews = {s.feature_id: s for s in snapshot.specs}
-
-        for goal in today_goals:
+        feature_map = {f.feature_id: f for f in snapshot.features}
+        bug_map = {b.bug_id: b for b in snapshot.bugs}
+        spec_map = {s.feature_id: s for s in snapshot.specs}
+        
+        for goal in self._goals:
             old_status = goal.status
-            new_status = old_status
-            reason = ""
-
+            new_status = None
+            reason = None
+            
             # Check linked feature
-            if goal.linked_feature and goal.linked_feature in feature_phases:
-                phase = feature_phases[goal.linked_feature]
-                if phase == "COMPLETE":
+            if goal.linked_feature and goal.linked_feature in feature_map:
+                feature = feature_map[goal.linked_feature]
+                if feature.phase == "COMPLETE":
                     new_status = GoalStatus.DONE
-                    reason = f"Feature {goal.linked_feature} completed"
-                elif phase == "BLOCKED":
+                    reason = f"Feature {goal.linked_feature} is COMPLETE"
+                elif feature.phase == "BLOCKED":
                     new_status = GoalStatus.BLOCKED
-                    reason = f"Feature {goal.linked_feature} is blocked"
-                elif phase in ("IMPLEMENTING", "SPEC_IN_PROGRESS"):
-                    if old_status == GoalStatus.PENDING:
-                        new_status = GoalStatus.IN_PROGRESS
-                        reason = f"Feature {goal.linked_feature} now {phase}"
-
+                    reason = f"Feature {goal.linked_feature} is BLOCKED"
+            
             # Check linked bug
-            elif goal.linked_bug and goal.linked_bug in bug_phases:
-                phase = bug_phases[goal.linked_bug]
-                if phase == "fixed":
+            if goal.linked_bug and goal.linked_bug in bug_map:
+                bug = bug_map[goal.linked_bug]
+                if bug.phase == "fixed":
                     new_status = GoalStatus.DONE
-                    reason = f"Bug {goal.linked_bug} fixed"
-                elif phase == "blocked":
-                    new_status = GoalStatus.BLOCKED
-                    reason = f"Bug {goal.linked_bug} is blocked"
-
+                    reason = f"Bug {goal.linked_bug} is fixed"
+            
             # Check linked spec
-            elif goal.linked_spec and goal.linked_spec in spec_reviews:
-                spec = spec_reviews[goal.linked_spec]
-                if spec.has_review and spec.review_passed:
-                    new_status = GoalStatus.DONE
-                    reason = f"Spec {goal.linked_spec} review passed"
-                elif spec.has_review and not spec.review_passed:
-                    new_status = GoalStatus.PARTIAL
-                    reason = f"Spec {goal.linked_spec} needs revision"
-
-            # Apply change if different
-            if new_status != old_status:
-                self.update_goal(goal.id, new_status, notes=reason)
+            if goal.linked_spec and goal.linked_spec in spec_map:
+                spec = spec_map[goal.linked_spec]
+                if spec.has_review:
+                    if spec.review_passed:
+                        new_status = GoalStatus.DONE
+                        reason = f"Spec {goal.linked_spec} review passed"
+                    else:
+                        new_status = GoalStatus.PARTIAL
+                        reason = f"Spec {goal.linked_spec} review failed"
+            
+            # Apply status change if needed
+            if new_status is not None and new_status != old_status:
+                goal.status = new_status
+                if new_status == GoalStatus.DONE:
+                    goal.completed_at = datetime.now().isoformat()
                 changes.append({
                     "goal_id": goal.id,
                     "old_status": old_status.value,
                     "new_status": new_status.value,
                     "reason": reason,
                 })
-
+        
+        # Persist if changes were made
+        if changes:
+            self._persist_goals()
+        
         return changes
 
-    def generate_recommendations(
-        self,
-        state: RepoStateSnapshot,
-    ) -> list[Recommendation]:
-        """
-        Generate recommended goals based on current state.
-
-        Priority rules:
-        1. P1: Blockers, approvals needed, regressions, spec reviews
-        2. P2: In-progress work, natural next steps
-        3. P3: New features, cleanup, nice-to-haves
+    def generate_recommendations(self, snapshot: RepoStateSnapshot) -> list[Recommendation]:
+        """Generate task recommendations based on repository state.
+        
+        Args:
+            snapshot: Current state of the repository
+            
+        Returns:
+            List of recommendations sorted by priority
         """
         recommendations = []
-
-        # P1: Blockers
-        for feature in state.features:
+        
+        # P1: Blocked features need attention
+        for feature in snapshot.features:
             if feature.phase == "BLOCKED":
                 recommendations.append(Recommendation(
+                    task=f"Unblock feature {feature.feature_id}",
                     priority="P1",
-                    task=f"Unblock {feature.feature_id}",
-                    estimated_cost_usd=0,
-                    estimated_minutes=15,
-                    rationale=f"Feature {feature.feature_id} is blocked",
+                    rationale=f"Feature has {feature.tasks_blocked} blocked tasks",
                     linked_feature=feature.feature_id,
-                    command=f"swarm-attack unblock {feature.feature_id}",
                 ))
-
-        # P1: Approvals needed
-        for feature in state.features:
-            if feature.phase == "SPEC_NEEDS_APPROVAL":
+            elif feature.phase == "SPEC_NEEDS_APPROVAL":
                 recommendations.append(Recommendation(
+                    task=f"Approve spec for {feature.feature_id}",
                     priority="P1",
-                    task=f"Approve {feature.feature_id} spec",
-                    estimated_cost_usd=0,
-                    estimated_minutes=5,
-                    rationale="Spec ready for review",
+                    rationale="Spec is waiting for approval to proceed",
                     linked_feature=feature.feature_id,
-                    command=f"swarm-attack approve {feature.feature_id}",
                 ))
-
-        for bug in state.bugs:
-            if bug.phase == "planned":
-                recommendations.append(Recommendation(
-                    priority="P1",
-                    task=f"Review fix plan for {bug.bug_id}",
-                    estimated_cost_usd=0,
-                    estimated_minutes=10,
-                    rationale="Fix plan awaiting approval",
-                    linked_bug=bug.bug_id,
-                    command=f"swarm-attack bug approve {bug.bug_id}",
-                ))
-
-        # P1: Test regressions
-        if state.tests.failing > 0:
+        
+        # P1: Failing tests
+        if snapshot.tests and snapshot.tests.failing > 0:
             recommendations.append(Recommendation(
+                task=f"Fix {snapshot.tests.failing} failing tests",
                 priority="P1",
-                task=f"Fix {state.tests.failing} failing tests",
-                estimated_cost_usd=2.0,
-                estimated_minutes=30,
-                rationale="Test regressions detected",
+                rationale="Tests must pass before proceeding",
             ))
-
-        # P1: Spec reviews needing attention
-        for spec in state.specs:
-            if spec.has_review and not spec.review_passed:
-                avg_score = 0.0
-                if spec.review_scores:
-                    avg_score = sum(spec.review_scores.values()) / len(spec.review_scores)
+        
+        # P2: In-progress features
+        for feature in snapshot.features:
+            if feature.phase == "IMPLEMENTING":
+                progress = feature.tasks_done / feature.tasks_total if feature.tasks_total > 0 else 0
                 recommendations.append(Recommendation(
-                    priority="P1",
-                    task=f"Revise {spec.feature_id} spec (avg score: {avg_score:.2f})",
-                    estimated_cost_usd=0.50,
-                    estimated_minutes=15,
-                    rationale="Spec review failed, needs revision",
-                    linked_spec=spec.feature_id,
-                    command=f"swarm-attack run {spec.feature_id}",
-                ))
-
-        # P2: Continue in-progress work
-        for feature in state.features:
-            if feature.phase in ("SPEC_IN_PROGRESS", "IMPLEMENTING"):
-                recommendations.append(Recommendation(
+                    task=f"Continue implementing {feature.feature_id} ({int(progress * 100)}% done)",
                     priority="P2",
-                    task=f"Continue {feature.feature_id}",
-                    estimated_cost_usd=5.0,
-                    estimated_minutes=60,
-                    rationale="Work in progress",
+                    rationale=f"{feature.tasks_done}/{feature.tasks_total} tasks complete",
                     linked_feature=feature.feature_id,
-                    command=f"swarm-attack run {feature.feature_id}",
                 ))
-
-        # P2/P3: PRDs ready for spec
-        for prd in state.prds:
+        
+        # P3: New PRDs ready for spec generation
+        for prd in snapshot.prds:
             if prd.phase == "PRD_READY":
-                # Check if feature exists
-                feature_exists = any(f.feature_id == prd.feature_id for f in state.features)
-                if not feature_exists:
-                    recommendations.append(Recommendation(
-                        priority="P2",
-                        task=f"Initialize feature {prd.feature_id}",
-                        estimated_cost_usd=0,
-                        estimated_minutes=1,
-                        rationale="PRD ready, feature not initialized",
-                        linked_feature=prd.feature_id,
-                        command=f"swarm-attack init {prd.feature_id}",
-                    ))
-                else:
-                    recommendations.append(Recommendation(
-                        priority="P2",
-                        task=f"Generate spec for {prd.feature_id}",
-                        estimated_cost_usd=1.0,
-                        estimated_minutes=15,
-                        rationale="PRD ready for spec generation",
-                        linked_feature=prd.feature_id,
-                        command=f"swarm-attack run {prd.feature_id}",
-                    ))
-
+                recommendations.append(Recommendation(
+                    task=f"Generate spec for {prd.feature_id}",
+                    priority="P3",
+                    rationale="PRD is ready for spec generation",
+                    linked_feature=prd.feature_id,
+                ))
+        
         # Sort by priority
         priority_order = {"P1": 0, "P2": 1, "P3": 2}
         recommendations.sort(key=lambda r: priority_order.get(r.priority, 99))
-
+        
         return recommendations

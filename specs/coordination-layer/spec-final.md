@@ -1,0 +1,297 @@
+# Engineering Spec: Agentic Coordination Layer for Swarm Attack
+
+## Problem Statement
+
+The coder agent context dict is missing `test_path`, causing agents to compute their own paths and potentially disagree on file locations. This is a simple bug with a simple fix.
+
+**Observed Issue:**
+- `orchestrator.py:1363-1374` builds context without `test_path`
+- Coder computes its own path at `agents/coder.py:142-149`
+- If test-writer put tests elsewhere, coder won't find them
+
+**Root Cause:** Missing key in context dict, AND the orchestrator should pass the ACTUAL path from test-writer, not recompute it.
+
+---
+
+## Solution: Pass test_path from Test-Writer Output
+
+### The Fix (Two Changes)
+
+**Key Insight:** The test-writer agent already returns the path it wrote to. We should capture that path and forward it, not recompute a default.
+
+#### Change 1: Capture test_path from test-writer result
+
+**File:** `swarm_attack/orchestrator.py`
+
+**Location:** After test-writer runs, store the actual path in module_registry or state.
+
+The test-writer's `AgentResult` should include the test file path in its artifacts. We need to:
+1. Extract that path from the result
+2. Store it for the coder phase
+
+**Current flow:**
+```
+test-writer runs → result stored in module_registry → coder runs with context
+```
+
+**Updated flow:**
+```
+test-writer runs → extract test_path from result → store in module_registry → pass to coder context
+```
+
+**Implementation:**
+
+After test-writer completes (around `_run_test_writer()` or where its result is processed):
+
+```python
+# After test-writer completes successfully
+test_writer_result = ...  # AgentResult from test-writer
+
+# Extract the actual test path from the result
+# The test-writer should report where it wrote the file
+test_path = test_writer_result.artifacts.get("test_path")
+
+# If test-writer didn't report path, fall back to convention
+if not test_path:
+    test_path = str(Path(self.config.repo_root) / "tests" / "generated" / feature_id / f"test_issue_{issue_number}.py")
+
+# Store in module_registry for coder phase
+module_registry[f"issue_{issue_number}_test_path"] = test_path
+```
+
+#### Change 2: Read test_path in coder context
+
+**File:** `swarm_attack/orchestrator.py`
+
+**Location:** `_run_implementation_cycle()`, around line 1363
+
+```python
+# Get test_path from module_registry (set by test-writer phase)
+test_path_key = f"issue_{issue_number}_test_path"
+test_path = module_registry.get(test_path_key)
+
+# Fallback to default if not found (backward compat)
+if not test_path:
+    test_path = str(Path(self.config.repo_root) / "tests" / "generated" / feature_id / f"test_issue_{issue_number}.py")
+
+# Gate: Verify test file exists before proceeding
+if not Path(test_path).exists():
+    self._log("test_file_missing", {
+        "feature_id": feature_id,
+        "issue_number": issue_number,
+        "expected_path": test_path,
+    }, level="error")
+    return False, AgentResult.failure_result(f"Test file not found: {test_path}"), 0.0
+
+context = {
+    "feature_id": feature_id,
+    "issue_number": issue_number,
+    "test_path": test_path,  # <-- THE FIX: actual path from test-writer
+    "regression_test_files": regression_test_files,
+    "retry_number": retry_number,
+    "test_failures": previous_failures or [],
+    "module_registry": module_registry,
+}
+```
+
+#### Change 3: Test-writer must report its output path
+
+**File:** `swarm_attack/agents/test_writer.py` (or equivalent)
+
+Ensure test-writer includes the path in its result artifacts:
+
+```python
+# At the end of test-writer run()
+return AgentResult(
+    success=True,
+    # ... other fields ...
+    artifacts={
+        "test_path": str(test_file_path),  # Report where we wrote
+        # ... other artifacts ...
+    }
+)
+```
+
+### Coder Agent Update
+
+**File:** `swarm_attack/agents/coder.py`
+
+Update the coder to use `test_path` from context when available:
+
+```python
+def run(self, context: dict[str, Any]) -> AgentResult:
+    feature_id = context["feature_id"]
+    issue_number = context["issue_number"]
+    
+    # Use test_path from context (authoritative) or compute fallback
+    test_path_str = context.get("test_path")
+    if test_path_str:
+        test_path = Path(test_path_str)
+    else:
+        # Fallback for backward compatibility only
+        test_path = self._get_default_test_path(feature_id, issue_number)
+    
+    # ... rest of implementation
+```
+
+---
+
+## Implementation Plan
+
+### Phase 1: The Fix (This PR)
+
+1. Update test-writer to report `test_path` in result artifacts
+2. Update orchestrator to extract and store `test_path` from test-writer result
+3. Pass actual `test_path` to coder context (not recomputed)
+4. Add file existence check before running coder
+5. Update coder to read `test_path` from context
+6. Add tests to verify the fix
+
+**Estimated effort:** 2-3 hours
+
+### Phase 2: Observe and Iterate
+
+After shipping Phase 1:
+- Run the pipeline on real features
+- If new failure modes emerge, address them specifically
+- Do NOT pre-build infrastructure for hypothetical problems
+
+---
+
+## Test Cases
+
+**File:** `tests/unit/test_orchestrator_context.py`
+
+```python
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+def test_context_includes_test_path_from_test_writer(tmp_path):
+    """Verify orchestrator passes test_path from test-writer result."""
+    # Setup
+    feature_id = "my-feature"
+    issue_number = 1
+    
+    # Create test file at a NON-DEFAULT location
+    custom_test_dir = tmp_path / "tests" / "custom_location"
+    custom_test_dir.mkdir(parents=True)
+    test_file = custom_test_dir / "test_custom.py"
+    test_file.write_text("def test_example(): pass")
+    
+    # Mock test-writer result with custom path in artifacts
+    test_writer_result = MagicMock()
+    test_writer_result.artifacts = {"test_path": str(test_file)}
+    
+    # Create module_registry with test-writer output
+    module_registry = {f"issue_{issue_number}_test_path": str(test_file)}
+    
+    # Run implementation cycle
+    # ...
+    
+    # Assert test_path in context is the ACTUAL path from test-writer
+    # context_arg = coder_mock.run.call_args[0][0]
+    # assert context_arg["test_path"] == str(test_file)
+    # assert "custom_location" in context_arg["test_path"]  # NOT default path
+
+
+def test_gate_blocks_when_test_missing(tmp_path):
+    """Verify orchestrator fails early when test file doesn't exist."""
+    # Setup without creating test file
+    feature_id = "my-feature"
+    issue_number = 999
+    
+    # Module registry points to non-existent file
+    module_registry = {
+        f"issue_{issue_number}_test_path": str(tmp_path / "nonexistent.py")
+    }
+    
+    # Run implementation cycle
+    # success, result, cost = orchestrator._run_implementation_cycle(...)
+    
+    # Assert it failed with clear error
+    # assert success is False
+    # assert "not found" in result.error.lower()
+
+
+def test_fallback_to_default_when_test_writer_missing_path(tmp_path):
+    """Verify fallback to default path if test-writer didn't report."""
+    feature_id = "my-feature"
+    issue_number = 1
+    
+    # Create test at default location
+    default_dir = tmp_path / "tests" / "generated" / feature_id
+    default_dir.mkdir(parents=True)
+    test_file = default_dir / f"test_issue_{issue_number}.py"
+    test_file.write_text("def test_example(): pass")
+    
+    # Empty module_registry (test-writer didn't report path)
+    module_registry = {}
+    
+    # Run implementation cycle
+    # ...
+    
+    # Assert fallback to default path worked
+    # context_arg = coder_mock.run.call_args[0][0]
+    # assert context_arg["test_path"] == str(test_file)
+```
+
+---
+
+## Success Criteria
+
+After this fix:
+
+| Before | After |
+|--------|-------|
+| Context missing `test_path` | Context includes `test_path` |
+| Orchestrator recomputes path | Orchestrator uses test-writer's actual path |
+| Coder computes own path | Coder uses provided path |
+| Silent failure if test missing | Clear error message |
+| Non-default paths break pipeline | Non-default paths work correctly |
+
+---
+
+## Future Considerations (DO NOT IMPLEMENT YET)
+
+The following were considered but are deferred until we have evidence they're needed:
+
+| Idea | Why Deferred |
+|------|--------------|
+| Context accumulator (session_context.json) | No evidence of multi-step context loss |
+| Syntax validation gates (py_compile) | File existence check may be sufficient |
+| Semantic LLM validation | Passing tests are validation enough |
+| GitHub issue automation | We can look at issues manually |
+| Event logging dashboard | Console logs work fine for 100 users |
+| Transaction coordinator pattern | Massively over-engineered for our scale |
+
+**Rule:** Add complexity only when we observe specific failures that require it.
+
+---
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `swarm_attack/orchestrator.py` | Extract test_path from test-writer, pass to coder context, add existence check |
+| `swarm_attack/agents/coder.py` | Read test_path from context |
+| `swarm_attack/agents/test_writer.py` | Report test_path in result artifacts |
+| `tests/unit/test_orchestrator_context.py` | New test file (3 tests) |
+
+---
+
+## Appendix: Audit Findings Summary
+
+The original audit identified these gaps:
+
+| Gap | Status |
+|-----|--------|
+| No test_path in context | **FIXED in this spec** |
+| test_path was recomputed not sourced | **FIXED in this spec** |
+| No gate after test-writer | **FIXED (existence check)** |
+| GitHub issue not updated | Deferred - manual is fine |
+| No semantic validation | Deferred - tests passing is enough |
+| Context loss between agents | Deferred - no evidence of problem |
+| Event logging/dashboard | Deferred - logs work fine |
+
+We're fixing the actual bug. Everything else is premature optimization.

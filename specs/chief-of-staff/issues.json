@@ -1,22 +1,22 @@
 {
   "feature_id": "chief-of-staff",
-  "generated_at": "2025-12-16T22:50:00Z",
+  "generated_at": "2025-12-17T00:00:00Z",
   "issues": [
     {
       "title": "Create core data models for Chief of Staff",
-      "body": "## Description\n\nCreate all the data models defined in the engineering spec for the Chief of Staff agent. These models form the foundation for state tracking, goal management, and autopilot functionality.\n\n## Acceptance Criteria\n\n- [ ] `GoalStatus` enum with PENDING, IN_PROGRESS, DONE, PARTIAL, SKIPPED, BLOCKED\n- [ ] `CheckpointTrigger` enum with all 7 trigger types\n- [ ] `DailyGoal` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `Decision` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `WorkLogEntry` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `StandupSession` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `DailySummary` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `DailyLog` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] State snapshot models: `GitState`, `FeatureSummary`, `BugSummary`, `PRDSummary`, `SpecSummary`, `TestState`, `GitHubState`, `InterruptedSession`, `RepoStateSnapshot`\n- [ ] Recommendation models: `Recommendation`, `AttentionItem`, `StandupReport`\n- [ ] Autopilot models: `CheckpointEvent`, `AutopilotSession`\n- [ ] All models have proper type hints\n- [ ] Unit tests for serialization round-trips\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See existing dataclasses in `swarm_attack/models/` for the expected pattern.\n\n**Required Methods:**\n- `to_dict(self) -> dict[str, Any]` - Instance method to serialize to dictionary\n- `from_dict(cls, data: dict[str, Any]) -> ClassName` - Classmethod to create from dictionary\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/models.py`\n- Use `dataclasses.dataclass` and `dataclasses.field`\n- Use `datetime.datetime` and `datetime.date` for time handling\n- Enums should use string values for JSON compatibility\n- Nested dataclasses should serialize recursively",
+      "body": "## Description\n\nImplement all core data models defined in the engineering spec for the Chief of Staff agent. These models form the foundation for all other components.\n\n## Acceptance Criteria\n\n- [ ] `GoalStatus` enum with values: PENDING, IN_PROGRESS, DONE, PARTIAL, SKIPPED, BLOCKED\n- [ ] `CheckpointTrigger` enum with all trigger types\n- [ ] `DailyGoal` dataclass with `to_dict()` and `from_dict()` methods\n- [ ] `Decision` dataclass with serialization methods\n- [ ] `WorkLogEntry` dataclass with serialization methods\n- [ ] `StandupSession` dataclass with nested goal serialization\n- [ ] `DailySummary` dataclass with carryover goals support\n- [ ] `DailyLog` dataclass with auto-timestamp on creation\n- [ ] All state snapshot models: `GitState`, `FeatureSummary`, `BugSummary`, `PRDSummary`, `SpecSummary`, `TestState`, `GitHubState`, `InterruptedSession`, `RepoStateSnapshot`\n- [ ] Recommendation models: `Recommendation`, `AttentionItem`, `StandupReport`\n- [ ] Autopilot models: `CheckpointEvent`, `AutopilotSession`\n- [ ] Unit tests for serialization round-trip on all models\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.\n\n**Required Methods for all dataclasses:**\n- `to_dict(self) -> dict[str, Any]` - Instance method to serialize to dictionary\n- `from_dict(cls, data: dict) -> ClassName` - Classmethod to create from dictionary (where applicable)\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/models.py`\n- Use `dataclasses.dataclass` and `dataclasses.field`\n- Use `typing.Literal` for priority levels\n- Ensure nested objects are properly serialized/deserialized\n- All timestamps should be ISO format strings",
       "labels": [
         "enhancement",
         "backend"
       ],
-      "estimated_size": "medium",
+      "estimated_size": "large",
       "dependencies": [],
       "order": 1,
       "automation_type": "automated"
     },
     {
       "title": "Create ChiefOfStaffConfig dataclass",
-      "body": "## Description\n\nCreate the configuration dataclass for Chief of Staff settings. This includes checkpoint thresholds, priority weights, standup preferences, and autopilot settings.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointConfig` dataclass with budget_usd, duration_minutes, error_streak defaults\n- [ ] `PriorityConfig` dataclass with all priority weights\n- [ ] `StandupConfig` dataclass with auto_run_on_start, include_github, include_tests, include_specs, history_days\n- [ ] `AutopilotConfig` dataclass with default_budget, default_duration, pause settings, persist_on_checkpoint\n- [ ] `ChiefOfStaffConfig` dataclass combining all sub-configs with storage_path default\n- [ ] All configs have `to_dict()` and `from_dict()` methods\n- [ ] Unit tests for config serialization\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.\n\n**Required Methods:**\n- `from_dict(cls, data: dict) -> ChiefOfStaffConfig` - Classmethod to create from dictionary\n- `to_dict(self) -> dict` - Instance method to serialize to dictionary\n\n**Called By:**\n- `swarm_attack/config.py` - Will be integrated in issue #3\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/config.py`\n- Use `dataclasses.field(default_factory=...)` for nested configs\n- Default values should match spec Section 9.1",
+      "body": "## Description\n\nImplement the configuration dataclass for Chief of Staff with all nested config classes.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointConfig` dataclass with budget_usd, duration_minutes, error_streak defaults\n- [ ] `PriorityConfig` dataclass with weight defaults for blockers, approvals, regressions, specs, etc.\n- [ ] `StandupConfig` dataclass with auto_run_on_start, include_github, include_tests, include_specs, history_days\n- [ ] `AutopilotConfig` dataclass with default_budget, default_duration, pause_on_approval, pause_on_high_risk, persist_on_checkpoint\n- [ ] `ChiefOfStaffConfig` dataclass combining all nested configs with storage_path default\n- [ ] `from_dict()` and `to_dict()` methods on all config classes\n- [ ] Unit tests for config serialization\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.\n\n**Required Methods:**\n- `from_dict(cls, data: dict) -> ChiefOfStaffConfig` - Classmethod to create from dictionary\n- `to_dict(self) -> dict` - Instance method to serialize to dictionary\n\n**Called By:**\n- `swarm_attack/config.py` - Will be parsed from config.yaml\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/config.py`\n- Use dataclass field defaults matching the spec\n- Handle missing nested configs gracefully with defaults",
       "labels": [
         "enhancement",
         "backend"
@@ -28,7 +28,7 @@
     },
     {
       "title": "Integrate ChiefOfStaffConfig into SwarmConfig",
-      "body": "## Description\n\nAdd ChiefOfStaffConfig as an optional field on SwarmConfig and implement parsing from config.yaml.\n\n## Acceptance Criteria\n\n- [ ] `SwarmConfig` has `chief_of_staff: Optional[ChiefOfStaffConfig]` field\n- [ ] `_parse_chief_of_staff_config()` function parses YAML section\n- [ ] Config loads correctly when `chief_of_staff:` section is present\n- [ ] Config defaults gracefully when section is absent\n- [ ] Integration test validates config loading\n\n## Technical Notes\n\n- File: `swarm_attack/config.py`\n- Follow existing pattern for `bug_bash` config integration\n- Add import for `ChiefOfStaffConfig` from `swarm_attack.chief_of_staff.config`",
+      "body": "## Description\n\nAdd ChiefOfStaffConfig to the main SwarmConfig class so it can be loaded from config.yaml.\n\n## Acceptance Criteria\n\n- [ ] Add `chief_of_staff: Optional[ChiefOfStaffConfig]` field to SwarmConfig\n- [ ] Add `_parse_chief_of_staff_config()` function following existing patterns\n- [ ] Handle missing chief_of_staff section in config.yaml gracefully (use defaults)\n- [ ] Config loads correctly from YAML\n- [ ] Unit test for config integration\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:_parse_bug_bash_config()` for the expected pattern.\n\n**Integration Test:**\n```python\ndef test_can_be_parsed_from_config():\n    from swarm_attack.config import load_config\n    config = load_config(\"config.yaml\")\n    assert config.chief_of_staff is not None\n```\n\n## Technical Notes\n\n- File: `swarm_attack/config.py`\n- Follow the pattern used for `bug_bash` config parsing\n- Import ChiefOfStaffConfig from `swarm_attack.chief_of_staff.config`",
       "labels": [
         "enhancement",
         "backend"
@@ -41,38 +41,22 @@
       "automation_type": "automated"
     },
     {
-      "title": "Create chief_of_staff package structure",
-      "body": "## Description\n\nCreate the `swarm_attack/chief_of_staff/` package with proper `__init__.py` and export the public API.\n\n## Acceptance Criteria\n\n- [ ] `swarm_attack/chief_of_staff/__init__.py` created\n- [ ] Exports key classes: models, config, and (future) manager classes\n- [ ] `tests/chief_of_staff/__init__.py` created\n- [ ] Package imports work correctly\n\n## Technical Notes\n\n- Follow existing package patterns in `swarm_attack/`\n- Use `__all__` for explicit exports",
-      "labels": [
-        "enhancement",
-        "backend"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        1,
-        2
-      ],
-      "order": 4,
-      "automation_type": "automated"
-    },
-    {
       "title": "Implement DailyLogManager",
-      "body": "## Description\n\nImplement the DailyLogManager class for reading/writing daily logs and the append-only decision log.\n\n## Acceptance Criteria\n\n- [ ] `DailyLogManager.__init__(base_path: Path)` initializes storage\n- [ ] `get_log(date: date) -> Optional[DailyLog]` retrieves log for specific date\n- [ ] `get_today() -> DailyLog` gets or creates today's log\n- [ ] `get_yesterday() -> Optional[DailyLog]` gets yesterday's log\n- [ ] `save_log(log: DailyLog)` saves both .md and .json versions\n- [ ] `add_standup(standup: StandupSession)` adds standup to today's log\n- [ ] `add_work_entry(entry: WorkLogEntry)` adds work entry to today's log\n- [ ] `set_summary(summary: DailySummary)` sets end-of-day summary\n- [ ] `append_decision(decision: Decision)` appends to decisions.jsonl\n- [ ] `get_decisions(since, decision_type)` queries decision log\n- [ ] `get_history(days: int)` returns logs for last N days\n- [ ] Atomic file writes with temp file pattern\n- [ ] Markdown generation matches spec Section 10.3 format\n- [ ] Unit tests for all CRUD operations\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/daily_log.py`\n- Use atomic write pattern from spec Section 13.6\n- Daily log stored at `{storage_path}/daily-log/YYYY-MM-DD.{json,md}`\n- Decision log at `{storage_path}/decisions.jsonl`",
+      "body": "## Description\n\nImplement the DailyLogManager class for reading/writing daily logs and decision JSONL files.\n\n## Acceptance Criteria\n\n- [ ] `__init__(self, base_path: Path)` initializes with storage path\n- [ ] `get_log(date: date) -> Optional[DailyLog]` retrieves log for specific date\n- [ ] `get_today() -> DailyLog` gets or creates today's log\n- [ ] `get_yesterday() -> Optional[DailyLog]` retrieves yesterday's log\n- [ ] `save_log(log: DailyLog)` saves to both .md and .json formats\n- [ ] `add_standup(standup: StandupSession)` adds standup to today's log\n- [ ] `add_work_entry(entry: WorkLogEntry)` adds work entry to today's log\n- [ ] `set_summary(summary: DailySummary)` sets end-of-day summary\n- [ ] `append_decision(decision: Decision)` appends to decisions.jsonl\n- [ ] `get_decisions(since, decision_type)` queries decisions from JSONL\n- [ ] `get_history(days: int)` returns logs for last N days\n- [ ] `generate_weekly_summary(week, year)` generates weekly markdown\n- [ ] Atomic file writes using temp file + rename pattern\n- [ ] Creates directory structure: `.swarm/chief-of-staff/daily-log/`\n- [ ] Unit tests for all methods including edge cases\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/daily_log.py`\n- Use atomic write pattern from spec (temp file -> validate -> rename)\n- Daily log markdown format should match spec section 10.3\n- JSONL format: one JSON object per line\n- Handle corrupted files gracefully",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        1,
-        4
+        1
       ],
-      "order": 5,
+      "order": 4,
       "automation_type": "automated"
     },
     {
       "title": "Implement StateGatherer core",
-      "body": "## Description\n\nImplement the StateGatherer class that aggregates state from all repository data sources.\n\n## Acceptance Criteria\n\n- [ ] `StateGatherer.__init__(config: SwarmConfig)` initializes gatherer\n- [ ] `gather_git_state() -> GitState` gets git branch, status, commits, ahead/behind\n- [ ] `gather_features() -> list[FeatureSummary]` reads `.swarm/state/*.json`\n- [ ] `gather_bugs() -> list[BugSummary]` reads `.swarm/bugs/*/state.json`\n- [ ] `gather_prds() -> list[PRDSummary]` reads `.claude/prds/*.md` with frontmatter\n- [ ] `gather_tests() -> TestState` runs pytest collection and gets last run\n- [ ] `gather_interrupted_sessions() -> list[InterruptedSession]` finds interrupted sessions\n- [ ] `calculate_costs() -> tuple[float, float]` calculates today's and week's costs\n- [ ] All sources handle missing directories gracefully\n- [ ] Unit tests with mocked filesystem\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/state_gatherer.py`\n- Use subprocess for git commands\n- Use existing StateStore and BugStateStore for feature/bug state\n- Parse frontmatter from PRD files using yaml",
+      "body": "## Description\n\nImplement the StateGatherer class that aggregates state from all repository data sources.\n\n## Acceptance Criteria\n\n- [ ] `__init__(self, config: SwarmConfig)` initializes with configuration\n- [ ] `gather(include_github: bool) -> RepoStateSnapshot` gathers complete state\n- [ ] `gather_git_state() -> GitState` gathers branch, status, commits, ahead/behind\n- [ ] `gather_features() -> list[FeatureSummary]` reads from .swarm/state/*.json\n- [ ] `gather_bugs() -> list[BugSummary]` reads from .swarm/bugs/*/state.json\n- [ ] `gather_prds() -> list[PRDSummary]` reads from .claude/prds/*.md with frontmatter\n- [ ] `gather_tests() -> TestState` runs pytest --collect-only and gets last run info\n- [ ] `gather_interrupted_sessions() -> list[InterruptedSession]` finds interrupted sessions\n- [ ] `calculate_costs() -> tuple[float, float]` calculates today's and week's costs\n- [ ] Graceful degradation when sources are unavailable\n- [ ] Unit tests with mocked file system\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/state_gatherer.py`\n- Use existing StateStore and BugStateStore for feature/bug loading\n- Parse PRD frontmatter for phase information\n- Git operations via subprocess calls to git CLI\n- pytest collection via subprocess with JSON output",
       "labels": [
         "enhancement",
         "backend"
@@ -80,103 +64,72 @@
       "estimated_size": "large",
       "dependencies": [
         1,
-        3,
-        4
+        3
+      ],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add gather_specs method to StateGatherer",
+      "body": "## Description\n\nAdd the gather_specs method to StateGatherer to collect spec pipeline status.\n\n## Acceptance Criteria\n\n- [ ] `gather_specs() -> list[SpecSummary]` scans specs/*/ directories\n- [ ] Reads spec-draft.md or spec.md for title extraction\n- [ ] Checks for spec-review.json for review status\n- [ ] Extracts review scores if review exists\n- [ ] Determines review_passed based on recommendation field\n- [ ] Handles missing spec directories gracefully\n- [ ] Handles missing or malformed spec-review.json gracefully\n- [ ] Unit tests for various spec states\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/state_gatherer.py`\n- Follow implementation pattern from spec section 13.2\n- Extract title from first H1 in spec markdown\n- Review passes if recommendation == \"APPROVE\"\n- Use file modification time for updated_at",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        5
       ],
       "order": 6,
       "automation_type": "automated"
     },
     {
-      "title": "Add gather_specs method to StateGatherer",
-      "body": "## Description\n\nAdd the `gather_specs()` method to StateGatherer for spec pipeline visibility.\n\n## Acceptance Criteria\n\n- [ ] `gather_specs() -> list[SpecSummary]` reads `specs/*/` directories\n- [ ] Finds spec files (spec.md or spec-draft.md)\n- [ ] Extracts title from first H1 heading\n- [ ] Checks for spec-review.json and extracts review status\n- [ ] Extracts review scores if present\n- [ ] Handles missing/corrupted files gracefully\n- [ ] Unit tests for spec gathering\n\n## Technical Notes\n\n- See spec Section 13.2 for implementation details\n- Review passed if `recommendation == \"APPROVE\"`\n- Extract modification time for `updated_at`",
+      "title": "Add gather_github method to StateGatherer",
+      "body": "## Description\n\nAdd GitHub state gathering via gh CLI to StateGatherer.\n\n## Acceptance Criteria\n\n- [ ] `gather_github() -> Optional[GitHubState]` queries GitHub via gh CLI\n- [ ] Retrieves open issue count\n- [ ] Retrieves issues closed today count\n- [ ] Retrieves open PR count\n- [ ] Retrieves pending reviews list\n- [ ] Returns None if gh CLI unavailable or errors\n- [ ] Caches results for 5 minutes to improve performance\n- [ ] Unit tests with mocked gh CLI output\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/state_gatherer.py`\n- Use subprocess to call `gh issue list`, `gh pr list` etc.\n- Parse JSON output from gh CLI with --json flag\n- Implement simple in-memory cache with timestamp",
       "labels": [
         "enhancement",
-        "backend"
+        "backend",
+        "api"
       ],
-      "estimated_size": "small",
+      "estimated_size": "medium",
       "dependencies": [
-        6
+        5
       ],
       "order": 7,
       "automation_type": "automated"
     },
     {
-      "title": "Add gather_github method to StateGatherer",
-      "body": "## Description\n\nAdd GitHub state gathering via the `gh` CLI.\n\n## Acceptance Criteria\n\n- [ ] `gather_github() -> Optional[GitHubState]` queries GitHub via gh CLI\n- [ ] Gets open issues count\n- [ ] Gets closed issues today count\n- [ ] Gets open PRs count\n- [ ] Gets pending reviews list\n- [ ] Returns None if gh CLI unavailable or fails\n- [ ] Results cached for 5 minutes\n- [ ] Unit tests with mocked subprocess\n\n## Technical Notes\n\n- Use `gh issue list`, `gh pr list` commands\n- Parse JSON output with `--json` flag\n- Cache using simple timestamp check",
-      "labels": [
-        "enhancement",
-        "backend"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        6
-      ],
-      "order": 8,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Implement full gather method with parallel execution",
-      "body": "## Description\n\nImplement the main `gather()` method that aggregates all sources with parallel execution for performance.\n\n## Acceptance Criteria\n\n- [ ] `gather(include_github: bool) -> RepoStateSnapshot` returns complete snapshot\n- [ ] Parallel execution of independent sources using asyncio\n- [ ] GitHub gathering optional via parameter\n- [ ] All sources assembled into RepoStateSnapshot\n- [ ] Execution completes in <30 seconds for typical repo\n- [ ] Integration test validates full gathering\n\n## Technical Notes\n\n- See spec Section 13.1 for parallel implementation pattern\n- Use `asyncio.gather()` with `return_exceptions=True`\n- Handle exceptions from individual sources gracefully",
+      "title": "Implement GoalTracker",
+      "body": "## Description\n\nImplement the GoalTracker class for managing daily goals and tracking completion.\n\n## Acceptance Criteria\n\n- [ ] `__init__(self, daily_log_manager: DailyLogManager)` initializes with log manager\n- [ ] `get_today_goals() -> list[DailyGoal]` returns current goals\n- [ ] `set_goals(goals: list[DailyGoal])` sets goals for today\n- [ ] `update_goal(goal_id, status, notes)` updates a goal's status\n- [ ] `mark_complete(goal_id, actual_minutes)` marks goal as complete with time\n- [ ] `get_yesterday_goals() -> list[DailyGoal]` retrieves yesterday's goals\n- [ ] `compare_plan_vs_actual() -> dict` compares yesterday's plan vs actual\n- [ ] `get_carryover_goals() -> list[DailyGoal]` returns incomplete goals to carry over\n- [ ] `generate_recommendations(state) -> list[Recommendation]` generates recommendations\n- [ ] Unit tests for all goal operations\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/goal_tracker.py`\n- Goals stored via DailyLogManager in today's log\n- Comparison logic should calculate completion_rate and time_accuracy\n- Recommendations follow priority rules from spec section 4.4\n- Include spec review recommendations for failing reviews",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        6,
-        7,
+        1,
+        4
+      ],
+      "order": 8,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add reconcile_with_state to GoalTracker",
+      "body": "## Description\n\nAdd automatic state reconciliation to GoalTracker that updates goal statuses based on actual repository state.\n\n## Acceptance Criteria\n\n- [ ] `reconcile_with_state(snapshot: RepoStateSnapshot) -> list[dict]` reconciles goals\n- [ ] Goals with linked_feature auto-update based on feature phase:\n  - COMPLETE -> DONE\n  - BLOCKED -> BLOCKED\n  - IMPLEMENTING/SPEC_IN_PROGRESS -> IN_PROGRESS (if was PENDING)\n- [ ] Goals with linked_bug auto-update based on bug phase:\n  - fixed -> DONE\n  - blocked -> BLOCKED\n- [ ] Goals with linked_spec auto-update based on spec review:\n  - review passed -> DONE\n  - review failed -> PARTIAL\n- [ ] Returns list of changes made with goal_id, old_status, new_status, reason\n- [ ] Unit tests for all reconciliation scenarios\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/goal_tracker.py`\n- Follow implementation pattern from spec section 13.3\n- Build lookup maps for efficient status checking\n- Only update if status actually changes",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
         8
       ],
       "order": 9,
       "automation_type": "automated"
     },
     {
-      "title": "Implement GoalTracker",
-      "body": "## Description\n\nImplement the GoalTracker class for managing daily goals and tracking completion.\n\n## Acceptance Criteria\n\n- [ ] `GoalTracker.__init__(daily_log_manager: DailyLogManager)` initializes tracker\n- [ ] `get_today_goals() -> list[DailyGoal]` returns current goals\n- [ ] `set_goals(goals: list[DailyGoal])` sets today's goals\n- [ ] `update_goal(goal_id, status, notes)` updates a goal's status\n- [ ] `mark_complete(goal_id, actual_minutes)` marks goal complete\n- [ ] `get_yesterday_goals() -> list[DailyGoal]` returns yesterday's goals\n- [ ] `compare_plan_vs_actual() -> dict` compares plan vs results\n- [ ] `get_carryover_goals() -> list[DailyGoal]` returns incomplete goals\n- [ ] Unit tests for all goal operations\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/goal_tracker.py`\n- Goals persisted via DailyLogManager\n- Comparison includes completion_rate and time_accuracy",
-      "labels": [
-        "enhancement",
-        "backend"
-      ],
-      "estimated_size": "medium",
-      "dependencies": [
-        1,
-        5
-      ],
-      "order": 10,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Add reconcile_with_state to GoalTracker",
-      "body": "## Description\n\nAdd the `reconcile_with_state()` method that automatically updates goal statuses based on actual repository state.\n\n## Acceptance Criteria\n\n- [ ] `reconcile_with_state(snapshot: RepoStateSnapshot) -> list[dict]` reconciles goals\n- [ ] Goals with `linked_feature` update based on feature phase\n- [ ] Goals with `linked_bug` update based on bug phase\n- [ ] Goals with `linked_spec` update based on spec review status\n- [ ] Returns list of changes made with old_status, new_status, reason\n- [ ] Unit tests for each reconciliation type\n\n## Technical Notes\n\n- See spec Section 13.3 for implementation details\n- Feature COMPLETE -> goal DONE\n- Bug \"fixed\" -> goal DONE\n- Spec review passed -> goal DONE",
-      "labels": [
-        "enhancement",
-        "backend"
-      ],
-      "estimated_size": "medium",
-      "dependencies": [
-        9,
-        10
-      ],
-      "order": 11,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Add generate_recommendations to GoalTracker",
-      "body": "## Description\n\nImplement the recommendation algorithm that suggests prioritized goals based on repository state.\n\n## Acceptance Criteria\n\n- [ ] `generate_recommendations(state: RepoStateSnapshot) -> list[Recommendation]`\n- [ ] P1 priorities: blockers, approvals, regressions, spec reviews\n- [ ] P2 priorities: in-progress work, PRDs ready for spec\n- [ ] Recommendations sorted by priority\n- [ ] Each recommendation includes command to execute\n- [ ] Unit tests for recommendation generation\n\n## Technical Notes\n\n- See spec Section 13.7 for full algorithm\n- Priority order: P1 < P2 < P3\n- Include estimated cost and time for each recommendation",
-      "labels": [
-        "enhancement",
-        "backend"
-      ],
-      "estimated_size": "medium",
-      "dependencies": [
-        11
-      ],
-      "order": 12,
-      "automation_type": "automated"
-    },
-    {
       "title": "Implement CheckpointSystem",
-      "body": "## Description\n\nImplement the checkpoint detection and handling system for autopilot mode.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointSystem.__init__(config: ChiefOfStaffConfig)` initializes system\n- [ ] `check_triggers(session, current_action) -> Optional[CheckpointTrigger]` checks all triggers\n- [ ] Cost threshold trigger works correctly\n- [ ] Time threshold trigger works correctly\n- [ ] Approval required detection works\n- [ ] High risk action detection works\n- [ ] Error rate spike detection with `record_error()` and `reset_error_count()`\n- [ ] Blocker detection works\n- [ ] Unit tests for each trigger type\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/checkpoints.py`\n- Check triggers in order defined in spec Section 4.5\n- High risk actions: main push, architectural changes, database migrations",
+      "body": "## Description\n\nImplement the CheckpointSystem class for detecting and handling checkpoint triggers during autopilot execution.\n\n## Acceptance Criteria\n\n- [ ] `__init__(self, config: ChiefOfStaffConfig)` initializes with config\n- [ ] `check_triggers(session, current_action) -> Optional[CheckpointTrigger]` checks all triggers\n- [ ] Checks in order: stop_trigger match, cost, time, approval, high_risk, error_spike, blocker\n- [ ] `is_high_risk(action: str) -> bool` identifies high-risk actions (arch change, main push)\n- [ ] `record_error()` increments error count for spike detection\n- [ ] `reset_error_count()` resets after success\n- [ ] `should_pause_for_approval(action: str) -> bool` checks approval requirements\n- [ ] Error spike threshold configurable (default 3 consecutive)\n- [ ] Unit tests for each trigger type\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/checkpoints.py`\n- High-risk actions include: git push to main/master, architectural changes, destructive operations\n- Approval-required actions include: spec approval, fix approval, PR merge\n- Use config.checkpoints for threshold values",
       "labels": [
         "enhancement",
         "backend"
@@ -186,331 +139,359 @@
         1,
         2
       ],
-      "order": 13,
+      "order": 10,
       "automation_type": "automated"
     },
     {
       "title": "Add --until trigger support to CheckpointSystem",
-      "body": "## Description\n\nAdd support for the `--until` flag that stops autopilot at a specific trigger.\n\n## Acceptance Criteria\n\n- [ ] `matches_stop_trigger(session, trigger) -> bool` checks if trigger matches stop condition\n- [ ] Stop trigger stored in AutopilotSession\n- [ ] Check happens before other triggers in check_triggers()\n- [ ] Unit tests for --until functionality\n\n## Technical Notes\n\n- Stop trigger is Optional[CheckpointTrigger] on session\n- If matched, return that trigger immediately",
+      "body": "## Description\n\nAdd support for the --until flag that allows autopilot to stop at a specific trigger type.\n\n## Acceptance Criteria\n\n- [ ] `matches_stop_trigger(session, trigger) -> bool` checks if trigger matches --until\n- [ ] `check_triggers` returns stop_trigger immediately if it matches current state\n- [ ] Support all CheckpointTrigger values as --until targets\n- [ ] Unit tests for --until matching logic\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/checkpoints.py`\n- When session.stop_trigger is set, check if current state matches that trigger\n- Return the stop_trigger value instead of computed trigger when matched\n- Example: `--until approval_required` stops when any approval is needed",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "small",
       "dependencies": [
-        13
+        10
       ],
-      "order": 14,
+      "order": 11,
       "automation_type": "automated"
     },
     {
       "title": "Implement StandupGenerator",
-      "body": "## Description\n\nImplement the StandupGenerator that creates the daily standup report.\n\n## Acceptance Criteria\n\n- [ ] `StandupGenerator.__init__(state_gatherer, daily_log_manager, goal_tracker)`\n- [ ] `generate() -> StandupReport` creates complete standup report\n- [ ] Yesterday comparison included in report\n- [ ] Repo health summary included\n- [ ] Attention items identified (approvals, blockers, new items, spec reviews)\n- [ ] Blockers listed\n- [ ] Recommendations generated\n- [ ] Report formatted for CLI output (spec Section 10.1)\n- [ ] Unit tests for report generation\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/standup.py`\n- Use rich library for formatted output\n- Match box drawing characters from spec",
+      "body": "## Description\n\nImplement the StandupGenerator class that produces standup reports from gathered state.\n\n## Acceptance Criteria\n\n- [ ] `__init__(state_gatherer, daily_log_manager, goal_tracker)` initializes dependencies\n- [ ] `generate_report() -> StandupReport` creates complete standup report\n- [ ] Report includes yesterday_comparison from goal tracker\n- [ ] Report includes repo_health summary (features, bugs, specs, tests, git, costs)\n- [ ] Report includes attention_items for approvals, blockers, spec reviews, regressions\n- [ ] Report includes blockers list\n- [ ] Report includes recommendations from goal tracker\n- [ ] Report includes full state_snapshot\n- [ ] `format_for_terminal() -> str` renders report in rich terminal format\n- [ ] Terminal format matches spec section 10.1 layout\n- [ ] Unit tests for report generation\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/standup.py`\n- Use rich library for terminal formatting (box drawing, colors, tables)\n- Attention items should include command suggestions where applicable\n- Spec reviews with failing scores should appear in attention items",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        9,
-        10,
-        12
+        5,
+        6,
+        4,
+        8
       ],
-      "order": 15,
+      "order": 12,
       "automation_type": "automated"
     },
     {
       "title": "Implement AutopilotSessionStore",
-      "body": "## Description\n\nImplement persistence for autopilot sessions to enable pause/resume capability.\n\n## Acceptance Criteria\n\n- [ ] `AutopilotSessionStore.__init__(base_path: Path)` initializes store\n- [ ] `save(session: AutopilotSession)` saves atomically with validation\n- [ ] `load(session_id: str) -> Optional[AutopilotSession]` loads session\n- [ ] `list_paused() -> list[str]` lists paused session IDs\n- [ ] `list_all() -> list[str]` lists all session IDs\n- [ ] `delete(session_id: str)` removes session file\n- [ ] `get_latest_paused() -> Optional[AutopilotSession]` gets most recent paused session\n- [ ] Atomic writes with temp file pattern\n- [ ] Unit tests for all operations\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_store.py`\n- Storage at `{storage_path}/autopilot/{session_id}.json`\n- See spec Section 13.4 for atomic write pattern",
+      "body": "## Description\n\nImplement the AutopilotSessionStore for persisting autopilot sessions to enable pause/resume.\n\n## Acceptance Criteria\n\n- [ ] `__init__(self, base_path: Path)` initializes storage at .swarm/chief-of-staff/autopilot/\n- [ ] `save(session: AutopilotSession)` saves session atomically with validation\n- [ ] Sets session.last_persisted_at on save\n- [ ] `load(session_id: str) -> Optional[AutopilotSession]` loads session\n- [ ] `list_paused() -> list[str]` returns IDs of paused sessions\n- [ ] `list_all() -> list[str]` returns all session IDs\n- [ ] `delete(session_id: str)` removes session file\n- [ ] `get_latest_paused() -> Optional[AutopilotSession]` returns most recent paused session\n- [ ] Atomic write pattern: temp file -> validate by re-reading -> rename\n- [ ] Backup existing file before overwrite, restore on failure\n- [ ] Unit tests for all operations including failure recovery\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_store.py`\n- Follow atomic write pattern from spec section 13.4\n- Session files named: `{session_id}.json`\n- Handle corrupted session files gracefully (return None)",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        1,
-        4
+        1
       ],
-      "order": 16,
+      "order": 13,
       "automation_type": "automated"
     },
     {
       "title": "Implement AutopilotRunner core",
-      "body": "## Description\n\nImplement the core AutopilotRunner that executes work autonomously with checkpoint enforcement.\n\n## Acceptance Criteria\n\n- [ ] `AutopilotRunner.__init__()` with all dependencies\n- [ ] `start(goals, budget_usd, duration_seconds, stop_trigger) -> AutopilotSession`\n- [ ] `execute_goal(goal: DailyGoal) -> tuple[bool, float]` executes single goal\n- [ ] `handle_checkpoint(session, trigger) -> str` handles checkpoint (continue/pause/abort)\n- [ ] `get_status(session_id) -> Optional[AutopilotSession]` gets session status\n- [ ] Session state persisted after each goal\n- [ ] Checkpoint output matches spec Section 10.2\n- [ ] Unit tests for execution flow\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot.py`\n- Uses Orchestrator and BugOrchestrator for actual execution\n- Must persist session via AutopilotSessionStore",
+      "body": "## Description\n\nImplement the AutopilotRunner class for autonomous execution with checkpoint enforcement.\n\n## Acceptance Criteria\n\n- [ ] `__init__` takes config, checkpoint_system, goal_tracker, session_store, orchestrator, bug_orchestrator\n- [ ] `start(goals, budget_usd, duration_seconds, stop_trigger) -> AutopilotSession` starts execution\n- [ ] Creates new session with unique ID (ap-YYYYMMDD-NNN format)\n- [ ] `execute_goal(goal: DailyGoal) -> tuple[bool, float]` executes single goal\n- [ ] Routes to orchestrator or bug_orchestrator based on linked_feature/linked_bug\n- [ ] `handle_checkpoint(session, trigger) -> str` returns \"continue\", \"pause\", or \"abort\"\n- [ ] Persists session state before pausing\n- [ ] `get_status(session_id) -> Optional[AutopilotSession]` retrieves session status\n- [ ] Checks for checkpoint triggers before each goal execution\n- [ ] Updates session cost and duration tracking\n- [ ] Persists session after each goal completion\n- [ ] Unit tests for execution flow and checkpoint handling\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot.py`\n- Use orchestrator.run() for feature goals\n- Use bug_orchestrator for bug goals\n- Track time with datetime, cost from orchestrator results\n- Session ID format: `ap-{date}-{sequence}`",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "large",
       "dependencies": [
+        8,
         10,
-        13,
-        16
+        13
       ],
-      "order": 17,
+      "order": 14,
       "automation_type": "automated"
     },
     {
-      "title": "Add resume method to AutopilotRunner",
-      "body": "## Description\n\nAdd the `resume()` method to continue paused autopilot sessions.\n\n## Acceptance Criteria\n\n- [ ] `resume(session_id: str) -> AutopilotSession` resumes paused session\n- [ ] Validates session exists and is paused\n- [ ] Continues from `current_goal_index`\n- [ ] Checks triggers before each goal execution\n- [ ] Persists state after each goal\n- [ ] Raises ValueError for invalid session states\n- [ ] Unit tests for resume scenarios\n\n## Technical Notes\n\n- See spec Section 13.5 for implementation details\n- Load session from AutopilotSessionStore\n- Update status to \"running\" before continuing",
+      "title": "Add resume() method to AutopilotRunner",
+      "body": "## Description\n\nAdd the ability to resume paused autopilot sessions from where they left off.\n\n## Acceptance Criteria\n\n- [ ] `resume(session_id: str) -> AutopilotSession` resumes paused session\n- [ ] Loads session from AutopilotSessionStore\n- [ ] Validates session status is \"paused\"\n- [ ] Raises ValueError if session not found or not resumable\n- [ ] Continues from current_goal_index\n- [ ] Updates session status to \"running\", clears pause_reason\n- [ ] Handles case where goal no longer exists gracefully\n- [ ] Persists state after each goal during resumed execution\n- [ ] Unit tests for resume scenarios including edge cases\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot.py`\n- Follow implementation pattern from spec section 13.5\n- Re-check checkpoint triggers on each resumed goal\n- If goals have changed since pause, log warning and skip missing goals",
       "labels": [
         "enhancement",
         "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        17
+        14
       ],
-      "order": 18,
+      "order": 15,
       "automation_type": "automated"
     },
     {
       "title": "Implement CLI: standup command",
-      "body": "## Description\n\nAdd the `swarm-attack standup` CLI command for morning briefings.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack standup` shows daily standup report\n- [ ] `--since DATETIME` option to specify start date\n- [ ] Interactive prompts for accepting recommendations or modifying priorities\n- [ ] Goals can be set after viewing report\n- [ ] Standup session recorded in daily log\n- [ ] Integration test for full standup flow\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Use rich library for formatted output\n- Prompt using typer.prompt or inquirer",
+      "body": "## Description\n\nAdd the `swarm-attack standup` CLI command for morning standup briefings.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack standup` runs interactive standup\n- [ ] `--since DATETIME` option to specify lookback period\n- [ ] Displays formatted standup report (yesterday vs actual, repo health, attention items, recommendations)\n- [ ] Interactive menu: [1] Accept recommendations [2] Modify priorities [3] Autopilot [4] Something else\n- [ ] On accept, saves today's goals via GoalTracker\n- [ ] Creates StandupSession record in DailyLogManager\n- [ ] Logs decision to decisions.jsonl\n- [ ] Output format matches spec section 10.1\n- [ ] Uses rich library for terminal formatting\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Add new `standup` command under main CLI group\n- Use typer for CLI framework (existing pattern)\n- Use rich for formatted output with boxes and tables\n- Prompt for goal modifications using rich.prompt",
       "labels": [
         "enhancement",
-        "backend",
-        "api"
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        15
+        12,
+        4,
+        8
       ],
-      "order": 19,
+      "order": 16,
       "automation_type": "automated"
     },
     {
       "title": "Implement CLI: checkin command",
-      "body": "## Description\n\nAdd the `swarm-attack checkin` CLI command for quick mid-day status checks.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack checkin` shows abbreviated status\n- [ ] Shows goal progress for today\n- [ ] Shows current blockers\n- [ ] Shows cost spent today\n- [ ] Quick output (no interactive prompts)\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Uses StateGatherer for current state\n- Simpler output than standup",
+      "body": "## Description\n\nAdd the `swarm-attack checkin` CLI command for quick mid-day status checks.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack checkin` shows current state summary\n- [ ] Displays goal progress for today\n- [ ] Shows any new blockers or attention items since standup\n- [ ] Shows current cost/time spent today\n- [ ] Quick display (not interactive)\n- [ ] Uses StateGatherer for current state\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Lighter weight than full standup\n- No interactive prompts, just displays information\n- Use rich for formatted output",
       "labels": [
         "enhancement",
-        "backend",
-        "api"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        9
-      ],
-      "order": 20,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Implement CLI: wrapup command",
-      "body": "## Description\n\nAdd the `swarm-attack wrapup` CLI command for end-of-day summaries.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack wrapup` generates end-of-day summary\n- [ ] Shows goals completed vs planned\n- [ ] Calculates total cost for day\n- [ ] Identifies carryover goals\n- [ ] Prompts for blockers for tomorrow\n- [ ] Saves summary to daily log\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Uses GoalTracker for completion stats\n- Saves DailySummary via DailyLogManager",
-      "labels": [
-        "enhancement",
-        "backend",
-        "api"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        5,
-        10
-      ],
-      "order": 21,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Implement CLI: plan command",
-      "body": "## Description\n\nAdd the `swarm-attack plan` CLI command for viewing and setting goals.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack plan show` displays today's goals\n- [ ] `swarm-attack plan set` allows setting/editing goals\n- [ ] `swarm-attack plan status` shows goal completion status\n- [ ] Goals displayed with priority, status, and linked items\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Uses GoalTracker for goal management\n- Interactive editing for `set` subcommand",
-      "labels": [
-        "enhancement",
-        "backend",
-        "api"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        10
-      ],
-      "order": 22,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Implement CLI: history command",
-      "body": "## Description\n\nAdd the `swarm-attack history` CLI command for reviewing past logs.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack history` shows last 7 days summary\n- [ ] `--days N` option to specify number of days\n- [ ] `--weekly` option to show weekly rollup\n- [ ] `--decisions` option to show decision log\n- [ ] Output formatted for readability\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Uses DailyLogManager for history retrieval\n- Weekly summary generated on demand",
-      "labels": [
-        "enhancement",
-        "backend",
-        "api"
+        "backend"
       ],
       "estimated_size": "small",
       "dependencies": [
         5
       ],
-      "order": 23,
+      "order": 17,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CLI: wrapup command",
+      "body": "## Description\n\nAdd the `swarm-attack wrapup` CLI command for end of day summary.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack wrapup` generates end-of-day summary\n- [ ] Calculates goals_completed vs goals_total\n- [ ] Calculates total_cost_usd for the day\n- [ ] Prompts for key accomplishments (or auto-generates from completed goals)\n- [ ] Prompts for blockers for tomorrow\n- [ ] Identifies carryover goals automatically\n- [ ] Saves DailySummary via DailyLogManager\n- [ ] Updates daily log markdown with summary section\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Use goal tracker for completion stats\n- Carryover = goals with status PENDING, IN_PROGRESS, or PARTIAL\n- Interactive prompts for human input on accomplishments/blockers",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4,
+        8
+      ],
+      "order": 18,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CLI: plan command",
+      "body": "## Description\n\nAdd the `swarm-attack plan` CLI command for viewing and setting goals.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack plan show` displays today's goals\n- [ ] `swarm-attack plan set` interactively sets goals for today\n- [ ] `swarm-attack plan status` shows goal completion status\n- [ ] Goal display shows priority, content, status, linked items\n- [ ] Set allows adding, removing, reordering goals\n- [ ] Status shows completion percentage and time estimates vs actuals\n- [ ] Uses GoalTracker for all operations\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Use typer subcommands for show/set/status\n- Interactive set uses rich.prompt for goal entry\n- Status calculates completion_rate from GoalTracker",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        8
+      ],
+      "order": 19,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CLI: history command",
+      "body": "## Description\n\nAdd the `swarm-attack history` CLI command for reviewing past logs.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack history` shows recent daily logs\n- [ ] `--days N` option to specify how many days to show (default 7)\n- [ ] `--weekly` option to show weekly summary\n- [ ] `--decisions` option to show decision log\n- [ ] Daily view shows date, goals completed, total cost\n- [ ] Weekly view aggregates across the week\n- [ ] Decisions view filters by type if specified\n- [ ] Uses DailyLogManager.get_history() and generate_weekly_summary()\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Weekly summary uses ISO week numbers\n- Decision log reads from decisions.jsonl\n- Format output in tables using rich",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4
+      ],
+      "order": 20,
       "automation_type": "automated"
     },
     {
       "title": "Implement CLI: autopilot command",
-      "body": "## Description\n\nAdd the `swarm-attack autopilot` CLI command for autonomous execution.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack autopilot` starts autonomous execution\n- [ ] `--budget USD` option to set cost limit\n- [ ] `--duration TIME` option to set time limit (e.g., \"2h\")\n- [ ] `--dry-run` option to preview without executing\n- [ ] Checkpoint output displayed when triggered\n- [ ] Session status shown on completion\n\n## Technical Notes\n\n- Add to `swarm_attack/cli.py`\n- Uses AutopilotRunner for execution\n- Parse duration string to seconds",
+      "body": "## Description\n\nAdd the `swarm-attack autopilot` CLI command for autonomous execution.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack autopilot` starts autopilot with today's goals\n- [ ] `--budget FLOAT` option for max spend (default from config)\n- [ ] `--duration DURATION` option for max time (default from config)\n- [ ] `--dry-run` option to preview what would be executed\n- [ ] Shows checkpoint output matching spec section 10.2 format\n- [ ] Interactive prompts at checkpoints for continue/pause/abort\n- [ ] Updates goal statuses as work completes\n- [ ] Logs decisions to decisions.jsonl\n- [ ] Creates/updates WorkLogEntry records\n- [ ] Uses AutopilotRunner.start()\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Duration parsing supports formats like \"2h\", \"30m\", \"1h30m\"\n- Dry-run shows goals in order with estimated costs/times\n- Checkpoint display uses rich formatting with boxes",
       "labels": [
         "enhancement",
-        "backend",
-        "api"
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        17
+        14,
+        8
+      ],
+      "order": 21,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add --until and --resume flags to autopilot CLI",
+      "body": "## Description\n\nAdd the --until and --resume flags to the autopilot command for advanced control.\n\n## Acceptance Criteria\n\n- [ ] `--until TRIGGER` option to stop at specific checkpoint trigger\n- [ ] Accepts all CheckpointTrigger values: cost_threshold_reached, time_threshold_reached, blocker_detected, approval_required, high_risk_action, error_rate_spike, end_of_session\n- [ ] `--resume SESSION_ID` option to resume paused session\n- [ ] Without SESSION_ID, `--resume` resumes most recent paused session\n- [ ] `swarm-attack autopilot --resume` lists paused sessions if multiple exist\n- [ ] Validates session exists and is resumable before proceeding\n- [ ] Uses AutopilotRunner.resume() for resumption\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Use typer.Option for flag handling\n- --until trigger value validated against CheckpointTrigger enum\n- Error messages should be helpful (\"Session ap-xxx not found\" or \"Session ap-xxx is already completed\")",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        21,
+        15
+      ],
+      "order": 22,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CLI: next --all command",
+      "body": "## Description\n\nAdd the `--all` flag to the next command for cross-feature recommendations.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack next --all` shows recommendations across all features/bugs/specs\n- [ ] Uses GoalTracker.generate_recommendations() with full state\n- [ ] Displays recommendations sorted by priority\n- [ ] Shows estimated cost and time for each\n- [ ] Includes command suggestions for each recommendation\n- [ ] Works without existing standup session\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py`\n- Modify existing `next` command to accept --all flag\n- Uses StateGatherer for current state\n- Format similar to recommendations section in standup",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        5,
+        8
+      ],
+      "order": 23,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create Chief of Staff package __init__.py",
+      "body": "## Description\n\nCreate the package initialization file that exports all public APIs.\n\n## Acceptance Criteria\n\n- [ ] Create `swarm_attack/chief_of_staff/__init__.py`\n- [ ] Export all public classes: ChiefOfStaffConfig, StateGatherer, DailyLogManager, GoalTracker, CheckpointSystem, StandupGenerator, AutopilotRunner, AutopilotSessionStore\n- [ ] Export all model classes needed externally\n- [ ] Export enums: GoalStatus, CheckpointTrigger\n- [ ] Version or module-level docstring describing the package\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/__init__.py`\n- Use `__all__` to define public API\n- Import from submodules for clean re-export",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        1,
+        2,
+        4,
+        5,
+        8,
+        10,
+        12,
+        13,
+        14
       ],
       "order": 24,
       "automation_type": "automated"
     },
     {
-      "title": "Add --until and --resume flags to autopilot command",
-      "body": "## Description\n\nAdd the `--until` trigger flag and `--resume` session flag to the autopilot command.\n\n## Acceptance Criteria\n\n- [ ] `--until TRIGGER` option to stop at specific trigger\n- [ ] Valid triggers: cost_threshold, time_threshold, approval_required, etc.\n- [ ] `--resume SESSION_ID` option to resume paused session\n- [ ] Lists paused sessions if --resume without ID\n- [ ] Error messages for invalid triggers or session IDs\n\n## Technical Notes\n\n- Uses CheckpointTrigger enum for validation\n- Uses AutopilotRunner.resume() for session resumption",
+      "title": "Add unit tests for Chief of Staff models",
+      "body": "## Description\n\nCreate comprehensive unit tests for all data models.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_models.py`\n- [ ] Test serialization round-trip for all dataclasses\n- [ ] Test enum value consistency\n- [ ] Test default values are correctly set\n- [ ] Test nested object serialization (DailyLog with StandupSessions)\n- [ ] Test from_dict handles missing optional fields\n- [ ] Test to_dict produces valid JSON-serializable dicts\n- [ ] 95% coverage on models.py\n\n## Technical Notes\n\n- Use pytest for testing\n- Use pytest-cov for coverage reporting\n- Include edge cases: empty lists, None values, deeply nested structures",
       "labels": [
-        "enhancement",
-        "backend",
-        "api"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        14,
-        18,
-        24
-      ],
-      "order": 25,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Implement CLI: next --all command",
-      "body": "## Description\n\nExtend the `swarm-attack next` command with `--all` flag for cross-feature recommendations.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack next --all` shows recommendations across all features\n- [ ] Uses GoalTracker.generate_recommendations()\n- [ ] Shows priority, task, estimated cost/time, and command\n- [ ] Sorted by priority (P1 first)\n\n## Technical Notes\n\n- Modify existing `next` command in `swarm_attack/cli.py`\n- Uses StateGatherer for full state",
-      "labels": [
-        "enhancement",
-        "backend",
-        "api"
-      ],
-      "estimated_size": "small",
-      "dependencies": [
-        12
-      ],
-      "order": 26,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Add unit tests for models",
-      "body": "## Description\n\nCreate comprehensive unit tests for all Chief of Staff data models.\n\n## Acceptance Criteria\n\n- [ ] Tests for all enum serialization\n- [ ] Tests for DailyGoal to_dict/from_dict round-trip\n- [ ] Tests for Decision to_dict/from_dict round-trip\n- [ ] Tests for all state snapshot models\n- [ ] Tests for AutopilotSession serialization\n- [ ] Edge cases: missing fields, invalid values\n- [ ] 95% coverage target for models.py\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_models.py`\n- Use pytest fixtures for common test data",
-      "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
         1
       ],
-      "order": 27,
+      "order": 25,
       "automation_type": "automated"
     },
     {
       "title": "Add unit tests for StateGatherer",
-      "body": "## Description\n\nCreate unit tests for the StateGatherer with mocked filesystem and subprocess.\n\n## Acceptance Criteria\n\n- [ ] Tests for each gather_* method\n- [ ] Tests for empty repository (no features/bugs/specs)\n- [ ] Tests for missing directories\n- [ ] Tests for corrupted state files\n- [ ] Tests for GitHub unavailable graceful degradation\n- [ ] 85% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_state_gatherer.py`\n- Use tmp_path fixture for filesystem\n- Mock subprocess for git/gh commands",
+      "body": "## Description\n\nCreate unit tests for the StateGatherer class with mocked data sources.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_state_gatherer.py`\n- [ ] Test gather_git_state with mocked git output\n- [ ] Test gather_features with mocked .swarm/state/ files\n- [ ] Test gather_bugs with mocked .swarm/bugs/ files\n- [ ] Test gather_prds with mocked .claude/prds/ files\n- [ ] Test gather_specs with mocked specs/ directories\n- [ ] Test gather_specs handles missing spec-review.json\n- [ ] Test gather_tests with mocked pytest output\n- [ ] Test gather_github with mocked gh CLI\n- [ ] Test graceful degradation when sources fail\n- [ ] Test calculate_costs aggregation\n- [ ] 85% coverage on state_gatherer.py\n\n## Technical Notes\n\n- Use tmp_path fixture for file system mocking\n- Use unittest.mock for subprocess mocking\n- Test both success and failure paths",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
+        5,
+        6,
+        7
+      ],
+      "order": 26,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add unit tests for DailyLogManager",
+      "body": "## Description\n\nCreate unit tests for the DailyLogManager class.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_daily_log.py`\n- [ ] Test get_log retrieves correct date's log\n- [ ] Test get_today creates new log if none exists\n- [ ] Test save_log writes both .md and .json\n- [ ] Test add_standup appends to standups list\n- [ ] Test add_work_entry appends to work_log\n- [ ] Test set_summary updates summary field\n- [ ] Test append_decision writes to JSONL\n- [ ] Test get_decisions filters correctly\n- [ ] Test get_history returns correct number of days\n- [ ] Test atomic write pattern (temp -> rename)\n- [ ] Test recovery from corrupted files\n- [ ] 90% coverage on daily_log.py\n\n## Technical Notes\n\n- Use tmp_path fixture for isolated file system\n- Test concurrent access scenarios if possible\n- Verify markdown format matches spec section 10.3",
+      "labels": [
+        "tests",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        4
+      ],
+      "order": 27,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add unit tests for GoalTracker",
+      "body": "## Description\n\nCreate unit tests for the GoalTracker class including reconciliation.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_goal_tracker.py`\n- [ ] Test get_today_goals returns current goals\n- [ ] Test set_goals persists via DailyLogManager\n- [ ] Test update_goal changes status correctly\n- [ ] Test mark_complete sets timestamp and actual_minutes\n- [ ] Test compare_plan_vs_actual calculation\n- [ ] Test get_carryover_goals filters correctly\n- [ ] Test reconcile_with_state for linked_feature scenarios\n- [ ] Test reconcile_with_state for linked_bug scenarios\n- [ ] Test reconcile_with_state for linked_spec scenarios\n- [ ] Test generate_recommendations priority ordering\n- [ ] Test recommendations include spec reviews\n- [ ] 90% coverage on goal_tracker.py\n\n## Technical Notes\n\n- Mock DailyLogManager for unit isolation\n- Test reconciliation with various phase combinations\n- Verify recommendation priority rules match spec",
+      "labels": [
+        "tests",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        8,
         9
       ],
       "order": 28,
       "automation_type": "automated"
     },
     {
-      "title": "Add unit tests for DailyLogManager",
-      "body": "## Description\n\nCreate unit tests for DailyLogManager CRUD operations and file handling.\n\n## Acceptance Criteria\n\n- [ ] Tests for get_log, get_today, get_yesterday\n- [ ] Tests for save_log with markdown and JSON output\n- [ ] Tests for add_standup, add_work_entry, set_summary\n- [ ] Tests for append_decision and get_decisions\n- [ ] Tests for get_history\n- [ ] Tests for atomic write recovery\n- [ ] Tests for corrupted log recovery\n- [ ] 90% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_daily_log.py`\n- Use tmp_path fixture for storage",
+      "title": "Add unit tests for CheckpointSystem",
+      "body": "## Description\n\nCreate unit tests for the CheckpointSystem class.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_checkpoints.py`\n- [ ] Test COST_THRESHOLD trigger fires at budget\n- [ ] Test TIME_THRESHOLD trigger fires at duration\n- [ ] Test APPROVAL_REQUIRED trigger for approval actions\n- [ ] Test HIGH_RISK_ACTION trigger for risky operations\n- [ ] Test ERROR_RATE_SPIKE trigger after consecutive errors\n- [ ] Test BLOCKER_DETECTED trigger\n- [ ] Test END_OF_SESSION trigger\n- [ ] Test is_high_risk identifies correct actions\n- [ ] Test should_pause_for_approval identifies correct actions\n- [ ] Test error count reset after success\n- [ ] Test matches_stop_trigger for --until support\n- [ ] 90% coverage on checkpoints.py\n\n## Technical Notes\n\n- Create test sessions with various budget/time states\n- Test trigger priority (which fires first when multiple match)\n- Include edge cases at exact thresholds",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        5
+        10,
+        11
       ],
       "order": 29,
       "automation_type": "automated"
     },
     {
-      "title": "Add unit tests for GoalTracker",
-      "body": "## Description\n\nCreate unit tests for GoalTracker goal management and reconciliation.\n\n## Acceptance Criteria\n\n- [ ] Tests for get/set goals\n- [ ] Tests for update_goal and mark_complete\n- [ ] Tests for compare_plan_vs_actual\n- [ ] Tests for get_carryover_goals\n- [ ] Tests for reconcile_with_state (all linked types)\n- [ ] Tests for generate_recommendations (all priority levels)\n- [ ] 90% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_goal_tracker.py`\n- Mock DailyLogManager for isolation",
+      "title": "Add unit tests for AutopilotSessionStore",
+      "body": "## Description\n\nCreate unit tests for the AutopilotSessionStore class.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_autopilot_store.py`\n- [ ] Test save creates file with correct content\n- [ ] Test save sets last_persisted_at\n- [ ] Test atomic write pattern (temp file used)\n- [ ] Test load retrieves saved session\n- [ ] Test load returns None for missing session\n- [ ] Test load handles corrupted JSON gracefully\n- [ ] Test list_paused returns only paused sessions\n- [ ] Test list_all returns all sessions\n- [ ] Test delete removes session file\n- [ ] Test get_latest_paused returns most recent\n- [ ] Test backup/restore on write failure\n- [ ] 90% coverage on autopilot_store.py\n\n## Technical Notes\n\n- Use tmp_path fixture for isolated storage\n- Test write failure scenarios with mocked file operations\n- Verify file format is valid JSON",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        12
+        13
       ],
       "order": 30,
       "automation_type": "automated"
     },
     {
-      "title": "Add unit tests for CheckpointSystem",
-      "body": "## Description\n\nCreate unit tests for checkpoint detection and handling.\n\n## Acceptance Criteria\n\n- [ ] Tests for cost threshold trigger\n- [ ] Tests for time threshold trigger\n- [ ] Tests for approval required detection\n- [ ] Tests for high risk action detection\n- [ ] Tests for error rate spike\n- [ ] Tests for blocker detection\n- [ ] Tests for --until trigger matching\n- [ ] Edge cases and thresholds\n- [ ] 90% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_checkpoints.py`\n- Test each trigger type in isolation",
+      "title": "Add unit tests for AutopilotRunner",
+      "body": "## Description\n\nCreate unit tests for the AutopilotRunner class including resume functionality.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_autopilot.py`\n- [ ] Test start creates session with correct ID format\n- [ ] Test start executes goals in order\n- [ ] Test execute_goal routes to correct orchestrator\n- [ ] Test checkpoint triggers pause execution\n- [ ] Test handle_checkpoint persists state\n- [ ] Test session state updated after each goal\n- [ ] Test budget exhaustion triggers checkpoint\n- [ ] Test duration exhaustion triggers checkpoint\n- [ ] Test resume loads and continues session\n- [ ] Test resume validates session is paused\n- [ ] Test resume handles missing goals gracefully\n- [ ] Test get_status returns session state\n- [ ] 80% coverage on autopilot.py\n\n## Technical Notes\n\n- Mock orchestrator and bug_orchestrator\n- Test various checkpoint scenarios\n- Verify session persistence at each step",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        14
+        14,
+        15
       ],
       "order": 31,
       "automation_type": "automated"
     },
     {
-      "title": "Add unit tests for AutopilotSessionStore",
-      "body": "## Description\n\nCreate unit tests for autopilot session persistence.\n\n## Acceptance Criteria\n\n- [ ] Tests for save and load round-trip\n- [ ] Tests for list_paused and list_all\n- [ ] Tests for get_latest_paused\n- [ ] Tests for delete\n- [ ] Tests for atomic write (temp file validation)\n- [ ] Tests for corrupted file handling\n- [ ] 90% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_autopilot_store.py`\n- Use tmp_path fixture",
+      "title": "Add integration tests for standup flow",
+      "body": "## Description\n\nCreate integration tests for the complete standup flow.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_integration.py`\n- [ ] Test full standup: gather -> compare -> recommend -> set goals\n- [ ] Test standup with no previous history\n- [ ] Test standup with yesterday's data present\n- [ ] Test goal reconciliation updates during standup\n- [ ] Test spec pipeline visibility in standup\n- [ ] All components integrated correctly\n- [ ] State persists correctly across operations\n\n## Technical Notes\n\n- Use tmp_path for isolated test environment\n- Create realistic test data for features, bugs, specs\n- Verify terminal output format (optional)",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
-      "estimated_size": "small",
+      "estimated_size": "medium",
       "dependencies": [
-        16
+        16,
+        12,
+        8,
+        5
       ],
       "order": 32,
       "automation_type": "automated"
     },
     {
-      "title": "Add unit tests for AutopilotRunner",
-      "body": "## Description\n\nCreate unit tests for autopilot execution flow and pause/resume.\n\n## Acceptance Criteria\n\n- [ ] Tests for start() method\n- [ ] Tests for execute_goal success and failure\n- [ ] Tests for handle_checkpoint (continue/pause/abort)\n- [ ] Tests for resume() method\n- [ ] Tests for get_status()\n- [ ] Tests for budget and time limit enforcement\n- [ ] Tests for session persistence on checkpoint\n- [ ] 80% coverage target\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_autopilot.py`\n- Mock Orchestrator and BugOrchestrator",
+      "title": "Add integration tests for autopilot flow",
+      "body": "## Description\n\nCreate integration tests for autopilot execution and pause/resume.\n\n## Acceptance Criteria\n\n- [ ] Test file: `tests/chief_of_staff/test_integration.py` (append)\n- [ ] Test autopilot executes until checkpoint\n- [ ] Test autopilot pause persists state correctly\n- [ ] Test autopilot resume continues from checkpoint\n- [ ] Test autopilot --until stops at correct trigger\n- [ ] Test autopilot with multiple goals\n- [ ] Test autopilot handles goal failures\n- [ ] Session state preserved across pause/resume cycle\n\n## Technical Notes\n\n- Mock actual orchestrator execution to avoid real work\n- Test with realistic goal sets\n- Verify cost and duration tracking accuracy",
       "labels": [
-        "enhancement",
-        "tests"
+        "tests",
+        "backend"
       ],
       "estimated_size": "medium",
       "dependencies": [
-        18
+        21,
+        22,
+        14,
+        15
       ],
       "order": 33,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Add integration tests for full standup flow",
-      "body": "## Description\n\nCreate integration tests that validate the complete standup workflow.\n\n## Acceptance Criteria\n\n- [ ] Test: gather state \u2192 compare yesterday \u2192 generate recommendations \u2192 set goals\n- [ ] Test: multi-day continuity (standup on day 2 loads yesterday's data)\n- [ ] Test: first run with no history\n- [ ] Test: recovery from interrupted session\n- [ ] All components integrated correctly\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_integration.py`\n- Use tmp_path with full directory structure\n- May need to mock external commands",
-      "labels": [
-        "enhancement",
-        "tests"
-      ],
-      "estimated_size": "medium",
-      "dependencies": [
-        19
-      ],
-      "order": 34,
-      "automation_type": "automated"
-    },
-    {
-      "title": "Add integration tests for autopilot pause/resume",
-      "body": "## Description\n\nCreate integration tests that validate autopilot pause and resume functionality.\n\n## Acceptance Criteria\n\n- [ ] Test: execute until checkpoint, pause, resume, complete\n- [ ] Test: --until trigger stops at correct point\n- [ ] Test: resume handles deleted goal gracefully\n- [ ] Test: state preserved across pause/resume\n- [ ] Test: multiple checkpoints in single session\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_integration.py`\n- Mock actual execution for speed\n- Validate session state files",
-      "labels": [
-        "enhancement",
-        "tests"
-      ],
-      "estimated_size": "medium",
-      "dependencies": [
-        25
-      ],
-      "order": 35,
       "automation_type": "automated"
     }
   ]

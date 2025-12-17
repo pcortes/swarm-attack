@@ -118,12 +118,11 @@ Feature Swarm is a Python CLI orchestrator that automates the full software deve
 │      └──────────┴──────────┴──────────┴──────────┴──────────┘            │  │
 │                            │                                             │  │
 │                            ▼                                             │  │
-│      ┌──────────┬──────────┼──────────┐                                  │  │
-│      ▼          ▼          ▼          ▼                                  │  │
-│  test_       coder     verifier   edge_cases.py                          │  │
-│  writer                                                                  │  │
-│      │          │          │          │                                  │  │
-│      └──────────┴──────────┴──────────┘                                  │  │
+│             ┌──────────────┼──────────────┐                              │  │
+│             ▼              ▼              ▼                              │  │
+│        coder (TDD)     verifier    edge_cases.py                         │  │
+│             │              │              │                              │  │
+│             └──────────────┴──────────────┘                              │  │
 │                            │                                             │  │
 │                            ▼                                             │  │
 │                    session_manager.py                                    │  │

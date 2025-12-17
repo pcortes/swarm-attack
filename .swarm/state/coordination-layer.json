@@ -1,0 +1,84 @@
+{
+  "feature_id": "coordination-layer",
+  "phase": "DONE",
+  "tasks": [
+    {
+      "issue_number": 1,
+      "stage": "NOT_APPLICABLE",
+      "title": "Update test-writer to report test_path in result artifacts",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": "N/A: thick-agent architecture - no separate test-writer agent",
+      "outputs": null
+    },
+    {
+      "issue_number": 2,
+      "stage": "NOT_APPLICABLE",
+      "title": "Orchestrator: Extract and store test_path from test-writer result",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": "N/A: thick-agent architecture - no separate test-writer agent",
+      "outputs": null
+    },
+    {
+      "issue_number": 3,
+      "stage": "DONE",
+      "title": "Orchestrator: Pass test_path to coder context with existence check",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": {
+        "files_modified": ["swarm_attack/orchestrator.py"],
+        "notes": "Added blocking existence gate on retries (retry_number > 0)"
+      }
+    },
+    {
+      "issue_number": 4,
+      "stage": "DONE",
+      "title": "Update coder agent to use test_path from context",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": {
+        "notes": "Already implemented - coder reads test_path from context at lines 900-904"
+      }
+    },
+    {
+      "issue_number": 5,
+      "stage": "DONE",
+      "title": "Add unit tests for orchestrator context passing",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": {
+        "files_modified": ["tests/unit/test_orchestrator_context.py"],
+        "tests_added": [
+          "TestTestFileExistenceGate::test_first_run_succeeds_without_test_file",
+          "TestTestFileExistenceGate::test_retry_fails_without_test_file",
+          "TestTestFileExistenceGate::test_retry_succeeds_with_test_file",
+          "TestTestFileExistenceGate::test_gate_uses_correct_test_path"
+        ]
+      }
+    }
+  ],
+  "current_session": null,
+  "created_at": "2025-12-17T17:14:36.024800Z",
+  "updated_at": "2025-12-17T20:30:00.000000Z",
+  "cost_total_usd": 1.18220425,
+  "cost_by_phase": {
+    "SPEC_IN_PROGRESS": 0.6416854999999999,
+    "ISSUES": 0.54051875
+  }
+}

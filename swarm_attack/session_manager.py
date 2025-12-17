@@ -59,7 +59,15 @@ class SessionManager:
     - Status (active, complete, interrupted)
 
     Enforces one issue per session.
+
+    TTL and Stale Detection (Expert 1 - SRE):
+    - Sessions expire after 4 hours of inactivity (SESSION_TTL_HOURS)
+    - Stale sessions are auto-detected and can be cleaned up
+    - Task state is synchronized when session ends
     """
+
+    # Session TTL in hours - sessions without activity for this long are stale
+    SESSION_TTL_HOURS = 4
 
     def __init__(
         self,
@@ -1059,3 +1067,192 @@ class SessionManager:
 
         # Return the last checkpoint (the one we just added)
         return session.checkpoints[-1]
+
+    # =========================================================================
+    # TTL and Stale Detection (Expert 1 - SRE)
+    # =========================================================================
+
+    def is_session_stale(self, session_id: str) -> bool:
+        """
+        Check if session is stale (no activity for TTL period).
+
+        A session is stale if:
+        1. It's still "active" but hasn't had activity for SESSION_TTL_HOURS
+        2. Activity is measured by the last checkpoint timestamp or started_at
+
+        Args:
+            session_id: The session identifier.
+
+        Returns:
+            True if session is stale, False otherwise.
+        """
+        feature_id = self._get_feature_id_from_session(session_id)
+        if feature_id is None:
+            return False
+
+        session = self.state_store.load_session(feature_id, session_id)
+        if session is None or session.status != "active":
+            return False
+
+        # Get the most recent timestamp
+        last_activity = session.started_at
+        if session.checkpoints:
+            last_checkpoint = session.checkpoints[-1]
+            if last_checkpoint.timestamp > last_activity:
+                last_activity = last_checkpoint.timestamp
+
+        try:
+            last_activity_dt = datetime.fromisoformat(
+                last_activity.replace("Z", "+00:00")
+            )
+            age = datetime.now(timezone.utc) - last_activity_dt
+            return age >= timedelta(hours=self.SESSION_TTL_HOURS)
+        except (ValueError, AttributeError):
+            # Can't parse timestamp - consider stale to be safe
+            return True
+
+    def cleanup_stale_sessions(self, feature_id: str) -> list[str]:
+        """
+        Auto-cleanup stale sessions for a feature.
+
+        Stale sessions are:
+        1. Marked as interrupted
+        2. Their associated issue lock is released
+        3. The task stage is synced if still IN_PROGRESS
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of cleaned session IDs.
+        """
+        cleaned_sessions: list[str] = []
+        session_ids = self.state_store.list_sessions(feature_id)
+
+        for session_id in session_ids:
+            session = self.state_store.load_session(feature_id, session_id)
+            if session is None or session.status != "active":
+                continue
+
+            if self.is_session_stale(session_id):
+                # Mark as interrupted
+                self.mark_as_interrupted(session_id)
+
+                # Release the issue lock
+                self.release_issue(feature_id, session.issue_number)
+
+                # Sync task state - if task is IN_PROGRESS, mark as INTERRUPTED
+                self._sync_task_state_on_cleanup(feature_id, session.issue_number)
+
+                cleaned_sessions.append(session_id)
+
+                self._log(
+                    "stale_session_cleaned",
+                    {
+                        "session_id": session_id,
+                        "feature_id": feature_id,
+                        "issue_number": session.issue_number,
+                    },
+                )
+
+        return cleaned_sessions
+
+    def _sync_task_state_on_cleanup(
+        self,
+        feature_id: str,
+        issue_number: int,
+    ) -> None:
+        """
+        Sync task state when a session is cleaned up.
+
+        If the task is still IN_PROGRESS, mark it as INTERRUPTED.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number.
+        """
+        from swarm_attack.models import TaskStage
+
+        state = self.state_store.load(feature_id)
+        if state is None:
+            return
+
+        for task in state.tasks:
+            if task.issue_number == issue_number:
+                if task.stage == TaskStage.IN_PROGRESS:
+                    task.stage = TaskStage.INTERRUPTED
+                    self.state_store.save(state)
+                    self._log(
+                        "task_marked_interrupted",
+                        {
+                            "feature_id": feature_id,
+                            "issue_number": issue_number,
+                        },
+                    )
+                break
+
+    def get_sessions_for_feature(self, feature_id: str) -> list[SessionState]:
+        """
+        Get all sessions (active and inactive) for a feature.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of SessionState objects.
+        """
+        sessions: list[SessionState] = []
+        session_ids = self.state_store.list_sessions(feature_id)
+
+        for session_id in session_ids:
+            session = self.state_store.load_session(feature_id, session_id)
+            if session is not None:
+                sessions.append(session)
+
+        return sessions
+
+    def finalize_session_on_task_done(
+        self,
+        session_id: str,
+        issue_number: int,
+    ) -> None:
+        """
+        Ensure session is closed when task is marked DONE.
+
+        This fixes the edge case where a task is marked DONE but the
+        session is still active.
+
+        Args:
+            session_id: The session identifier.
+            issue_number: The issue number.
+        """
+        feature_id = self._get_feature_id_from_session(session_id)
+        if feature_id is None:
+            return
+
+        session = self.state_store.load_session(feature_id, session_id)
+        if session is None:
+            return
+
+        # Only finalize if session is still active
+        if session.status != "active":
+            return
+
+        # End the session
+        try:
+            self.end_session(session_id, "success")
+        except SessionError:
+            # Session may have been ended by another process
+            pass
+
+        # Release the issue lock
+        self.release_issue(feature_id, issue_number)
+
+        self._log(
+            "session_finalized_on_task_done",
+            {
+                "session_id": session_id,
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+            },
+        )

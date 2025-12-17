@@ -1268,9 +1268,39 @@ def approve(
     draft_content = read_file(draft_path)
     safe_write(final_path, draft_content)
 
-    # Update phase
-    state.update_phase(FeaturePhase.SPEC_APPROVED)
-    store.save(state)
+    # Update phase using StateStore.update_phase for atomic operation
+    # This loads fresh state, updates, and saves in one operation
+    state = store.update_phase(feature_id, FeaturePhase.SPEC_APPROVED)
+
+    # Verify the save by re-reading the state file
+    verified_state = store.load(feature_id)
+    if verified_state is None or verified_state.phase != FeaturePhase.SPEC_APPROVED:
+        console.print(
+            f"[red]Warning:[/red] Phase verification failed! "
+            f"Expected SPEC_APPROVED but file shows "
+            f"'{_format_phase(verified_state.phase) if verified_state else 'None'}'."
+        )
+        console.print(
+            "[yellow]This may indicate a race condition with a background process.[/yellow]"
+        )
+        console.print(
+            f"  Retrying save with fresh state..."
+        )
+        # Retry: load fresh, update, save
+        fresh_state = store.load(feature_id)
+        if fresh_state:
+            fresh_state.update_phase(FeaturePhase.SPEC_APPROVED)
+            store.save(fresh_state)
+            # Verify again
+            final_state = store.load(feature_id)
+            if final_state and final_state.phase == FeaturePhase.SPEC_APPROVED:
+                console.print("[green]Retry successful![/green]")
+                state = final_state
+            else:
+                console.print(
+                    "[red]Retry failed. Please stop background processes and try again.[/red]"
+                )
+                raise typer.Exit(1)
 
     console.print(f"[green]Spec approved![/green]")
     console.print(f"[dim]Final spec:[/dim] {final_path}")
@@ -2758,6 +2788,406 @@ def bug_unblock_cmd(
     else:
         console.print(f"[red]Error:[/red] {result.error}")
         raise typer.Exit(1)
+
+
+# =============================================================================
+# Recovery Commands - Production Error Handling
+# =============================================================================
+
+
+@app.command()
+def cleanup(
+    feature_id: Optional[str] = typer.Argument(
+        None,
+        help="Feature to clean up (or all features if omitted).",
+    ),
+    stale_sessions: bool = typer.Option(
+        False,
+        "--stale-sessions",
+        "-s",
+        help="Clean up stale sessions (older than 4 hours).",
+    ),
+    orphan_locks: bool = typer.Option(
+        False,
+        "--orphan-locks",
+        "-l",
+        help="Clean up orphan lock files.",
+    ),
+    all_cleanup: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Run all cleanup operations.",
+    ),
+) -> None:
+    """
+    Clean up stale sessions and orphan locks.
+
+    Examples:
+        swarm-attack cleanup my-feature --stale-sessions
+        swarm-attack cleanup --all
+        swarm-attack cleanup my-feature --orphan-locks
+    """
+    from swarm_attack.recovery import LockManager, HealthChecker
+    from swarm_attack.session_manager import SessionManager
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+    store = get_store(config)
+
+    # If --all, enable both cleanup types
+    if all_cleanup:
+        stale_sessions = True
+        orphan_locks = True
+
+    # Validate at least one cleanup type is specified
+    if not stale_sessions and not orphan_locks:
+        console.print("[yellow]Warning:[/yellow] No cleanup type specified.")
+        console.print("  Use --stale-sessions, --orphan-locks, or --all")
+        raise typer.Exit(1)
+
+    total_cleaned = 0
+
+    # Get features to clean
+    if feature_id:
+        features = [feature_id]
+    else:
+        features = store.list_features()
+
+    if not features:
+        console.print("[dim]No features found to clean up.[/dim]")
+        raise typer.Exit(0)
+
+    # Clean up stale sessions
+    if stale_sessions:
+        console.print("[cyan]Cleaning up stale sessions...[/cyan]")
+        session_manager = SessionManager(config, store)
+
+        for fid in features:
+            try:
+                cleaned = session_manager.cleanup_stale_sessions(fid)
+                if cleaned:
+                    console.print(f"  [green]Cleaned {len(cleaned)} stale session(s) for {fid}[/green]")
+                    total_cleaned += len(cleaned)
+            except Exception as e:
+                console.print(f"  [red]Error cleaning sessions for {fid}: {e}[/red]")
+
+    # Clean up orphan locks
+    if orphan_locks:
+        console.print("[cyan]Cleaning up orphan locks...[/cyan]")
+        locks_dir = config.swarm_path / "locks"
+        lock_manager = LockManager(locks_dir)
+
+        for fid in features:
+            try:
+                cleaned_issues = lock_manager.cleanup_stale_locks(fid)
+                if cleaned_issues:
+                    console.print(f"  [green]Cleaned locks for issues {cleaned_issues} in {fid}[/green]")
+                    total_cleaned += len(cleaned_issues)
+            except Exception as e:
+                console.print(f"  [red]Error cleaning locks for {fid}: {e}[/red]")
+
+    console.print()
+    if total_cleaned > 0:
+        console.print(f"[green]Cleanup complete:[/green] {total_cleaned} item(s) cleaned.")
+    else:
+        console.print("[dim]No items needed cleanup.[/dim]")
+
+
+@app.command()
+def unlock(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature identifier.",
+    ),
+    issue: int = typer.Option(
+        ...,
+        "--issue",
+        "-i",
+        help="Issue number to unlock.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force unlock without confirmation.",
+    ),
+) -> None:
+    """
+    Force-unlock a stuck issue.
+
+    Use this when an issue is stuck due to a crashed process or orphan lock.
+    The lock will be released regardless of who holds it.
+
+    Examples:
+        swarm-attack unlock my-feature --issue 5
+        swarm-attack unlock my-feature --issue 5 --force
+    """
+    from swarm_attack.recovery import LockManager
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+
+    locks_dir = config.swarm_path / "locks"
+    lock_manager = LockManager(locks_dir)
+
+    # Check if lock exists
+    lock_info = lock_manager.get_lock_holder(feature_id, issue)
+    if not lock_info:
+        console.print(f"[yellow]No lock found for {feature_id} issue #{issue}[/yellow]")
+        raise typer.Exit(0)
+
+    # Show current lock holder
+    console.print(f"[bold]Lock holder for {feature_id} issue #{issue}:[/bold]")
+    console.print(f"  Session: {lock_info.session_id}")
+    console.print(f"  PID: {lock_info.pid}")
+    console.print(f"  Host: {lock_info.hostname}")
+    console.print(f"  Started: {lock_info.started_at}")
+    console.print()
+
+    # Confirm unless --force
+    if not force:
+        confirm = typer.confirm(
+            "Are you sure you want to force-unlock this issue? "
+            "This may cause conflicts if the process is still running."
+        )
+        if not confirm:
+            console.print("[dim]Cancelled.[/dim]")
+            raise typer.Exit(0)
+
+    # Force release
+    success = lock_manager.force_release(feature_id, issue)
+    if success:
+        console.print(f"[green]Successfully unlocked {feature_id} issue #{issue}[/green]")
+    else:
+        console.print(f"[red]Failed to unlock issue #{issue}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("reset")
+def reset_issue(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature identifier.",
+    ),
+    issue: int = typer.Option(
+        ...,
+        "--issue",
+        "-i",
+        help="Issue number to reset.",
+    ),
+    hard: bool = typer.Option(
+        False,
+        "--hard",
+        help="Hard reset - also delete generated test files.",
+    ),
+) -> None:
+    """
+    Reset an issue to READY state (or BACKLOG with --hard).
+
+    Use this to retry a failed or blocked issue. Clears:
+    - Task stage (to READY or BACKLOG)
+    - Any active locks
+    - Associated session (if exists)
+
+    Examples:
+        swarm-attack reset my-feature --issue 5
+        swarm-attack reset my-feature --issue 5 --hard
+    """
+    from swarm_attack.recovery import LockManager
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+    store = get_store(config)
+
+    # Load state
+    state = store.load(feature_id)
+    if state is None:
+        console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
+        raise typer.Exit(1)
+
+    # Find the task
+    task = None
+    for t in state.tasks:
+        if t.issue_number == issue:
+            task = t
+            break
+
+    if task is None:
+        console.print(f"[red]Error:[/red] Issue #{issue} not found in feature '{feature_id}'.")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Resetting issue #{issue}:[/bold] {task.title}")
+    console.print(f"  Current stage: {_format_stage(task.stage)}")
+    console.print()
+
+    # Determine target stage
+    target_stage = TaskStage.BACKLOG if hard else TaskStage.READY
+    console.print(f"  Target stage: {_format_stage(target_stage)}")
+
+    # Release any locks
+    locks_dir = config.swarm_path / "locks"
+    lock_manager = LockManager(locks_dir)
+    lock_info = lock_manager.get_lock_holder(feature_id, issue)
+    if lock_info:
+        lock_manager.force_release(feature_id, issue)
+        console.print(f"  [dim]Released lock held by session {lock_info.session_id}[/dim]")
+
+    # Update task stage
+    task.stage = target_stage
+    task.failure_reason = None
+
+    # Clear any retry count if present
+    if hasattr(task, "retry_count"):
+        task.retry_count = 0
+
+    # Save state
+    store.save(state)
+    console.print()
+    console.print(f"[green]Issue #{issue} reset to {target_stage.name}[/green]")
+
+    if hard:
+        console.print("[dim]Note: Generated test files were not deleted (manual cleanup may be needed)[/dim]")
+
+
+@app.command()
+def diagnose(
+    feature_id: str = typer.Argument(
+        ...,
+        help="Feature to diagnose.",
+    ),
+) -> None:
+    """
+    Show detailed diagnostics and recovery options for a feature.
+
+    Runs health checks and displays:
+    - Feature state and phase
+    - Task status summary
+    - Active locks
+    - Stale sessions
+    - Recovery suggestions
+
+    Examples:
+        swarm-attack diagnose my-feature
+    """
+    from swarm_attack.recovery import LockManager, HealthChecker, PreflightChecker
+    from swarm_attack.session_manager import SessionManager
+
+    config = _get_config_or_default()
+    _init_swarm_directory(config)
+    store = get_store(config)
+
+    # Load state
+    state = store.load(feature_id)
+    if state is None:
+        console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
+        raise typer.Exit(1)
+
+    # Header
+    console.print(Panel(
+        f"[bold]Diagnostics for: {feature_id}[/bold]",
+        border_style="cyan",
+    ))
+
+    # Feature overview
+    console.print()
+    console.print("[bold cyan]Feature Status:[/bold cyan]")
+    console.print(f"  Phase: {_format_phase(state.phase)}")
+    console.print(f"  Updated: {state.updated_at[:19].replace('T', ' ')}")
+    console.print(f"  Total Cost: {_format_cost(state.cost_total_usd)}")
+
+    # Task summary
+    if state.tasks:
+        console.print()
+        console.print("[bold cyan]Task Summary:[/bold cyan]")
+        done = len(state.done_tasks)
+        ready = len(state.ready_tasks)
+        blocked = len(state.blocked_tasks)
+        skipped = len(state.skipped_tasks)
+        in_progress = len([t for t in state.tasks if t.stage == TaskStage.IN_PROGRESS])
+
+        console.print(f"  Total: {len(state.tasks)}")
+        console.print(f"  Done: [green]{done}[/green]")
+        console.print(f"  Ready: [cyan]{ready}[/cyan]")
+        console.print(f"  In Progress: [yellow]{in_progress}[/yellow]")
+        console.print(f"  Blocked: [red]{blocked}[/red]")
+        console.print(f"  Skipped: [magenta]{skipped}[/magenta]")
+
+        # Show blocked tasks with reasons
+        if blocked > 0:
+            console.print()
+            console.print("[bold yellow]Blocked Tasks:[/bold yellow]")
+            for t in state.blocked_tasks:
+                reason = getattr(t, "failure_reason", "Unknown reason")
+                console.print(f"  #{t.issue_number}: {t.title}")
+                console.print(f"    [dim]Reason: {reason}[/dim]")
+
+    # Check for active locks
+    console.print()
+    console.print("[bold cyan]Active Locks:[/bold cyan]")
+    locks_dir = config.swarm_path / "locks"
+    lock_manager = LockManager(locks_dir)
+    locks = lock_manager.list_locks(feature_id)
+
+    if locks:
+        for lock in locks:
+            is_stale = lock_manager._is_lock_stale(lock)
+            stale_marker = " [yellow](STALE)[/yellow]" if is_stale else ""
+            console.print(f"  Issue #{lock.issue_number}:{stale_marker}")
+            console.print(f"    Session: {lock.session_id}")
+            console.print(f"    PID: {lock.pid} on {lock.hostname}")
+            console.print(f"    Started: {lock.started_at}")
+    else:
+        console.print("  [dim]No active locks[/dim]")
+
+    # Run health checks
+    console.print()
+    console.print("[bold cyan]Health Checks:[/bold cyan]")
+    session_manager = SessionManager(config, store)
+    health_checker = HealthChecker(config, session_manager, store)
+    report = health_checker.run_health_checks()
+
+    for check_name, result in report.checks.items():
+        status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
+        console.print(f"  {check_name}: {status}")
+        if not result.passed:
+            console.print(f"    [dim]{result.message}[/dim]")
+
+    # Recovery suggestions
+    console.print()
+    console.print("[bold cyan]Recovery Suggestions:[/bold cyan]")
+    suggestions = []
+
+    # Check for stale locks
+    stale_locks = [l for l in locks if lock_manager._is_lock_stale(l)]
+    if stale_locks:
+        issues = [str(l.issue_number) for l in stale_locks]
+        suggestions.append(f"Clean stale locks: swarm-attack cleanup {feature_id} --orphan-locks")
+
+    # Check for blocked tasks
+    if state.blocked_tasks:
+        for t in state.blocked_tasks[:3]:  # Show first 3
+            suggestions.append(f"Reset blocked issue: swarm-attack reset {feature_id} --issue {t.issue_number}")
+
+    # Check for in-progress tasks without locks (orphaned)
+    in_progress_tasks = [t for t in state.tasks if t.stage == TaskStage.IN_PROGRESS]
+    for t in in_progress_tasks:
+        if not lock_manager.get_lock_holder(feature_id, t.issue_number):
+            suggestions.append(
+                f"Orphaned in-progress task #{t.issue_number}: "
+                f"swarm-attack reset {feature_id} --issue {t.issue_number}"
+            )
+
+    # Health check failures
+    stale_sessions_check = report.checks.get("stale_sessions")
+    if stale_sessions_check and not stale_sessions_check.passed:
+        suggestions.append(f"Clean stale sessions: swarm-attack cleanup {feature_id} --stale-sessions")
+
+    if suggestions:
+        for suggestion in suggestions:
+            console.print(f"  [cyan]>[/cyan] {suggestion}")
+    else:
+        console.print("  [green]No issues detected - feature is healthy[/green]")
 
 
 # Entry point for the CLI

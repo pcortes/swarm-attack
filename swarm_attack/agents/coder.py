@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
 from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
+from swarm_attack.models import IssueOutput
 from swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write
 
 if TYPE_CHECKING:
@@ -567,6 +568,83 @@ Test Requirements:
             return """**Note:** Full spec is large ({:,} chars). Issue body contains relevant context.
 Refer to spec sections mentioned in issue body if needed.""".format(len(spec_content))
 
+    def _format_module_registry(self, registry: Optional[dict[str, Any]]) -> str:
+        """
+        Format module registry for prompt injection.
+
+        Shows what files and classes have been created by prior issues,
+        enabling proper imports and context handoff.
+
+        Args:
+            registry: Module registry dict from StateStore.get_module_registry()
+
+        Returns:
+            Formatted string for inclusion in prompt.
+        """
+        if not registry or not registry.get("modules"):
+            return "No prior modules created for this feature."
+
+        modules = registry.get("modules", {})
+        if not modules:
+            return "No prior modules created for this feature."
+
+        lines = ["**Files and classes created by prior issues:**", ""]
+        for file_path, info in modules.items():
+            classes = info.get("classes", [])
+            issue_num = info.get("created_by_issue", "?")
+            if classes:
+                class_list = ", ".join(classes)
+                lines.append(f"- `{file_path}` (issue #{issue_num}): {class_list}")
+            else:
+                lines.append(f"- `{file_path}` (issue #{issue_num})")
+
+        lines.append("")
+        lines.append("**IMPORTANT:** Import and use these existing modules rather than recreating them.")
+        lines.append("If your implementation needs classes from these files, import them directly.")
+        return "\n".join(lines)
+
+    def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:
+        """
+        Extract classes/functions from written files.
+
+        Parses Python and Dart files for class definitions to track
+        what was created for context handoff to subsequent issues.
+
+        Args:
+            files: Dictionary mapping file paths to their contents.
+
+        Returns:
+            IssueOutput with files_created and classes_defined.
+        """
+        files_created = list(files.keys())
+        classes_defined: dict[str, list[str]] = {}
+
+        for path, content in files.items():
+            classes: list[str] = []
+
+            if path.endswith(".py"):
+                # Parse Python files for class definitions
+                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+                classes.extend(matches)
+            elif path.endswith(".dart"):
+                # Parse Dart files for class definitions
+                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+                classes.extend(matches)
+            elif path.endswith(".ts") or path.endswith(".tsx"):
+                # Parse TypeScript files for class/interface definitions
+                class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
+                interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
+                classes.extend(class_matches)
+                classes.extend(interface_matches)
+
+            if classes:
+                classes_defined[path] = classes
+
+        return IssueOutput(
+            files_created=files_created,
+            classes_defined=classes_defined,
+        )
+
     def _build_prompt(
         self,
         feature_id: str,
@@ -578,6 +656,7 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         test_failures: Optional[list[dict[str, Any]]] = None,
         existing_implementation: Optional[dict[str, str]] = None,
         test_path: Optional[Path] = None,
+        module_registry: Optional[dict[str, Any]] = None,
     ) -> str:
         """Build the full prompt for Claude."""
         skill_prompt = self._load_skill_prompt()
@@ -597,6 +676,9 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         # Build failure and existing implementation sections (for retries)
         failures_section = self._format_test_failures(test_failures or [])
         existing_section = self._format_existing_implementation(existing_implementation or {})
+
+        # Build module registry context (shows prior issue outputs)
+        module_context_section = self._format_module_registry(module_registry)
 
         # Retry context
         retry_context = ""
@@ -624,6 +706,10 @@ Review the failures below and make TARGETED fixes. DO NOT rewrite everything.
 {failures_section}
 
 {existing_section}
+
+## Existing Modules from Prior Issues
+
+{module_context_section}
 
 **Issue to Implement:**
 
@@ -799,6 +885,9 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         retry_number = context.get("retry_number", 0)
         test_failures = context.get("test_failures", [])
 
+        # NEW: Extract module registry for context handoff from prior issues
+        module_registry = context.get("module_registry", {})
+
         self._log("coder_start", {
             "feature_id": feature_id,
             "issue_number": issue_number,
@@ -914,6 +1003,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
             test_failures=test_failures,
             existing_implementation=existing_implementation,
             test_path=test_path,
+            module_registry=module_registry,
         )
 
         try:
@@ -993,6 +1083,9 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # Generate summary
         implementation_summary = self._generate_summary(files_created, files_modified, issue)
 
+        # Extract outputs for module registry (context handoff to subsequent issues)
+        issue_outputs = self._extract_outputs(files)
+
         # Success
         self._log(
             "coder_complete",
@@ -1002,6 +1095,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 "files_created": files_created,
                 "files_modified": files_modified,
                 "cost_usd": cost,
+                "classes_extracted": sum(len(v) for v in issue_outputs.classes_defined.values()),
             },
         )
 
@@ -1012,6 +1106,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 "files_created": files_created,
                 "files_modified": files_modified,
                 "implementation_summary": implementation_summary,
+                "issue_outputs": issue_outputs,  # For orchestrator to save
             },
             cost_usd=cost,
         )

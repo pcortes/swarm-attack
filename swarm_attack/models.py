@@ -97,6 +97,27 @@ class CheckpointData:
 
 
 @dataclass
+class IssueOutput:
+    """
+    Files and classes created by an issue.
+
+    Tracks what artifacts an issue produces for context handoff
+    to subsequent issues that may depend on them.
+    """
+    files_created: list[str] = field(default_factory=list)
+    classes_defined: dict[str, list[str]] = field(default_factory=dict)  # file -> [class names]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> IssueOutput:
+        """Create from dictionary."""
+        return cls(**data)
+
+
+@dataclass
 class TaskRef:
     """
     Reference to a task/issue with metadata for prioritization.
@@ -111,11 +132,15 @@ class TaskRef:
     business_value_score: float = 0.5  # 0-1, higher is more valuable
     technical_risk_score: float = 0.5  # 0-1, higher is riskier
     blocked_reason: Optional[str] = None  # Why this task is blocked (error message)
+    outputs: Optional[IssueOutput] = None  # Files/classes created (populated after DONE)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
         data["stage"] = self.stage.name
+        # Handle IssueOutput serialization
+        if self.outputs is not None:
+            data["outputs"] = self.outputs.to_dict()
         return data
 
     @classmethod
@@ -123,6 +148,9 @@ class TaskRef:
         """Create from dictionary."""
         data = data.copy()
         data["stage"] = TaskStage[data["stage"]]
+        # Handle IssueOutput deserialization
+        if data.get("outputs") is not None:
+            data["outputs"] = IssueOutput.from_dict(data["outputs"])
         return cls(**data)
 
 

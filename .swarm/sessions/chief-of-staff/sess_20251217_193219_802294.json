@@ -1,28 +1,28 @@
 {
-  "session_id": "sess_20251216_233658_718966",
+  "session_id": "sess_20251217_193219_802294",
   "feature_id": "chief-of-staff",
-  "issue_number": 14,
-  "started_at": "2025-12-16T23:36:58.718988Z",
+  "issue_number": 2,
+  "started_at": "2025-12-17T19:32:19.802313Z",
   "status": "active",
   "checkpoints": [
     {
       "agent": "coder",
       "status": "complete",
-      "timestamp": "2025-12-16T23:38:04.004801Z",
+      "timestamp": "2025-12-17T19:32:49.373568Z",
       "commit": null,
-      "cost_usd": 0.41893650000000004
+      "cost_usd": 0.1721913
     },
     {
       "agent": "verifier",
       "status": "complete",
-      "timestamp": "2025-12-16T23:38:04.670702Z",
+      "timestamp": "2025-12-17T19:32:49.593985Z",
       "commit": null,
       "cost_usd": 0.0
     }
   ],
   "ended_at": null,
   "end_status": null,
-  "cost_usd": 0.41893650000000004,
+  "cost_usd": 0.1721913,
   "worktree_path": null,
   "commits": []
 }
