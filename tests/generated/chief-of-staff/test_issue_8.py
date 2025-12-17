@@ -239,12 +239,13 @@ class TestAutopilotSessionStore:
             started_at="2025-12-16T10:00:00",
             budget_usd=10.0,
             duration_limit_seconds=7200,
-            checkpoints=[
+            checkpoint_events=[
                 CheckpointEvent(
+                    event_id="evt-001",
                     timestamp="2025-12-16T10:30:00",
                     trigger=CheckpointTrigger.COST_THRESHOLD,
-                    context={"cost": 5.0},
-                    action_taken="continued",
+                    description="Cost threshold reached at $5.00",
+                    cost_at_checkpoint=5.0,
                 ),
             ],
             status="running",
@@ -252,8 +253,8 @@ class TestAutopilotSessionStore:
         store.save(session)
         
         loaded = store.load(session.session_id)
-        assert len(loaded.checkpoints) == 1
-        assert loaded.checkpoints[0].trigger == CheckpointTrigger.COST_THRESHOLD
+        assert len(loaded.checkpoint_events) == 1
+        assert loaded.checkpoint_events[0].trigger == CheckpointTrigger.COST_THRESHOLD
 
     def test_save_with_stop_trigger(self, store):
         """Test saving session with stop trigger."""
@@ -343,13 +344,15 @@ class TestAutopilotSessionStoreEdgeCases:
                 ),
             ],
             current_goal_index=1,
-            checkpoints=[
+            checkpoint_events=[
                 CheckpointEvent(
+                    event_id="evt-001",
                     timestamp="2025-12-16T10:30:00",
                     trigger=CheckpointTrigger.APPROVAL_REQUIRED,
-                    context={"item": "spec-review"},
-                    action_taken="paused",
-                    human_response="approved",
+                    description="Spec review requires approval",
+                    requires_approval=True,
+                    approved=True,
+                    approved_at="2025-12-16T10:35:00",
                 ),
             ],
             cost_spent_usd=12.50,
@@ -359,13 +362,13 @@ class TestAutopilotSessionStoreEdgeCases:
             ended_at="2025-12-16T11:00:00",
         )
         store.save(session)
-        
+
         loaded = store.load(session.session_id)
         assert loaded.session_id == session.session_id
         assert loaded.budget_usd == 25.0
         assert loaded.stop_trigger == CheckpointTrigger.TIME_THRESHOLD
         assert loaded.goals[0].linked_feature == "my-feature"
-        assert loaded.checkpoints[0].human_response == "approved"
+        assert loaded.checkpoint_events[0].approved == True
         assert loaded.ended_at == "2025-12-16T11:00:00"
 
     def test_list_all_empty(self, store):

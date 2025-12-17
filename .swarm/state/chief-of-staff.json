@@ -7,35 +7,78 @@
       "stage": "READY",
       "title": "Create core data models for Chief of Staff",
       "dependencies": [],
-      "estimated_size": "large",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 2,
-      "stage": "READY",
-      "title": "Create ChiefOfStaffConfig dataclass",
-      "dependencies": [],
-      "estimated_size": "small",
+      "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
       "outputs": {
         "files_created": [
-          "swarm_attack/chief_of_staff/config.py"
+          "tests/generated/chief-of-staff/test_issue_1.py",
+          "swarm_attack/chief_of_staff/__init__.py",
+          "swarm_attack/chief_of_staff/models.py"
         ],
         "classes_defined": {
-          "swarm_attack/chief_of_staff/config.py": [
-            "CheckpointConfig",
-            "PriorityConfig",
-            "StandupConfig",
-            "AutopilotConfig",
-            "ChiefOfStaffConfig"
+          "tests/generated/chief-of-staff/test_issue_1.py": [
+            "TestGoalStatus",
+            "TestCheckpointTrigger",
+            "TestDailyGoal",
+            "TestDecision",
+            "TestWorkLogEntry",
+            "TestStandupSession",
+            "TestDailySummary",
+            "TestDailyLog",
+            "TestGitState",
+            "TestFeatureSummary",
+            "TestBugSummary",
+            "TestPRDSummary",
+            "TestSpecSummary",
+            "TestTestState",
+            "TestGitHubState",
+            "TestInterruptedSession",
+            "TestRepoStateSnapshot",
+            "TestRecommendation",
+            "TestAttentionItem",
+            "TestStandupReport",
+            "TestCheckpointEvent",
+            "TestAutopilotSession"
+          ],
+          "swarm_attack/chief_of_staff/models.py": [
+            "GoalStatus",
+            "CheckpointTrigger",
+            "DailyGoal",
+            "Decision",
+            "WorkLogEntry",
+            "StandupSession",
+            "DailySummary",
+            "DailyLog",
+            "GitState",
+            "FeatureSummary",
+            "BugSummary",
+            "PRDSummary",
+            "SpecSummary",
+            "TestState",
+            "GitHubState",
+            "InterruptedSession",
+            "RepoStateSnapshot",
+            "Recommendation",
+            "AttentionItem",
+            "StandupReport",
+            "CheckpointEvent",
+            "AutopilotSession"
           ]
         }
       }
+    },
+    {
+      "issue_number": 2,
+      "stage": "READY",
+      "title": "Implement ChiefOfStaffConfig dataclass",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null
     },
     {
       "issue_number": 3,
@@ -53,7 +96,7 @@
     {
       "issue_number": 4,
       "stage": "BACKLOG",
-      "title": "Implement DailyLogManager",
+      "title": "Implement DailyLogManager for persistence",
       "dependencies": [
         1
       ],
@@ -66,10 +109,9 @@
     {
       "issue_number": 5,
       "stage": "BACKLOG",
-      "title": "Implement StateGatherer core",
+      "title": "Implement StateGatherer for repository state",
       "dependencies": [
-        1,
-        3
+        1
       ],
       "estimated_size": "large",
       "business_value_score": 0.5,
@@ -80,21 +122,10 @@
     {
       "issue_number": 6,
       "stage": "BACKLOG",
-      "title": "Add gather_specs method to StateGatherer",
+      "title": "Implement GoalTracker for goal management",
       "dependencies": [
-        5
-      ],
-      "estimated_size": "small",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 7,
-      "stage": "BACKLOG",
-      "title": "Add gather_github method to StateGatherer",
-      "dependencies": [
+        1,
+        4,
         5
       ],
       "estimated_size": "medium",
@@ -104,12 +135,27 @@
       "outputs": null
     },
     {
-      "issue_number": 8,
+      "issue_number": 7,
       "stage": "BACKLOG",
-      "title": "Implement GoalTracker",
+      "title": "Implement CheckpointSystem for autopilot triggers",
       "dependencies": [
         1,
-        4
+        2
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null
+    },
+    {
+      "issue_number": 8,
+      "stage": "BACKLOG",
+      "title": "Implement StandupGenerator for morning briefings",
+      "dependencies": [
+        4,
+        5,
+        6
       ],
       "estimated_size": "medium",
       "business_value_score": 0.5,
@@ -120,63 +166,7 @@
     {
       "issue_number": 9,
       "stage": "BACKLOG",
-      "title": "Add reconcile_with_state to GoalTracker",
-      "dependencies": [
-        8
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 10,
-      "stage": "BACKLOG",
-      "title": "Implement CheckpointSystem",
-      "dependencies": [
-        1,
-        2
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 11,
-      "stage": "BACKLOG",
-      "title": "Add --until trigger support to CheckpointSystem",
-      "dependencies": [
-        10
-      ],
-      "estimated_size": "small",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 12,
-      "stage": "BACKLOG",
-      "title": "Implement StandupGenerator",
-      "dependencies": [
-        5,
-        6,
-        4,
-        8
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 13,
-      "stage": "BACKLOG",
-      "title": "Implement AutopilotSessionStore",
+      "title": "Implement AutopilotSessionStore for pause/resume",
       "dependencies": [
         1
       ],
@@ -187,13 +177,13 @@
       "outputs": null
     },
     {
-      "issue_number": 14,
+      "issue_number": 10,
       "stage": "BACKLOG",
-      "title": "Implement AutopilotRunner core",
+      "title": "Implement AutopilotRunner for autonomous execution",
       "dependencies": [
-        8,
-        10,
-        13
+        6,
+        7,
+        9
       ],
       "estimated_size": "large",
       "business_value_score": 0.5,
@@ -202,25 +192,14 @@
       "outputs": null
     },
     {
-      "issue_number": 15,
-      "stage": "BACKLOG",
-      "title": "Add resume() method to AutopilotRunner",
-      "dependencies": [
-        14
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 16,
+      "issue_number": 11,
       "stage": "BACKLOG",
       "title": "Implement CLI: standup command",
       "dependencies": [
-        12,
+        3,
         4,
+        5,
+        6,
         8
       ],
       "estimated_size": "medium",
@@ -230,7 +209,7 @@
       "outputs": null
     },
     {
-      "issue_number": 17,
+      "issue_number": 12,
       "stage": "BACKLOG",
       "title": "Implement CLI: checkin command",
       "dependencies": [
@@ -243,12 +222,12 @@
       "outputs": null
     },
     {
-      "issue_number": 18,
+      "issue_number": 13,
       "stage": "BACKLOG",
       "title": "Implement CLI: wrapup command",
       "dependencies": [
         4,
-        8
+        6
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -257,11 +236,11 @@
       "outputs": null
     },
     {
-      "issue_number": 19,
+      "issue_number": 14,
       "stage": "BACKLOG",
       "title": "Implement CLI: plan command",
       "dependencies": [
-        8
+        6
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -270,7 +249,7 @@
       "outputs": null
     },
     {
-      "issue_number": 20,
+      "issue_number": 15,
       "stage": "BACKLOG",
       "title": "Implement CLI: history command",
       "dependencies": [
@@ -283,12 +262,12 @@
       "outputs": null
     },
     {
-      "issue_number": 21,
+      "issue_number": 16,
       "stage": "BACKLOG",
       "title": "Implement CLI: autopilot command",
       "dependencies": [
-        14,
-        8
+        3,
+        10
       ],
       "estimated_size": "medium",
       "business_value_score": 0.5,
@@ -297,26 +276,12 @@
       "outputs": null
     },
     {
-      "issue_number": 22,
-      "stage": "BACKLOG",
-      "title": "Add --until and --resume flags to autopilot CLI",
-      "dependencies": [
-        21,
-        15
-      ],
-      "estimated_size": "small",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 23,
+      "issue_number": 17,
       "stage": "BACKLOG",
       "title": "Implement CLI: next --all command",
       "dependencies": [
         5,
-        8
+        6
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -325,19 +290,19 @@
       "outputs": null
     },
     {
-      "issue_number": 24,
+      "issue_number": 18,
       "stage": "BACKLOG",
-      "title": "Create Chief of Staff package __init__.py",
+      "title": "Create __init__.py and package structure",
       "dependencies": [
         1,
         2,
         4,
         5,
+        6,
+        7,
         8,
-        10,
-        12,
-        13,
-        14
+        9,
+        10
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -346,126 +311,34 @@
       "outputs": null
     },
     {
-      "issue_number": 25,
+      "issue_number": 19,
       "stage": "BACKLOG",
-      "title": "Add unit tests for Chief of Staff models",
+      "title": "Add comprehensive unit tests",
       "dependencies": [
-        1
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 26,
-      "stage": "BACKLOG",
-      "title": "Add unit tests for StateGatherer",
-      "dependencies": [
+        1,
+        2,
+        4,
         5,
         6,
-        7
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 27,
-      "stage": "BACKLOG",
-      "title": "Add unit tests for DailyLogManager",
-      "dependencies": [
-        4
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 28,
-      "stage": "BACKLOG",
-      "title": "Add unit tests for GoalTracker",
-      "dependencies": [
+        7,
         8,
-        9
+        9,
+        10
       ],
-      "estimated_size": "medium",
+      "estimated_size": "large",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
       "outputs": null
     },
     {
-      "issue_number": 29,
+      "issue_number": 20,
       "stage": "BACKLOG",
-      "title": "Add unit tests for CheckpointSystem",
+      "title": "Add integration tests for end-to-end flows",
       "dependencies": [
-        10,
-        11
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 30,
-      "stage": "BACKLOG",
-      "title": "Add unit tests for AutopilotSessionStore",
-      "dependencies": [
-        13
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 31,
-      "stage": "BACKLOG",
-      "title": "Add unit tests for AutopilotRunner",
-      "dependencies": [
-        14,
-        15
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 32,
-      "stage": "BACKLOG",
-      "title": "Add integration tests for standup flow",
-      "dependencies": [
+        11,
         16,
-        12,
-        8,
-        5
-      ],
-      "estimated_size": "medium",
-      "business_value_score": 0.5,
-      "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
-    },
-    {
-      "issue_number": 33,
-      "stage": "BACKLOG",
-      "title": "Add integration tests for autopilot flow",
-      "dependencies": [
-        21,
-        22,
-        14,
-        15
+        19
       ],
       "estimated_size": "medium",
       "business_value_score": 0.5,
@@ -474,12 +347,12 @@
       "outputs": null
     }
   ],
-  "current_session": "sess_20251217_193219_802294",
+  "current_session": "sess_20251217_194017_122299",
   "created_at": "2025-12-16T04:49:35.316644Z",
-  "updated_at": "2025-12-17T19:30:20.801498Z",
-  "cost_total_usd": 11.50482905,
+  "updated_at": "2025-12-17T19:40:17.109108Z",
+  "cost_total_usd": 12.10917785,
   "cost_by_phase": {
-    "ISSUES": 2.9307797000000004,
-    "IMPLEMENTATION": 8.57404935
+    "ISSUES": 3.3629372,
+    "IMPLEMENTATION": 8.746240649999999
   }
 }

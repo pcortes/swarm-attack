@@ -1,615 +1,690 @@
-"""Models for Chief of Staff agent."""
+"""Data models for the Chief of Staff agent."""
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
 
-class GoalStatus(Enum):
+class GoalStatus(str, Enum):
     """Status of a daily goal."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     DONE = "done"
-    BLOCKED = "blocked"
     PARTIAL = "partial"
-    CARRIED_OVER = "carried_over"
+    SKIPPED = "skipped"
+    BLOCKED = "blocked"
 
 
-class CheckpointTrigger(Enum):
-    """Types of checkpoint triggers for autopilot sessions."""
-    COST_THRESHOLD = "cost_threshold"
-    TIME_THRESHOLD = "time_threshold"
-    GOAL_COMPLETE = "goal_complete"
-    APPROVAL_REQUIRED = "approval_required"
+class CheckpointTrigger(str, Enum):
+    """Triggers for checkpoint events."""
+
+    MANUAL = "manual"
+    TIME_BASED = "time_based"
+    GOAL_COMPLETED = "goal_completed"
     ERROR = "error"
     USER_INTERRUPT = "user_interrupt"
-    HIGH_RISK_ACTION = "high_risk_action"
-    ERROR_RATE_SPIKE = "error_rate_spike"
-    BLOCKER_DETECTED = "blocker_detected"
+    PHASE_TRANSITION = "phase_transition"
 
 
 @dataclass
 class DailyGoal:
-    """A single goal for the day."""
+    """A goal for the day."""
+
     id: str
-    content: str
-    priority: str = "P2"
+    description: str
+    priority: int
     status: GoalStatus = GoalStatus.PENDING
-    estimated_minutes: Optional[int] = None
-    actual_minutes: Optional[int] = None
+    feature_id: Optional[str] = None
+    bug_id: Optional[str] = None
     notes: Optional[str] = None
-    completed_at: Optional[str] = None
-    linked_feature: Optional[str] = None
-    linked_bug: Optional[str] = None
-    linked_spec: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "description": self.description,
+            "priority": self.priority,
+            "status": self.status.value,
+            "feature_id": self.feature_id,
+            "bug_id": self.bug_id,
+            "notes": self.notes,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DailyGoal":
-        """Create from dictionary."""
-        status = data.get("status", "pending")
-        if isinstance(status, str):
-            status = GoalStatus(status)
+        """Deserialize from dictionary."""
         return cls(
-            id=data.get("id", ""),
-            content=data.get("content", ""),
-            priority=data.get("priority", "P2"),
-            status=status,
-            estimated_minutes=data.get("estimated_minutes"),
-            actual_minutes=data.get("actual_minutes"),
-            notes=data.get("notes"),
-            completed_at=data.get("completed_at"),
-            linked_feature=data.get("linked_feature"),
-            linked_bug=data.get("linked_bug"),
-            linked_spec=data.get("linked_spec"),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "id": self.id,
-            "content": self.content,
-            "priority": self.priority,
-            "status": self.status.value if isinstance(self.status, GoalStatus) else self.status,
-            "estimated_minutes": self.estimated_minutes,
-            "actual_minutes": self.actual_minutes,
-            "notes": self.notes,
-            "completed_at": self.completed_at,
-            "linked_feature": self.linked_feature,
-            "linked_bug": self.linked_bug,
-            "linked_spec": self.linked_spec,
-        }
-
-
-@dataclass
-class StandupSession:
-    """A standup session with goals."""
-    session_id: str
-    time: str
-    yesterday_goals: list[DailyGoal] = field(default_factory=list)
-    today_goals: list[DailyGoal] = field(default_factory=list)
-    notes: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "StandupSession":
-        """Create from dictionary."""
-        return cls(
-            session_id=data.get("session_id", ""),
-            time=data.get("time", ""),
-            yesterday_goals=[DailyGoal.from_dict(g) for g in data.get("yesterday_goals", [])],
-            today_goals=[DailyGoal.from_dict(g) for g in data.get("today_goals", [])],
+            id=data["id"],
+            description=data["description"],
+            priority=data["priority"],
+            status=GoalStatus(data.get("status", "pending")),
+            feature_id=data.get("feature_id"),
+            bug_id=data.get("bug_id"),
             notes=data.get("notes"),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "session_id": self.session_id,
-            "time": self.time,
-            "yesterday_goals": [g.to_dict() for g in self.yesterday_goals],
-            "today_goals": [g.to_dict() for g in self.today_goals],
-            "notes": self.notes,
-        }
-
-
-@dataclass
-class WorkLogEntry:
-    """A work log entry."""
-    entry_id: str
-    time: str
-    description: str
-    duration_minutes: Optional[int] = None
-    outcome: Optional[str] = None
-    linked_goal_id: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "WorkLogEntry":
-        """Create from dictionary."""
-        return cls(
-            entry_id=data.get("entry_id", ""),
-            time=data.get("time", ""),
-            description=data.get("description", ""),
-            duration_minutes=data.get("duration_minutes"),
-            outcome=data.get("outcome"),
-            linked_goal_id=data.get("linked_goal_id"),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "entry_id": self.entry_id,
-            "time": self.time,
-            "description": self.description,
-            "duration_minutes": self.duration_minutes,
-            "outcome": self.outcome,
-            "linked_goal_id": self.linked_goal_id,
-        }
-
-
-@dataclass
-class DailySummary:
-    """End-of-day summary."""
-    accomplishments: list[str] = field(default_factory=list)
-    blockers: list[str] = field(default_factory=list)
-    learnings: list[str] = field(default_factory=list)
-    mood: Optional[str] = None
-    productivity_score: Optional[int] = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "DailySummary":
-        """Create from dictionary."""
-        return cls(
-            accomplishments=data.get("accomplishments", []),
-            blockers=data.get("blockers", []),
-            learnings=data.get("learnings", []),
-            mood=data.get("mood"),
-            productivity_score=data.get("productivity_score"),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "accomplishments": self.accomplishments,
-            "blockers": self.blockers,
-            "learnings": self.learnings,
-            "mood": self.mood,
-            "productivity_score": self.productivity_score,
-        }
 
 
 @dataclass
 class Decision:
-    """A recorded decision."""
-    decision_id: str
-    timestamp: str
-    decision_type: str
+    """A decision made during work."""
+
+    id: str
     description: str
-    rationale: Optional[str] = None
-    alternatives_considered: list[str] = field(default_factory=list)
-    linked_feature: Optional[str] = None
-    linked_bug: Optional[str] = None
+    rationale: str
+    timestamp: str
+    context: Optional[dict[str, Any]] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "description": self.description,
+            "rationale": self.rationale,
+            "timestamp": self.timestamp,
+            "context": self.context,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Decision":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            decision_id=data.get("decision_id", ""),
-            timestamp=data.get("timestamp", ""),
-            decision_type=data.get("decision_type", ""),
-            description=data.get("description", ""),
-            rationale=data.get("rationale"),
-            alternatives_considered=data.get("alternatives_considered", []),
-            linked_feature=data.get("linked_feature"),
-            linked_bug=data.get("linked_bug"),
+            id=data["id"],
+            description=data["description"],
+            rationale=data["rationale"],
+            timestamp=data["timestamp"],
+            context=data.get("context"),
         )
 
+
+@dataclass
+class WorkLogEntry:
+    """An entry in the work log."""
+
+    timestamp: str
+    action: str
+    details: str
+    goal_id: Optional[str] = None
+
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
+        """Serialize to dictionary."""
         return {
-            "decision_id": self.decision_id,
             "timestamp": self.timestamp,
-            "decision_type": self.decision_type,
-            "description": self.description,
-            "rationale": self.rationale,
-            "alternatives_considered": self.alternatives_considered,
-            "linked_feature": self.linked_feature,
-            "linked_bug": self.linked_bug,
+            "action": self.action,
+            "details": self.details,
+            "goal_id": self.goal_id,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "WorkLogEntry":
+        """Deserialize from dictionary."""
+        return cls(
+            timestamp=data["timestamp"],
+            action=data["action"],
+            details=data["details"],
+            goal_id=data.get("goal_id"),
+        )
+
+
+@dataclass
+class StandupSession:
+    """A standup session with goals, decisions, and work log."""
+
+    date: str
+    goals: list[DailyGoal]
+    decisions: list[Decision]
+    work_log: list[WorkLogEntry]
+    summary: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "date": self.date,
+            "goals": [g.to_dict() for g in self.goals],
+            "decisions": [d.to_dict() for d in self.decisions],
+            "work_log": [e.to_dict() for e in self.work_log],
+            "summary": self.summary,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StandupSession":
+        """Deserialize from dictionary."""
+        return cls(
+            date=data["date"],
+            goals=[DailyGoal.from_dict(g) for g in data.get("goals", [])],
+            decisions=[Decision.from_dict(d) for d in data.get("decisions", [])],
+            work_log=[WorkLogEntry.from_dict(e) for e in data.get("work_log", [])],
+            summary=data.get("summary"),
+        )
+
+
+@dataclass
+class DailySummary:
+    """Summary of a day's work."""
+
+    date: str
+    completed_goals: list[str]
+    incomplete_goals: list[str]
+    carryover_goals: list[str]
+    key_decisions: list[str]
+    blockers: list[str]
+    notes: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "date": self.date,
+            "completed_goals": self.completed_goals,
+            "incomplete_goals": self.incomplete_goals,
+            "carryover_goals": self.carryover_goals,
+            "key_decisions": self.key_decisions,
+            "blockers": self.blockers,
+            "notes": self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailySummary":
+        """Deserialize from dictionary."""
+        return cls(
+            date=data["date"],
+            completed_goals=data.get("completed_goals", []),
+            incomplete_goals=data.get("incomplete_goals", []),
+            carryover_goals=data.get("carryover_goals", []),
+            key_decisions=data.get("key_decisions", []),
+            blockers=data.get("blockers", []),
+            notes=data.get("notes"),
+        )
 
 
 @dataclass
 class DailyLog:
-    """A daily log containing standups, work entries, and summary."""
+    """A daily log with entries and auto-initialized timestamp."""
+
     date: str
-    standups: list[StandupSession] = field(default_factory=list)
-    work_log: list[WorkLogEntry] = field(default_factory=list)
-    summary: Optional[DailySummary] = None
+    entries: list[WorkLogEntry]
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "date": self.date,
+            "entries": [e.to_dict() for e in self.entries],
+            "created_at": self.created_at,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DailyLog":
-        """Create from dictionary."""
-        summary_data = data.get("summary")
-        return cls(
-            date=data.get("date", ""),
-            standups=[StandupSession.from_dict(s) for s in data.get("standups", [])],
-            work_log=[WorkLogEntry.from_dict(e) for e in data.get("work_log", [])],
-            summary=DailySummary.from_dict(summary_data) if summary_data else None,
+        """Deserialize from dictionary."""
+        log = cls(
+            date=data["date"],
+            entries=[WorkLogEntry.from_dict(e) for e in data.get("entries", [])],
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "date": self.date,
-            "standups": [s.to_dict() for s in self.standups],
-            "work_log": [e.to_dict() for e in self.work_log],
-            "summary": self.summary.to_dict() if self.summary else None,
-        }
+        if "created_at" in data:
+            log.created_at = data["created_at"]
+        return log
 
 
 @dataclass
 class GitState:
-    """Git repository state."""
+    """Current git repository state."""
+
     branch: str
+    commit_hash: str
     is_clean: bool
-    uncommitted_files: list[str] = field(default_factory=list)
-    unpushed_commits: int = 0
+    uncommitted_files: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "branch": self.branch,
+            "commit_hash": self.commit_hash,
+            "is_clean": self.is_clean,
+            "uncommitted_files": self.uncommitted_files,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "GitState":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            branch=data.get("branch", ""),
-            is_clean=data.get("is_clean", True),
+            branch=data["branch"],
+            commit_hash=data["commit_hash"],
+            is_clean=data["is_clean"],
             uncommitted_files=data.get("uncommitted_files", []),
-            unpushed_commits=data.get("unpushed_commits", 0),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "branch": self.branch,
-            "is_clean": self.is_clean,
-            "uncommitted_files": self.uncommitted_files,
-            "unpushed_commits": self.unpushed_commits,
-        }
 
 
 @dataclass
 class FeatureSummary:
     """Summary of a feature's state."""
-    feature_id: str
+
+    id: str
+    name: str
     phase: str
-    tasks_done: int
-    tasks_total: int
-    tasks_blocked: int
-    cost_usd: float
-    updated_at: str
+    progress: float
+    total_issues: Optional[int] = None
+    completed_issues: Optional[int] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "phase": self.phase,
+            "progress": self.progress,
+            "total_issues": self.total_issues,
+            "completed_issues": self.completed_issues,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FeatureSummary":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            feature_id=data.get("feature_id", ""),
-            phase=data.get("phase", ""),
-            tasks_done=data.get("tasks_done", 0),
-            tasks_total=data.get("tasks_total", 0),
-            tasks_blocked=data.get("tasks_blocked", 0),
-            cost_usd=data.get("cost_usd", 0.0),
-            updated_at=data.get("updated_at", ""),
+            id=data["id"],
+            name=data["name"],
+            phase=data["phase"],
+            progress=data["progress"],
+            total_issues=data.get("total_issues"),
+            completed_issues=data.get("completed_issues"),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "feature_id": self.feature_id,
-            "phase": self.phase,
-            "tasks_done": self.tasks_done,
-            "tasks_total": self.tasks_total,
-            "tasks_blocked": self.tasks_blocked,
-            "cost_usd": self.cost_usd,
-            "updated_at": self.updated_at,
-        }
 
 
 @dataclass
 class BugSummary:
-    """Summary of a bug's state."""
-    bug_id: str
+    """Summary of a bug investigation."""
+
+    id: str
+    description: str
     phase: str
-    cost_usd: float
-    updated_at: str
+    severity: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "description": self.description,
+            "phase": self.phase,
+            "severity": self.severity,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "BugSummary":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            bug_id=data.get("bug_id", ""),
-            phase=data.get("phase", ""),
-            cost_usd=data.get("cost_usd", 0.0),
-            updated_at=data.get("updated_at", ""),
+            id=data["id"],
+            description=data["description"],
+            phase=data["phase"],
+            severity=data["severity"],
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "bug_id": self.bug_id,
-            "phase": self.phase,
-            "cost_usd": self.cost_usd,
-            "updated_at": self.updated_at,
-        }
 
 
 @dataclass
 class PRDSummary:
     """Summary of a PRD."""
-    feature_id: str
+
+    id: str
     title: str
-    phase: str
-    path: str
+    status: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "status": self.status,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "PRDSummary":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            feature_id=data.get("feature_id", ""),
-            title=data.get("title", ""),
-            phase=data.get("phase", ""),
-            path=data.get("path", ""),
+            id=data["id"],
+            title=data["title"],
+            status=data["status"],
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "feature_id": self.feature_id,
-            "title": self.title,
-            "phase": self.phase,
-            "path": self.path,
-        }
 
 
 @dataclass
 class SpecSummary:
     """Summary of a spec."""
+
+    id: str
     feature_id: str
-    title: str
-    path: str
-    has_review: bool = False
-    review_passed: bool = False
+    status: str
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "feature_id": self.feature_id,
+            "status": self.status,
+            "score": self.score,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "SpecSummary":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            feature_id=data.get("feature_id", ""),
-            title=data.get("title", ""),
-            path=data.get("path", ""),
-            has_review=data.get("has_review", False),
-            review_passed=data.get("review_passed", False),
+            id=data["id"],
+            feature_id=data["feature_id"],
+            status=data["status"],
+            score=data["score"],
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "feature_id": self.feature_id,
-            "title": self.title,
-            "path": self.path,
-            "has_review": self.has_review,
-            "review_passed": self.review_passed,
-        }
 
 
 @dataclass
 class TestState:
-    """Test suite state."""
-    total_tests: int = 0
-    passing: int = 0
-    failing: int = 0
-    skipped: int = 0
+    """State of the test suite."""
+
+    total: int
+    passed: int
+    failed: int
+    skipped: int
+    last_run: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "total": self.total,
+            "passed": self.passed,
+            "failed": self.failed,
+            "skipped": self.skipped,
+            "last_run": self.last_run,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TestState":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            total_tests=data.get("total_tests", 0),
-            passing=data.get("passing", 0),
-            failing=data.get("failing", 0),
-            skipped=data.get("skipped", 0),
+            total=data["total"],
+            passed=data["passed"],
+            failed=data["failed"],
+            skipped=data["skipped"],
+            last_run=data["last_run"],
         )
 
+
+@dataclass
+class GitHubState:
+    """State of GitHub repository."""
+
+    open_prs: int
+    open_issues: int
+    pending_reviews: list[str]
+
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
+        """Serialize to dictionary."""
         return {
-            "total_tests": self.total_tests,
-            "passing": self.passing,
-            "failing": self.failing,
-            "skipped": self.skipped,
+            "open_prs": self.open_prs,
+            "open_issues": self.open_issues,
+            "pending_reviews": self.pending_reviews,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "GitHubState":
+        """Deserialize from dictionary."""
+        return cls(
+            open_prs=data["open_prs"],
+            open_issues=data["open_issues"],
+            pending_reviews=data.get("pending_reviews", []),
+        )
+
+
+@dataclass
+class InterruptedSession:
+    """An interrupted session that may need recovery."""
+
+    session_id: str
+    feature_id: str
+    phase: str
+    interrupted_at: str
+    reason: str
+    recovery_data: Optional[dict[str, Any]] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "session_id": self.session_id,
+            "feature_id": self.feature_id,
+            "phase": self.phase,
+            "interrupted_at": self.interrupted_at,
+            "reason": self.reason,
+            "recovery_data": self.recovery_data,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "InterruptedSession":
+        """Deserialize from dictionary."""
+        return cls(
+            session_id=data["session_id"],
+            feature_id=data["feature_id"],
+            phase=data["phase"],
+            interrupted_at=data["interrupted_at"],
+            reason=data["reason"],
+            recovery_data=data.get("recovery_data"),
+        )
 
 
 @dataclass
 class RepoStateSnapshot:
-    """Snapshot of the entire repository state."""
-    gathered_at: str
-    git: GitState = field(default_factory=lambda: GitState(branch="main", is_clean=True))
-    features: list[FeatureSummary] = field(default_factory=list)
-    bugs: list[BugSummary] = field(default_factory=list)
-    prds: list[PRDSummary] = field(default_factory=list)
-    specs: list[SpecSummary] = field(default_factory=list)
-    tests: Optional[TestState] = None
+    """A snapshot of the entire repository state."""
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RepoStateSnapshot":
-        """Create from dictionary."""
-        git_data = data.get("git", {"branch": "main", "is_clean": True})
-        tests_data = data.get("tests")
-        return cls(
-            gathered_at=data.get("gathered_at", ""),
-            git=GitState.from_dict(git_data),
-            features=[FeatureSummary.from_dict(f) for f in data.get("features", [])],
-            bugs=[BugSummary.from_dict(b) for b in data.get("bugs", [])],
-            prds=[PRDSummary.from_dict(p) for p in data.get("prds", [])],
-            specs=[SpecSummary.from_dict(s) for s in data.get("specs", [])],
-            tests=TestState.from_dict(tests_data) if tests_data else None,
-        )
+    timestamp: str
+    git: GitState
+    features: list[FeatureSummary]
+    bugs: list[BugSummary]
+    prds: list[PRDSummary]
+    specs: list[SpecSummary]
+    tests: TestState
+    github: GitHubState
+    interrupted_sessions: list[InterruptedSession]
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
+        """Serialize to dictionary."""
         return {
-            "gathered_at": self.gathered_at,
+            "timestamp": self.timestamp,
             "git": self.git.to_dict(),
             "features": [f.to_dict() for f in self.features],
             "bugs": [b.to_dict() for b in self.bugs],
             "prds": [p.to_dict() for p in self.prds],
             "specs": [s.to_dict() for s in self.specs],
-            "tests": self.tests.to_dict() if self.tests else None,
+            "tests": self.tests.to_dict(),
+            "github": self.github.to_dict(),
+            "interrupted_sessions": [s.to_dict() for s in self.interrupted_sessions],
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RepoStateSnapshot":
+        """Deserialize from dictionary."""
+        return cls(
+            timestamp=data["timestamp"],
+            git=GitState.from_dict(data["git"]),
+            features=[FeatureSummary.from_dict(f) for f in data.get("features", [])],
+            bugs=[BugSummary.from_dict(b) for b in data.get("bugs", [])],
+            prds=[PRDSummary.from_dict(p) for p in data.get("prds", [])],
+            specs=[SpecSummary.from_dict(s) for s in data.get("specs", [])],
+            tests=TestState.from_dict(data["tests"]),
+            github=GitHubState.from_dict(data["github"]),
+            interrupted_sessions=[
+                InterruptedSession.from_dict(s) for s in data.get("interrupted_sessions", [])
+            ],
+        )
 
 
 @dataclass
 class Recommendation:
-    """A task recommendation."""
-    task: str
-    priority: str
+    """A recommendation for action."""
+
+    id: str
+    action: str
     rationale: str
-    estimated_minutes: Optional[int] = None
-    linked_feature: Optional[str] = None
-    linked_bug: Optional[str] = None
-    linked_spec: Optional[str] = None
+    priority: int
+    feature_id: Optional[str] = None
+    bug_id: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "action": self.action,
+            "rationale": self.rationale,
+            "priority": self.priority,
+            "feature_id": self.feature_id,
+            "bug_id": self.bug_id,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Recommendation":
-        """Create from dictionary."""
+        """Deserialize from dictionary."""
         return cls(
-            task=data.get("task", ""),
-            priority=data.get("priority", "P2"),
-            rationale=data.get("rationale", ""),
-            estimated_minutes=data.get("estimated_minutes"),
-            linked_feature=data.get("linked_feature"),
-            linked_bug=data.get("linked_bug"),
-            linked_spec=data.get("linked_spec"),
+            id=data["id"],
+            action=data["action"],
+            rationale=data["rationale"],
+            priority=data["priority"],
+            feature_id=data.get("feature_id"),
+            bug_id=data.get("bug_id"),
         )
 
+
+@dataclass
+class AttentionItem:
+    """An item requiring attention."""
+
+    id: str
+    type: str
+    message: str
+    severity: str
+    context: Optional[dict[str, Any]] = None
+
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
+        """Serialize to dictionary."""
         return {
-            "task": self.task,
-            "priority": self.priority,
-            "rationale": self.rationale,
-            "estimated_minutes": self.estimated_minutes,
-            "linked_feature": self.linked_feature,
-            "linked_bug": self.linked_bug,
-            "linked_spec": self.linked_spec,
+            "id": self.id,
+            "type": self.type,
+            "message": self.message,
+            "severity": self.severity,
+            "context": self.context,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AttentionItem":
+        """Deserialize from dictionary."""
+        return cls(
+            id=data["id"],
+            type=data["type"],
+            message=data["message"],
+            severity=data["severity"],
+            context=data.get("context"),
+        )
+
+
+@dataclass
+class StandupReport:
+    """A complete standup report."""
+
+    timestamp: str
+    state_snapshot: RepoStateSnapshot
+    recommendations: list[Recommendation]
+    attention_items: list[AttentionItem]
+    suggested_goals: list[DailyGoal]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "timestamp": self.timestamp,
+            "state_snapshot": self.state_snapshot.to_dict(),
+            "recommendations": [r.to_dict() for r in self.recommendations],
+            "attention_items": [a.to_dict() for a in self.attention_items],
+            "suggested_goals": [g.to_dict() for g in self.suggested_goals],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StandupReport":
+        """Deserialize from dictionary."""
+        return cls(
+            timestamp=data["timestamp"],
+            state_snapshot=RepoStateSnapshot.from_dict(data["state_snapshot"]),
+            recommendations=[Recommendation.from_dict(r) for r in data.get("recommendations", [])],
+            attention_items=[AttentionItem.from_dict(a) for a in data.get("attention_items", [])],
+            suggested_goals=[DailyGoal.from_dict(g) for g in data.get("suggested_goals", [])],
+        )
 
 
 @dataclass
 class CheckpointEvent:
-    """A checkpoint event during autopilot execution."""
-    event_id: str
+    """A checkpoint event during autopilot."""
+
+    id: str
     timestamp: str
     trigger: CheckpointTrigger
-    description: str
-    cost_at_checkpoint: float = 0.0
-    duration_at_checkpoint: int = 0
-    goal_index: Optional[int] = None
-    requires_approval: bool = False
-    approved: Optional[bool] = None
-    approved_at: Optional[str] = None
+    summary: str
+    goal_id: Optional[str] = None
+    error_details: Optional[str] = None
+    state_data: Optional[dict[str, Any]] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "trigger": self.trigger.value,
+            "summary": self.summary,
+            "goal_id": self.goal_id,
+            "error_details": self.error_details,
+            "state_data": self.state_data,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CheckpointEvent":
-        """Create from dictionary."""
-        trigger = data.get("trigger")
-        if isinstance(trigger, str):
-            trigger = CheckpointTrigger(trigger)
+        """Deserialize from dictionary."""
         return cls(
-            event_id=data.get("event_id", ""),
-            timestamp=data.get("timestamp", ""),
-            trigger=trigger,
-            description=data.get("description", ""),
-            cost_at_checkpoint=data.get("cost_at_checkpoint", 0.0),
-            duration_at_checkpoint=data.get("duration_at_checkpoint", 0),
-            goal_index=data.get("goal_index"),
-            requires_approval=data.get("requires_approval", False),
-            approved=data.get("approved"),
-            approved_at=data.get("approved_at"),
+            id=data["id"],
+            timestamp=data["timestamp"],
+            trigger=CheckpointTrigger(data["trigger"]),
+            summary=data["summary"],
+            goal_id=data.get("goal_id"),
+            error_details=data.get("error_details"),
+            state_data=data.get("state_data"),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "event_id": self.event_id,
-            "timestamp": self.timestamp,
-            "trigger": self.trigger.value if isinstance(self.trigger, CheckpointTrigger) else self.trigger,
-            "description": self.description,
-            "cost_at_checkpoint": self.cost_at_checkpoint,
-            "duration_at_checkpoint": self.duration_at_checkpoint,
-            "goal_index": self.goal_index,
-            "requires_approval": self.requires_approval,
-            "approved": self.approved,
-            "approved_at": self.approved_at,
-        }
 
 
 @dataclass
 class AutopilotSession:
-    """An autopilot session for autonomous goal execution."""
-    session_id: str
+    """An autopilot session."""
+
+    id: str
     started_at: str
-    budget_usd: float
-    duration_limit_seconds: int
-    goals: list[DailyGoal] = field(default_factory=list)
-    current_goal_index: int = 0
-    cost_spent_usd: float = 0.0
-    duration_seconds: int = 0
-    status: str = "pending"  # pending, running, paused, completed, failed
-    stop_trigger: Optional[CheckpointTrigger] = None
-    checkpoint_events: list[CheckpointEvent] = field(default_factory=list)
+    goals: list[DailyGoal]
+    checkpoints: list[CheckpointEvent]
+    work_log: list[WorkLogEntry]
     ended_at: Optional[str] = None
-    end_reason: Optional[str] = None
-    last_persisted_at: Optional[str] = None
-    pause_reason: Optional[str] = None
+    status: Optional[str] = None
+    final_summary: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "id": self.id,
+            "started_at": self.started_at,
+            "goals": [g.to_dict() for g in self.goals],
+            "checkpoints": [c.to_dict() for c in self.checkpoints],
+            "work_log": [e.to_dict() for e in self.work_log],
+            "ended_at": self.ended_at,
+            "status": self.status,
+            "final_summary": self.final_summary,
+        }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AutopilotSession":
-        """Create from dictionary."""
-        stop_trigger = data.get("stop_trigger")
-        if isinstance(stop_trigger, str):
-            stop_trigger = CheckpointTrigger(stop_trigger)
+        """Deserialize from dictionary."""
         return cls(
-            session_id=data.get("session_id", ""),
-            started_at=data.get("started_at", ""),
-            budget_usd=data.get("budget_usd", 0.0),
-            duration_limit_seconds=data.get("duration_limit_seconds", 0),
+            id=data["id"],
+            started_at=data["started_at"],
             goals=[DailyGoal.from_dict(g) for g in data.get("goals", [])],
-            current_goal_index=data.get("current_goal_index", 0),
-            cost_spent_usd=data.get("cost_spent_usd", 0.0),
-            duration_seconds=data.get("duration_seconds", 0),
-            status=data.get("status", "pending"),
-            stop_trigger=stop_trigger,
-            checkpoint_events=[CheckpointEvent.from_dict(e) for e in data.get("checkpoint_events", [])],
+            checkpoints=[CheckpointEvent.from_dict(c) for c in data.get("checkpoints", [])],
+            work_log=[WorkLogEntry.from_dict(e) for e in data.get("work_log", [])],
             ended_at=data.get("ended_at"),
-            end_reason=data.get("end_reason"),
-            last_persisted_at=data.get("last_persisted_at"),
-            pause_reason=data.get("pause_reason"),
+            status=data.get("status"),
+            final_summary=data.get("final_summary"),
         )
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            "session_id": self.session_id,
-            "started_at": self.started_at,
-            "budget_usd": self.budget_usd,
-            "duration_limit_seconds": self.duration_limit_seconds,
-            "goals": [g.to_dict() for g in self.goals],
-            "current_goal_index": self.current_goal_index,
-            "cost_spent_usd": self.cost_spent_usd,
-            "duration_seconds": self.duration_seconds,
-            "status": self.status,
-            "stop_trigger": self.stop_trigger.value if isinstance(self.stop_trigger, CheckpointTrigger) else self.stop_trigger,
-            "checkpoint_events": [e.to_dict() for e in self.checkpoint_events],
-            "ended_at": self.ended_at,
-            "end_reason": self.end_reason,
-            "last_persisted_at": self.last_persisted_at,
-            "pause_reason": self.pause_reason,
-        }
