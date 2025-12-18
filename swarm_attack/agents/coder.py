@@ -498,12 +498,13 @@ class CoderAgent(BaseAgent):
 
         return "\n".join(lines)
 
-    def _format_existing_implementation(self, existing: dict[str, str]) -> str:
+    def _format_existing_implementation(self, existing: dict[str, str], is_first_attempt: bool = True) -> str:
         """
         Format existing implementation files for inclusion in the prompt.
 
         Args:
             existing: Dictionary mapping file paths to their contents.
+            is_first_attempt: True on first attempt (stronger warnings), False on retries.
 
         Returns:
             Formatted string showing existing implementation.
@@ -511,10 +512,27 @@ class CoderAgent(BaseAgent):
         if not existing:
             return ""
 
-        lines = ["## 📁 YOUR PREVIOUS IMPLEMENTATION", ""]
-        lines.append("You already wrote the following code. **Iterate on it, don't rewrite from scratch.**")
-        lines.append("Only modify what's needed to fix the failing tests.")
-        lines.append("")
+        if is_first_attempt:
+            lines = [
+                "## EXISTING IMPLEMENTATION (MUST PRESERVE)",
+                "",
+                "**WARNING: These files already exist in the codebase.**",
+                "**DO NOT rewrite these files from scratch.**",
+                "",
+                "You MUST:",
+                "1. Read and understand this existing code",
+                "2. Keep ALL working methods intact",
+                "3. Only ADD new methods or MODIFY specific broken methods",
+                "",
+            ]
+        else:
+            lines = [
+                "## 📁 YOUR PREVIOUS IMPLEMENTATION (ITERATE, DON'T REWRITE)",
+                "",
+                "You already wrote the following code. **Iterate on it, don't rewrite from scratch.**",
+                "Only modify what's needed to fix the failing tests.",
+                "",
+            ]
 
         for path, content in existing.items():
             # Truncate very long files to avoid token limits
@@ -782,9 +800,13 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         elif project_info["type"] == "Node.js/TypeScript":
             code_fence_lang = "typescript"
 
-        # Build failure and existing implementation sections (for retries)
+        # Build failure and existing implementation sections
+        # is_first_attempt controls warning strength (stronger on first attempt)
         failures_section = self._format_test_failures(test_failures or [])
-        existing_section = self._format_existing_implementation(existing_implementation or {})
+        is_first_attempt = retry_number == 0
+        existing_section = self._format_existing_implementation(
+            existing_implementation or {}, is_first_attempt=is_first_attempt
+        )
 
         # Build module registry context (shows prior issue outputs)
         module_context_section = self._format_module_registry(module_registry)
@@ -978,6 +1000,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 - test_path: Optional path to test file (defaults to standard location)
                 - retry_number: Retry attempt number (0 = first attempt)
                 - test_failures: List of failure details from previous verifier run
+                - max_turns_override: Optional LLM max_turns (default 20, set by ComplexityGate)
 
         Returns:
             AgentResult with:
@@ -1119,15 +1142,19 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
             self._log("coder_error", {"error": str(e)}, level="error")
             return AgentResult.failure_result(str(e))
 
-        # NEW: Read existing implementation on retry
+        # CRITICAL: Always read existing implementation to preserve working code
+        # This prevents destructive rewrites on both first attempts AND retries
         existing_implementation: dict[str, str] = {}
-        if retry_number > 0:
-            existing_implementation = self._read_existing_implementation(
-                test_content, expected_modules
-            )
+        existing_implementation = self._read_existing_implementation(
+            test_content, expected_modules
+        )
+        if existing_implementation:
             self._log("coder_existing_impl", {
                 "retry_number": retry_number,
                 "existing_files": list(existing_implementation.keys()),
+                "total_existing_lines": sum(
+                    content.count('\n') for content in existing_implementation.values()
+                ),
             })
 
         # Build prompt and invoke Claude
@@ -1148,11 +1175,19 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         try:
             # No tools - all context is in prompt, just generate code with # FILE: markers
             # Using Write/Edit tools causes result.text to be empty, breaking file parsing
-            # max_turns=10 allows for large code output generation
+            # Allow complex issues to complete - 20 turns default for medium/large issues
+            # Complexity Gate (Phase 2) can dynamically adjust via max_turns_override
+            max_turns = context.get("max_turns_override", 20)
+            if max_turns != 20:
+                self._log("coder_max_turns_override", {
+                    "max_turns": max_turns,
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                })
             result = self.llm.run(
                 prompt,
                 allowed_tools=[],
-                max_turns=10,
+                max_turns=max_turns,
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:
@@ -1196,6 +1231,21 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 
                 full_path = Path(self.config.repo_root) / file_path
                 is_new = not file_exists(full_path)
+
+                # Detect large overwrites - potential destructive rewrite
+                if not is_new:
+                    existing_content = read_file(full_path)
+                    from difflib import SequenceMatcher
+                    similarity = SequenceMatcher(None, existing_content, content).quick_ratio()
+
+                    if similarity < 0.5 and existing_content.count('\n') > 50:
+                        self._log("coder_large_overwrite_warning", {
+                            "file_path": file_path,
+                            "similarity_ratio": round(similarity, 2),
+                            "existing_lines": existing_content.count('\n'),
+                            "new_lines": content.count('\n'),
+                            "warning": "Large file being significantly rewritten - possible destructive change",
+                        }, level="warning")
 
                 ensure_dir(full_path.parent)
                 safe_write(full_path, content)

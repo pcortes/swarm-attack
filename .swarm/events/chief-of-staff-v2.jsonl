@@ -13,3 +13,12 @@
 {"ts": "2025-12-18T20:12:10.579481Z", "event": "retry_started", "issue": 6, "attempt": 2}
 {"ts": "2025-12-18T20:12:31.045319Z", "event": "retry_started", "issue": 6, "attempt": 3}
 {"ts": "2025-12-18T20:12:52.373984Z", "event": "issue_blocked", "issue": 6, "reason": "Max retries exceeded: Issue tests failed: 0 failed, 0 passed", "retries": 3}
+{"ts": "2025-12-18T20:16:52.662240Z", "event": "issue_started", "issue": 7, "session": "sess_20251218_201652_661336"}
+{"ts": "2025-12-18T21:07:17.949378Z", "event": "issue_started", "issue": 5, "session": "sess_20251218_210717_948434"}
+{"ts": "2025-12-18T21:11:40.851059Z", "event": "issue_started", "issue": 5, "session": "sess_20251218_211140_850147"}
+{"ts": "2025-12-18T21:16:25.188556Z", "event": "retry_started", "issue": 5, "attempt": 1}
+{"ts": "2025-12-18T21:18:04.236730Z", "event": "retry_started", "issue": 5, "attempt": 2}
+{"ts": "2025-12-18T21:19:40.795319Z", "event": "retry_started", "issue": 5, "attempt": 3}
+{"ts": "2025-12-18T21:21:15.151497Z", "event": "issue_blocked", "issue": 5, "reason": "Max retries exceeded: Regression detected: 35 tests failed in full suite", "retries": 3}
+{"ts": "2025-12-18T21:25:04.771534Z", "event": "issue_started", "issue": 2, "session": "sess_20251218_212504_770578"}
+{"ts": "2025-12-18T22:05:52.866807Z", "event": "issue_started", "issue": 5, "session": "sess_20251218_220552_865914"}

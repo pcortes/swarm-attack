@@ -201,6 +201,136 @@ Given a spec for "User Authentication", issues might be:
 }
 ```
 
+## Sizing Guidelines (CRITICAL)
+
+Each issue must be completable by an LLM coder in ~15 conversation turns.
+
+**Sizing Heuristics:**
+| Size | Acceptance Criteria | Files | Lines of Code | Methods |
+|------|---------------------|-------|---------------|---------|
+| Small | 1-4 | 1-2 | ~50 | 1-2 |
+| Medium | 5-8 | 2-3 | ~150 | 3-5 |
+| Large | 9-12 | 4-6 | ~300 | 6-8 |
+
+**HARD LIMIT: If an issue has >8 acceptance criteria or >6 methods to implement, you MUST split it.**
+
+**Split Strategies:**
+1. By layer: data model → API → UI
+2. By operation: CRUD operations as separate issues
+3. By trigger/case: Split 6 triggers into 2 issues of 3 each
+4. By phase: setup/config → core logic → integration
+
+**Example - BAD (too large):**
+"Implement CheckpointSystem with trigger detection"
+- 6 trigger types
+- 8 methods
+- Config changes
+- 12+ acceptance criteria
+
+**Example - GOOD (properly split):**
+Issue 7a: "Implement trigger detection helpers"
+- _detect_triggers() method
+- 6 trigger type checks (case-insensitive tag matching)
+- 4 acceptance criteria
+
+Issue 7b: "Implement checkpoint creation"
+- _create_checkpoint(), _build_context(), _build_options(), _build_recommendation()
+- 5 acceptance criteria
+
+Issue 7c: "Implement CheckpointSystem public API"
+- check_before_execution(), resolve_checkpoint(), update_daily_cost(), reset_daily_cost()
+- Config changes (checkpoint_cost_single, checkpoint_cost_daily)
+- 5 acceptance criteria
+
+---
+
+## FILE OPERATIONS (REQUIRED)
+
+Every issue body MUST explicitly declare file operations.
+
+### Required Format
+
+Add this section to every issue body:
+
+```markdown
+## File Operations
+
+**CREATE:**
+- `path/to/new_file.py` - Purpose of this new file
+
+**UPDATE:**
+- `path/to/existing.py` (preserve: method_a, method_b, all existing fields)
+```
+
+### Rules
+
+1. Every issue MUST have at least one file operation
+2. UPDATE operations MUST include a preservation list
+3. Test files follow implementation files
+
+### Examples
+
+**For a new feature:**
+```markdown
+## File Operations
+
+**CREATE:**
+- `swarm_attack/my_feature/config.py` - Configuration dataclass
+- `tests/generated/my-feature/test_issue_1.py` - Unit tests
+```
+
+**For modifying existing code:**
+```markdown
+## File Operations
+
+**UPDATE:**
+- `swarm_attack/config.py` (preserve: BugBashConfig, SwarmConfig.from_dict)
+
+**CREATE:**
+- `swarm_attack/my_feature/manager.py` - New manager class
+```
+
+---
+
+## PRESERVATION DIRECTIVES (REQUIRED for UPDATE)
+
+When an issue modifies existing files, include explicit preservation instructions:
+
+```markdown
+## Preservation Directive
+
+**DO NOT modify:**
+- `__init__` method signature
+- Existing helper methods: `_helper_a`, `_helper_b`
+- Any methods not mentioned in acceptance criteria
+
+**ONLY add:**
+- New method: `new_method_name()`
+- New field: `new_field: type = default`
+
+**ONLY modify:**
+- Method `existing_method()` - add null check for parameter X
+```
+
+---
+
+## PRE-FLIGHT VALIDATION (REQUIRED)
+
+Before outputting any issue, validate against these limits:
+
+| Check | Limit | Action |
+|-------|-------|--------|
+| Acceptance criteria | <= 8 | Split if exceeded |
+| Methods to implement | <= 6 | Split if exceeded |
+| Files to modify | <= 4 | Split if exceeded |
+
+**HARD REJECT if missing:**
+- [ ] `## File Operations` section
+- [ ] Preservation list for UPDATE operations
+- [ ] `## Acceptance Criteria` with checkboxes
+
+---
+
 ## Important Notes
 
 - **Return ONLY JSON** - No markdown formatting, no explanatory text

@@ -9,6 +9,7 @@ This package contains the AI agents that perform automated tasks:
 - IssueCreatorAgent: Generates GitHub issues from specs
 - IssueValidatorAgent: Validates generated issues
 - PrioritizationAgent: Determines which issue to work on next
+- ComplexityGateAgent: Validates issue complexity before implementation
 - CoderAgent: Implementation Agent with full TDD workflow (test + code + verify)
 - VerifierAgent: Runs tests to verify implementation correctness
 - RecoveryAgent: Analyzes failures and generates recovery plans
@@ -20,6 +21,7 @@ from swarm_attack.agents.base import AgentResult, BaseAgent
 from swarm_attack.agents.bug_critic import BugCriticAgent
 from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.coder import CoderAgent
+from swarm_attack.agents.complexity_gate import ComplexityEstimate, ComplexityGateAgent
 from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.issue_creator import IssueCreatorAgent
 from swarm_attack.agents.issue_validator import IssueValidatorAgent
@@ -36,6 +38,8 @@ __all__ = [
     "BugCriticAgent",
     "BugModeratorAgent",
     "CoderAgent",
+    "ComplexityEstimate",
+    "ComplexityGateAgent",
     "GateAgent",
     "GateResult",
     "IssueCreatorAgent",

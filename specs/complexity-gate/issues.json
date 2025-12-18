@@ -1,0 +1,60 @@
+{
+  "feature_id": "complexity-gate",
+  "generated_at": "2025-12-18T21:00:00Z",
+  "issues": [
+    {
+      "title": "Increase CoderAgent max_turns from 10 to 20",
+      "body": "## Description\n\nIncrease the default max_turns for CoderAgent from 10 to 20 to allow complex issues to complete. Also add support for dynamic max_turns override from context.\n\n## Acceptance Criteria\n\n- [ ] Change `max_turns=10` to `max_turns=20` in `swarm_attack/agents/coder.py` line ~1155\n- [ ] Add support for `context.get(\"max_turns_override\", 20)` to allow dynamic adjustment\n- [ ] Add logging when max_turns_override is used\n- [ ] Unit test for max_turns override functionality\n\n## Interface Contract\n\n**File:** `swarm_attack/agents/coder.py`\n\n**Current code (~line 1155):**\n```python\nresult = self.llm.run(\n    prompt,\n    allowed_tools=[],\n    max_turns=10,\n)\n```\n\n**New code:**\n```python\nmax_turns = context.get(\"max_turns_override\", 20)\nresult = self.llm.run(\n    prompt,\n    allowed_tools=[],\n    max_turns=max_turns,\n)\n```\n\n## Technical Notes\n\n- This is a quick fix to unblock issue 7 in chief-of-staff-v2\n- Phase 2 (Complexity Gate) will dynamically set max_turns_override",
+      "labels": ["enhancement", "backend", "complexity-gate", "quick-fix"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add sizing guidelines to Issue Creator skill prompt",
+      "body": "## Description\n\nEnhance the issue-creator skill prompt with explicit sizing guidelines to prevent oversized issues from being created.\n\n## Acceptance Criteria\n\n- [ ] Add \"Sizing Guidelines\" section to `swarm_attack/skills/issue-creator/SKILL.md`\n- [ ] Include sizing heuristics table (criteria, files, lines, methods by size)\n- [ ] Add HARD LIMIT rule: >8 acceptance criteria MUST split\n- [ ] Include split strategies (by layer, operation, trigger, phase)\n- [ ] Add good/bad example showing issue 7-style split\n\n## Interface Contract\n\n**File:** `swarm_attack/skills/issue-creator/SKILL.md`\n\nAdd after existing content:\n\n```markdown\n## Sizing Guidelines (CRITICAL)\n\nEach issue must be completable by an LLM coder in ~15 conversation turns.\n\n**Sizing Heuristics:**\n| Size | Acceptance Criteria | Files | Lines of Code | Methods |\n|------|---------------------|-------|---------------|--------|\n| Small | 1-4 | 1-2 | ~50 | 1-2 |\n| Medium | 5-8 | 2-3 | ~150 | 3-5 |\n| Large | 9-12 | 4-6 | ~300 | 6-8 |\n\n**HARD LIMIT: If an issue has >8 acceptance criteria, you MUST split it.**\n```\n\n## Technical Notes\n\n- This is proactive prevention at issue creation time\n- Complements Phase 2 Complexity Gate which validates at execution time",
+      "labels": ["enhancement", "backend", "complexity-gate", "quick-fix"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create ComplexityGateAgent with heuristic estimation",
+      "body": "## Description\n\nCreate the ComplexityGateAgent that estimates issue complexity before execution. Uses tiered approach: heuristics first, LLM (Haiku) for borderline cases.\n\n## Acceptance Criteria\n\n- [ ] Create `swarm_attack/agents/complexity_gate.py`\n- [ ] Implement `ComplexityEstimate` dataclass with fields: estimated_turns, complexity_score, needs_split, split_suggestions, confidence, reasoning\n- [ ] Implement `ComplexityGateAgent` inheriting from `BaseAgent`\n- [ ] Implement `_count_acceptance_criteria(body)` - count markdown checkboxes\n- [ ] Implement `_count_methods_to_implement(body)` - count method patterns\n- [ ] Implement `_generate_split_suggestions(issue, criteria, methods)` - actionable suggestions\n- [ ] Implement `estimate_complexity(issue, spec_content)` with tiered logic\n- [ ] Instant pass for criteria<=5 AND methods<=3\n- [ ] Instant fail for criteria>12 OR methods>8\n- [ ] Unit tests for heuristic estimation\n\n## Interface Contract\n\n**File:** `swarm_attack/agents/complexity_gate.py`\n\n```python\n@dataclass\nclass ComplexityEstimate:\n    estimated_turns: int\n    complexity_score: float  # 0.0-1.0\n    needs_split: bool\n    split_suggestions: list[str]\n    confidence: float\n    reasoning: str\n\nclass ComplexityGateAgent(BaseAgent):\n    name = \"complexity_gate\"\n    \n    def estimate_complexity(self, issue: dict, spec_content: Optional[str] = None) -> ComplexityEstimate:\n        pass\n```\n\n## Technical Notes\n\n- Inherit from `swarm_attack/agents/base.py:BaseAgent`\n- Reference `swarm_attack/agents/issue_validator.py` for patterns\n- Threshold constants should be class attributes for tuning",
+      "labels": ["enhancement", "backend", "complexity-gate"],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add LLM estimation for borderline cases in ComplexityGateAgent",
+      "body": "## Description\n\nAdd LLM-based estimation using Haiku for borderline cases where heuristics are insufficient.\n\n## Acceptance Criteria\n\n- [ ] Implement `_llm_estimate(issue, criteria, methods, spec)` method\n- [ ] Build prompt that asks for turns estimate with reasoning\n- [ ] Use Haiku model for cost efficiency\n- [ ] Parse JSON response into ComplexityEstimate\n- [ ] Fallback to heuristic if LLM fails\n- [ ] Add cost tracking via `self._total_cost`\n- [ ] Unit tests with mocked LLM\n\n## Interface Contract\n\n**Method signature:**\n```python\ndef _llm_estimate(\n    self,\n    issue: dict[str, Any],\n    criteria_count: int,\n    method_count: int,\n    spec_content: Optional[str] = None,\n) -> ComplexityEstimate:\n```\n\n**LLM response format:**\n```json\n{\n  \"estimated_turns\": 15,\n  \"complexity_score\": 0.5,\n  \"needs_split\": false,\n  \"reasoning\": \"Standard CRUD with well-defined interface\"\n}\n```\n\n## Technical Notes\n\n- Use `self._llm.run(prompt, max_turns=1, model=\"haiku\")` for cheap estimation\n- Reference `swarm_attack/llm_clients.py` for model parameter usage",
+      "labels": ["enhancement", "backend", "complexity-gate"],
+      "estimated_size": "medium",
+      "dependencies": [3],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create Complexity Gate skill prompt",
+      "body": "## Description\n\nCreate the skill prompt for the Complexity Gate agent's LLM estimation.\n\n## Acceptance Criteria\n\n- [ ] Create directory `swarm_attack/skills/complexity-gate/`\n- [ ] Create `SKILL.md` with frontmatter (name, description, allowed-tools)\n- [ ] Include complexity guidelines table\n- [ ] Specify JSON output format\n- [ ] List red flags that indicate need for split\n- [ ] Mirror to `.claude/skills/complexity-gate/SKILL.md`\n\n## Interface Contract\n\n**File:** `swarm_attack/skills/complexity-gate/SKILL.md`\n\n```markdown\n---\nname: complexity-gate\ndescription: Estimate issue complexity before implementation\nallowed-tools: []\n---\n\n# Complexity Gate\n...\n```\n\n## Technical Notes\n\n- No tools allowed - pure estimation task\n- Output must be JSON only (no markdown)",
+      "labels": ["enhancement", "backend", "complexity-gate"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Integrate ComplexityGateAgent into Orchestrator",
+      "body": "## Description\n\nIntegrate the Complexity Gate into the orchestrator's implementation cycle, running before CoderAgent.\n\n## Acceptance Criteria\n\n- [ ] Add `_complexity_gate` attribute to Orchestrator.__init__\n- [ ] Add `_load_issue_from_spec(feature_id, issue_number)` helper method\n- [ ] In `_run_implementation_cycle`, add gate check before coder\n- [ ] If gate.needs_split=True, return failure with split suggestions\n- [ ] If gate passes, set `context[\"max_turns_override\"]` from estimate\n- [ ] Add logging for gate pass/reject decisions\n- [ ] Integration test for gate→coder flow\n\n## Interface Contract\n\n**File:** `swarm_attack/orchestrator.py`\n\nAdd to `_run_implementation_cycle()` before coder runs:\n\n```python\n# Complexity gate check\nissue_data = self._load_issue_from_spec(feature_id, issue_number)\nif issue_data:\n    gate_result = self._complexity_gate.estimate_complexity(issue_data)\n    if gate_result.needs_split:\n        return (False, None, AgentResult.failure_result(...), cost)\n    context[\"max_turns_override\"] = gate_result.estimated_turns + 5\n```\n\n## Technical Notes\n\n- Gate is optional - if not initialized, skip gate check\n- Lazy initialize gate on first use\n- Reference `_run_pre_coder_gate` for similar pattern",
+      "labels": ["enhancement", "backend", "complexity-gate"],
+      "estimated_size": "medium",
+      "dependencies": [3, 4],
+      "order": 6,
+      "automation_type": "automated"
+    }
+  ]
+}

@@ -16,13 +16,44 @@ import aiofiles.os
 
 class CheckpointTrigger(Enum):
     """Triggers that cause a checkpoint to be created."""
-    
+
     UX_CHANGE = "UX_CHANGE"
     COST_SINGLE = "COST_SINGLE"
     COST_CUMULATIVE = "COST_CUMULATIVE"
     ARCHITECTURE = "ARCHITECTURE"
     SCOPE_CHANGE = "SCOPE_CHANGE"
     HICCUP = "HICCUP"
+
+
+# Alias for backwards compatibility
+CheckpointTriggerType = CheckpointTrigger
+CheckpointTriggerEnum = CheckpointTrigger
+
+
+@dataclass
+class TriggerCheckResult:
+    """Result of a checkpoint trigger check."""
+
+    trigger_type: str
+    reason: str
+    action: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "trigger_type": self.trigger_type,
+            "reason": self.reason,
+            "action": self.action,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TriggerCheckResult":
+        """Deserialize from dictionary."""
+        return cls(
+            trigger_type=data["trigger_type"],
+            reason=data["reason"],
+            action=data["action"],
+        )
 
 
 @dataclass
@@ -54,13 +85,13 @@ class CheckpointOption:
 @dataclass
 class Checkpoint:
     """A human-in-the-loop checkpoint requiring approval.
-    
+
     Checkpoints are created when the system encounters a situation
     that requires human decision-making before proceeding.
     """
-    
+
     checkpoint_id: str
-    trigger: CheckpointTrigger
+    trigger: CheckpointTriggerType
     context: str
     options: list[CheckpointOption]
     recommendation: str
@@ -92,7 +123,7 @@ class Checkpoint:
         """Deserialize from dictionary."""
         return cls(
             checkpoint_id=data["checkpoint_id"],
-            trigger=CheckpointTrigger(data["trigger"]),
+            trigger=CheckpointTriggerType(data["trigger"]),
             context=data["context"],
             options=[CheckpointOption.from_dict(opt) for opt in data.get("options", [])],
             recommendation=data["recommendation"],
@@ -212,8 +243,26 @@ class CheckpointStore:
 class CheckpointSystem:
     """System for detecting checkpoint triggers.
 
-    Stub implementation - full implementation in Issue #7.
+    Implements trigger detection for autopilot sessions including:
+    - Stop triggers (user-defined stop conditions)
+    - Cost/budget triggers
+    - Time/duration triggers
+    - Approval-required action detection
+    - High-risk action detection
+    - Error streak detection
+    - Blocker detection
     """
+
+    # High-risk keywords for action detection
+    HIGH_RISK_KEYWORDS = [
+        "architecture", "architectural",
+        "main", "master",  # branch names
+        "delete", "drop", "rm -rf", "force push",
+        "push to main", "push to master", "merge to main", "merge to master",
+    ]
+
+    # Keywords that require approval
+    APPROVAL_KEYWORDS = ["approve", "approval", "confirm", "review"]
 
     def __init__(self, config: Any = None, store: Optional[CheckpointStore] = None):
         """Initialize the checkpoint system.
@@ -226,13 +275,136 @@ class CheckpointSystem:
         self.store = store or CheckpointStore()
         self._error_count = 0
 
-    def check_triggers(self, context: Any, action: str) -> Optional[CheckpointTrigger]:
+    def check_triggers(self, session: Any, action: str) -> Optional[TriggerCheckResult]:
         """Check if any checkpoint triggers are met.
 
-        Stub - always returns None (no trigger).
-        Full implementation in Issue #7.
+        Checks triggers in priority order:
+        1. Stop trigger (user-defined)
+        2. Cost/budget exceeded
+        3. Time/duration exceeded
+        4. Approval required
+        5. High-risk action
+        6. Error streak exceeded
+        7. Blocker detected
+
+        Args:
+            session: The autopilot session with cost/time/trigger info.
+            action: The action about to be performed.
+
+        Returns:
+            CheckpointTrigger if a trigger is met, None otherwise.
         """
+        # 1. Check stop trigger first (highest priority)
+        if self.matches_stop_trigger(session, action):
+            return TriggerCheckResult(
+                trigger_type="stop_trigger",
+                reason=f"Stop trigger matched: {getattr(session, 'stop_trigger', '')}",
+                action="pause session",
+            )
+
+        # 2. Check cost/budget
+        budget_usd = getattr(self.config, 'budget_usd', None) if self.config else None
+        if budget_usd is not None:
+            total_cost = getattr(session, 'total_cost_usd', 0)
+            if total_cost > budget_usd:
+                return TriggerCheckResult(
+                    trigger_type="cost",
+                    reason=f"Budget exceeded: ${total_cost:.2f} > ${budget_usd:.2f}",
+                    action="pause session",
+                )
+
+        # 3. Check time/duration
+        duration_minutes = getattr(self.config, 'duration_minutes', None) if self.config else None
+        if duration_minutes is not None:
+            elapsed = getattr(session, 'elapsed_minutes', 0)
+            if elapsed > duration_minutes:
+                return TriggerCheckResult(
+                    trigger_type="time",
+                    reason=f"Duration exceeded: {elapsed}m > {duration_minutes}m",
+                    action="pause session",
+                )
+
+        # 4. Check approval required
+        if self.should_pause_for_approval(action):
+            return TriggerCheckResult(
+                trigger_type="approval",
+                reason=f"Action requires approval: {action}",
+                action="request approval",
+            )
+
+        # 5. Check high-risk action
+        if self.is_high_risk(action):
+            return TriggerCheckResult(
+                trigger_type="high_risk",
+                reason=f"High-risk action detected: {action}",
+                action="require approval",
+            )
+
+        # 6. Check error streak
+        error_streak = getattr(self.config, 'error_streak', 3) if self.config else 3
+        if self._error_count >= error_streak:
+            return TriggerCheckResult(
+                trigger_type="errors",
+                reason=f"Error streak: {self._error_count} consecutive errors",
+                action="pause session",
+            )
+
+        # 7. Check blocker
+        is_blocked = getattr(session, 'is_blocked', False)
+        if is_blocked:
+            return TriggerCheckResult(
+                trigger_type="blocker",
+                reason="Session is blocked",
+                action="pause session",
+            )
+
         return None
+
+    def matches_stop_trigger(self, session: Any, action: str) -> bool:
+        """Check if the action matches the session's stop trigger.
+
+        Args:
+            session: The autopilot session with stop_trigger attribute.
+            action: The action to check.
+
+        Returns:
+            True if the action matches the stop trigger.
+        """
+        stop_trigger = getattr(session, 'stop_trigger', None)
+        if not stop_trigger:
+            return False
+
+        # Case-insensitive contains check
+        return stop_trigger.lower() in action.lower()
+
+    def is_high_risk(self, action: str) -> bool:
+        """Check if an action is high-risk.
+
+        High-risk actions include:
+        - Architectural changes
+        - Pushing to main/master branch
+        - Destructive operations (delete, drop, rm -rf, force push)
+
+        Args:
+            action: The action to check.
+
+        Returns:
+            True if the action is high-risk.
+        """
+        action_lower = action.lower()
+        return any(keyword in action_lower for keyword in self.HIGH_RISK_KEYWORDS)
+
+    def should_pause_for_approval(self, action: str) -> bool:
+        """Check if an action requires approval before proceeding.
+
+        Args:
+            action: The action to check.
+
+        Returns:
+            True if the action requires approval.
+        """
+        action_lower = action.lower()
+        return any(keyword in action_lower for keyword in self.APPROVAL_KEYWORDS)
 
     def reset_error_count(self) -> None:
         """Reset the consecutive error counter."""

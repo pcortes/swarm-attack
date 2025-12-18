@@ -279,6 +279,70 @@ Then you MUST:
 
 ---
 
+## PRESERVING EXISTING CODE (CRITICAL)
+
+When modifying existing files, you MUST preserve working code. Rewriting entire files is **FORBIDDEN** except for initial creation.
+
+### Rule 1: Read Before Write
+
+**ALWAYS** check if the file already exists before outputting it:
+1. Check if the file already exists
+2. Identify which methods/classes need modification
+3. Preserve all methods you are NOT changing
+
+### Rule 2: Targeted Modifications Only
+
+When fixing failing tests:
+- **DO NOT** rewrite working methods
+- **DO NOT** remove or replace code unrelated to the failing test
+- **DO NOT** change function signatures unless tests require it
+- **DO** make minimal, surgical changes to fix the specific failure
+
+### Rule 3: Add vs Replace Operations
+
+**ADD operation** (file does not exist):
+- Create complete file with all required classes/functions
+
+**MODIFY operation** (file already exists):
+- Preserve ALL existing methods that are working
+- Only modify the specific method/class causing the test failure
+
+### Anti-Patterns to AVOID
+
+```python
+# WRONG - Rewriting entire file to fix one method
+# FILE: src/auth/user.py
+class User:
+    # Completely rewritten from scratch, lost helper methods!
+    def authenticate(self):
+        return True
+
+# CORRECT - Preserving existing code, modifying only what's needed
+# FILE: src/auth/user.py
+# Existing methods preserved
+class User:
+    def validate_email(self, email: str) -> bool:
+        """PRESERVED - working method."""
+        return "@" in email
+
+    def authenticate(self, password: str) -> bool:
+        """MODIFIED - fixed to handle empty password."""
+        if not password:  # <-- FIX: added null check
+            return False
+        return self.check_password(password)
+```
+
+### Code Modification Checklist
+
+Before outputting any file that already exists:
+1. [ ] I read the existing file content
+2. [ ] I identified ONLY the method(s) that need fixing
+3. [ ] I preserved all other methods verbatim
+4. [ ] I kept the same file structure/organization
+5. [ ] I did NOT remove any working functionality
+
+---
+
 ## Pattern Following for swarm_attack/ Code
 
 ### Config Dataclasses

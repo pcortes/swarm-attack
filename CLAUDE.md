@@ -8,14 +8,15 @@ Swarm Attack provides two main pipelines:
 
 ### 1. Feature Swarm Pipeline
 ```
-PRD → Spec Debate → Issues → Implementation → Verify → Done
+PRD → Spec Debate → Issues → Complexity Gate → Implementation → Verify → Done
 ```
 
 Automates feature development from product requirements to working code:
 - **SpecAuthor** generates engineering specs from PRDs
 - **SpecCritic** reviews specs and scores them
 - **SpecModerator** improves specs based on feedback
-- **IssueCreator** creates GitHub issues with Interface Contracts
+- **IssueCreator** creates GitHub issues with Interface Contracts and sizing guidelines
+- **ComplexityGate** validates issue sizing before implementation (prevents timeout)
 - **Implementation Agent** handles full TDD cycle (tests + code + iteration)
 - **Verifier** runs tests and validates implementations
 
@@ -43,15 +44,15 @@ Issue Creator → Test Writer → Coder → Verifier
      (4 separate context windows, ~40% context loss per handoff)
 ```
 
-**New Pipeline (Thick-Agent):**
+**New Pipeline (Thick-Agent with Complexity Gate):**
 ```
-Issue Creator → Implementation Agent (Coder) → Verifier
-                        ↓
-            Single context window handles:
-            1. Read context (issue, spec, integration points)
-            2. Write tests (RED phase)
-            3. Implement code (GREEN phase)
-            4. Iterate until tests pass
+Issue Creator → Complexity Gate → Implementation Agent (Coder) → Verifier
+                      ↓                    ↓
+               Validates sizing     Single context window handles:
+               before burning       1. Read context (issue, spec, integration points)
+               expensive tokens     2. Write tests (RED phase)
+                                    3. Implement code (GREEN phase)
+                                    4. Iterate until tests pass
 ```
 
 The **Implementation Agent** is a "thick" agent with full context—it sees everything at once. This eliminates handoff losses and enables real TDD iteration.
@@ -260,9 +261,52 @@ This ensures the Implementation Agent knows the exact interface requirements bef
 | `swarm_attack/bug_orchestrator.py` | Bug bash orchestration |
 | `swarm_attack/agents/*.py` | Individual agent implementations |
 | `swarm_attack/agents/coder.py` | Implementation Agent (TDD) |
+| `swarm_attack/agents/complexity_gate.py` | Complexity Gate Agent |
 | `swarm_attack/debate.py` | Spec debate logic |
 | `swarm_attack/models/*.py` | Data models and state |
 | `.claude/skills/coder/SKILL.md` | Implementation Agent prompt |
+| `swarm_attack/skills/complexity-gate/SKILL.md` | Complexity Gate prompt |
+
+## Complexity Gate
+
+The Complexity Gate prevents implementation timeouts by validating issue complexity before burning expensive Opus tokens.
+
+### How It Works
+
+```
+Issue Creator → Complexity Gate → [OK] → Coder (with adjusted max_turns)
+                      ↓
+                 [Too Complex]
+                      ↓
+               Return with split suggestions
+```
+
+### Sizing Guidelines
+
+Issues must be completable in ~15-20 LLM turns. The gate uses tiered estimation:
+
+| Tier | Criteria | Action |
+|------|----------|--------|
+| **Instant Pass** | ≤5 acceptance criteria AND ≤3 methods | Pass (no LLM call) |
+| **Instant Fail** | >12 criteria OR >8 methods | Fail with split suggestions |
+| **Borderline** | Between thresholds | LLM estimation via Haiku |
+
+### Issue Sizing Limits
+
+| Size | Acceptance Criteria | Methods | Max Turns |
+|------|---------------------|---------|-----------|
+| Small | 1-4 | 1-2 | 10 |
+| Medium | 5-8 | 3-5 | 15 |
+| Large | 9-12 | 6-8 | 20 |
+| **Too Large** | >12 | >8 | **MUST SPLIT** |
+
+### Split Strategies
+
+When an issue is too complex, the gate suggests how to split it:
+1. **By layer**: data model → API → UI
+2. **By operation**: CRUD operations as separate issues
+3. **By trigger/case**: Split multiple triggers into groups of 3
+4. **By phase**: setup/config → core logic → integration
 
 ## Debugging
 
@@ -295,8 +339,9 @@ swarm-attack bug unblock bug-id
 | **SpecAuthor** | Generates engineering specs from PRDs |
 | **SpecCritic** | Reviews specs and scores them |
 | **SpecModerator** | Improves specs based on feedback |
-| **IssueCreator** | Creates GitHub issues with Interface Contracts |
-| **Implementation Agent** | TDD in single context (tests + code + iteration) |
+| **IssueCreator** | Creates GitHub issues with Interface Contracts and sizing guidelines |
+| **ComplexityGate** | Estimates issue complexity; rejects oversized issues with split suggestions |
+| **Implementation Agent** | TDD in single context (tests + code + iteration) with dynamic max_turns |
 | **Verifier** | Validates implementations and creates commits |
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |

@@ -240,11 +240,14 @@ class TaskStage(Enum):
 | **SpecModeratorAgent** | SPEC_IN_PROGRESS | Applies critic feedback, finalizes spec | Claude CLI |
 | **IssueValidatorAgent** | ISSUES_VALIDATING | Validates issues are implementable | **Codex CLI** |
 | **PrioritizationAgent** | READY_TO_IMPLEMENT | Determines issue order based on deps/value | Claude CLI |
+| **ComplexityGateAgent** | Before CODER | Estimates issue complexity; rejects oversized issues with split suggestions | Claude CLI (Haiku) |
 | **CoderAgent** | IN_PROGRESS | Implementation Agent: TDD workflow (tests + code + iterate) in single context | Claude CLI |
 | **VerifierAgent** | VERIFYING | Runs tests, checks for regressions | Claude CLI |
 | **RecoveryAgent** | On errors | Handles failures, generates recovery plans | Claude CLI |
 
 > **Note:** CoderAgent is a "thick agent" that handles the complete TDD cycle (write tests, implement code, iterate until tests pass) in a single context window. This eliminates context loss from handoffs between separate test-writing and coding agents.
+
+> **Note:** ComplexityGateAgent runs before CoderAgent to validate that issues can be completed within the max_turns budget. Issues with >12 acceptance criteria or >8 methods are rejected with split suggestions.
 
 ### 4.2 LLM Client Architecture
 

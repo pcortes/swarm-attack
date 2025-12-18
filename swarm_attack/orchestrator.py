@@ -37,6 +37,7 @@ from swarm_attack.agents import (
     SpecModeratorAgent,
     VerifierAgent,
 )
+from swarm_attack.agents.complexity_gate import ComplexityGateAgent
 from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.summarizer import SummarizerAgent
 from swarm_attack.context_builder import ContextBuilder
@@ -92,6 +93,38 @@ class IssueSessionResult:
     cost_usd: float
     retries: int
     error: Optional[str] = None
+
+
+@dataclass
+class BaselineResult:
+    """
+    Result from baseline test validation.
+
+    Run before coder starts to detect pre-existing test failures.
+    If tests are already broken, the coder shouldn't be blamed for regressions.
+    """
+
+    passed: bool
+    tests_run: int
+    tests_passed: int
+    tests_failed: int
+    pre_existing_failures: list[dict[str, Any]]
+    duration_seconds: float
+    test_files_checked: list[str]
+    skipped_reason: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for logging and context."""
+        return {
+            "passed": self.passed,
+            "tests_run": self.tests_run,
+            "tests_passed": self.tests_passed,
+            "tests_failed": self.tests_failed,
+            "pre_existing_failures": self.pre_existing_failures,
+            "duration_seconds": self.duration_seconds,
+            "test_files_checked": self.test_files_checked,
+            "skipped_reason": self.skipped_reason,
+        }
 
 
 class Orchestrator:
@@ -158,6 +191,9 @@ class Orchestrator:
         # Gate agent for pre-coder validation (lazy initialized)
         self._gate_agent: Optional[GateAgent] = None
         self._post_coder_gate_agent: Optional[GateAgent] = None
+
+        # Complexity Gate for issue sizing validation (lazy initialized)
+        self._complexity_gate: Optional[ComplexityGateAgent] = None
 
         # Coordination Layer v2 components
         self._context_builder = ContextBuilder(config, state_store)
@@ -1436,6 +1472,104 @@ class Orchestrator:
 
         return test_files
 
+    def _run_baseline_check(self, feature_id: str, issue_number: int) -> BaselineResult:
+        """
+        Run baseline test validation before coder starts.
+
+        This detects pre-existing test failures so the coder isn't blamed
+        for regressions it didn't cause.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue being implemented.
+
+        Returns:
+            BaselineResult with pass/fail status and any pre-existing failures.
+        """
+        import time
+
+        self._log("baseline_check_start", {
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+        })
+
+        start_time = time.time()
+
+        # Collect test files from DONE issues
+        test_files_to_run = self._get_regression_test_files(feature_id)
+
+        if not test_files_to_run:
+            return BaselineResult(
+                passed=True,
+                tests_run=0,
+                tests_passed=0,
+                tests_failed=0,
+                pre_existing_failures=[],
+                duration_seconds=0.0,
+                test_files_checked=[],
+                skipped_reason="No test files to validate",
+            )
+
+        # Run pytest on collected files using verifier's method
+        exit_code, output = self._verifier._run_pytest(
+            test_files=[Path(f) for f in test_files_to_run]
+        )
+
+        duration = time.time() - start_time
+        parsed = self._verifier._parse_pytest_output(output)
+        baseline_passed = exit_code == 0
+
+        pre_existing_failures: list[dict[str, Any]] = []
+        if not baseline_passed:
+            pre_existing_failures = self._verifier._parse_pytest_failures(output)
+
+        result = BaselineResult(
+            passed=baseline_passed,
+            tests_run=parsed.get("tests_run", 0),
+            tests_passed=parsed.get("tests_passed", 0),
+            tests_failed=parsed.get("tests_failed", 0),
+            pre_existing_failures=pre_existing_failures,
+            duration_seconds=round(duration, 2),
+            test_files_checked=test_files_to_run,
+        )
+
+        self._log("baseline_check_complete", {
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+            "passed": result.passed,
+            "tests_run": result.tests_run,
+            "tests_failed": result.tests_failed,
+            "duration_seconds": result.duration_seconds,
+        })
+
+        return result
+
+    def _load_issue_from_spec(
+        self, feature_id: str, issue_number: int
+    ) -> Optional[dict[str, Any]]:
+        """
+        Load issue data from issues.json for complexity gate.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue order number.
+
+        Returns:
+            Issue dict if found, None otherwise.
+        """
+        issues_path = self.config.specs_path / feature_id / "issues.json"
+        if not issues_path.exists():
+            return None
+        try:
+            with open(issues_path) as f:
+                data = json.load(f)
+            for issue in data.get("issues", []):
+                if issue.get("order") == issue_number:
+                    return issue
+        except (json.JSONDecodeError, KeyError):
+            pass
+        return None
+
     def _generate_completion_summary(
         self,
         feature_id: str,
@@ -1657,6 +1791,33 @@ class Orchestrator:
         # Pass empty list if no DONE issues (disables regression) vs None (run all)
         regression_test_files = self._get_regression_test_files(feature_id)
 
+        total_cost = 0.0
+
+        # BASELINE CHECK (only on first attempt)
+        # Detect pre-existing test failures BEFORE coder runs
+        # If tests are already broken, don't blame coder for regressions
+        baseline_result: Optional[BaselineResult] = None
+        if retry_number == 0:
+            baseline_result = self._run_baseline_check(feature_id, issue_number)
+
+            if not baseline_result.passed and not baseline_result.skipped_reason:
+                self._log("baseline_check_abort", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "pre_existing_failures": len(baseline_result.pre_existing_failures),
+                    "failures": baseline_result.pre_existing_failures[:3],  # First 3 for logging
+                }, level="error")
+
+                return (
+                    False,
+                    None,
+                    AgentResult.failure_result(
+                        f"Baseline check failed: {len(baseline_result.pre_existing_failures)} "
+                        f"pre-existing test failure(s). Fix these before implementing new issues."
+                    ),
+                    total_cost,
+                )
+
         # Build module registry from completed issues for context handoff
         module_registry: dict[str, Any] = {}
         issue_dependencies: list[int] = []
@@ -1731,8 +1892,54 @@ class Orchestrator:
             # P0 FIX: Pass completed summaries for issue-to-issue context handoff
             # This enables issue N+1 to see what issue N actually created (classes, files, patterns)
             "completed_summaries": completed_summaries,
+            # Pass baseline result for logging/debugging (if available)
+            "baseline_result": baseline_result.to_dict() if baseline_result else None,
         }
-        total_cost = 0.0
+
+        # Complexity Gate: Check if issue is too complex before burning tokens
+        # Only run on first attempt (retry doesn't change issue complexity)
+        if retry_number == 0:
+            # Lazy initialize complexity gate
+            if self._complexity_gate is None:
+                self._complexity_gate = ComplexityGateAgent(self.config, self.logger)
+
+            # Load issue data for gate estimation
+            issue_data = self._load_issue_from_spec(feature_id, issue_number)
+            if issue_data:
+                gate_estimate = self._complexity_gate.estimate_complexity(issue_data)
+                total_cost += self._complexity_gate.get_total_cost()
+
+                if gate_estimate.needs_split:
+                    self._log("complexity_gate_reject", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "estimated_turns": gate_estimate.estimated_turns,
+                        "complexity_score": gate_estimate.complexity_score,
+                        "suggestions": gate_estimate.split_suggestions,
+                        "reasoning": gate_estimate.reasoning,
+                    }, level="warning")
+
+                    # Return failure with split suggestions
+                    return (
+                        False,
+                        None,
+                        AgentResult.failure_result(
+                            f"Issue too complex (estimated {gate_estimate.estimated_turns} turns, "
+                            f"score {gate_estimate.complexity_score:.2f}). "
+                            f"Suggestions: {'; '.join(gate_estimate.split_suggestions)}"
+                        ),
+                        total_cost,
+                    )
+
+                # Adjust max_turns based on gate estimate
+                context["max_turns_override"] = min(gate_estimate.estimated_turns + 5, 30)
+                self._log("complexity_gate_pass", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "estimated_turns": gate_estimate.estimated_turns,
+                    "max_turns_override": context["max_turns_override"],
+                    "confidence": gate_estimate.confidence,
+                })
 
         # Run pre-coder gate validation (optional, only on retry_number == 0)
         # Gate validates test artifacts exist before coder runs

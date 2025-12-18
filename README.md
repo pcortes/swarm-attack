@@ -6,7 +6,7 @@ Autonomous AI-powered multi-agent development automation system. Orchestrates Cl
 
 ### Feature Swarm Pipeline
 ```
-PRD → Spec Debate → Issues → Implementation → Verify → Commit
+PRD → Spec Debate → Issues → Complexity Gate → Implementation → Verify → Commit
 ```
 
 ### Bug Bash Pipeline
@@ -19,9 +19,10 @@ Swarm Attack coordinates multiple AI agents to:
 **Feature Development:**
 1. **Generate specs** from your PRD using SpecAuthor agent
 2. **Review & improve** specs through SpecCritic/SpecModerator debate
-3. **Create GitHub issues** from approved specs (with Interface Contracts)
-4. **Implement features** with Implementation Agent (TDD in single context)
-5. **Verify & commit** with Verifier agent
+3. **Create GitHub issues** from approved specs (with Interface Contracts and sizing guidelines)
+4. **Validate complexity** with ComplexityGate (prevents timeouts on oversized issues)
+5. **Implement features** with Implementation Agent (TDD in single context, dynamic max_turns)
+6. **Verify & commit** with Verifier agent
 
 **Bug Investigation:**
 1. **Reproduce bugs** with BugResearcher agent
@@ -45,13 +46,13 @@ The previous **thin-agent** pipeline (`Issue Creator → Test Writer → Coder �
 
 **New Pipeline Solution:**
 ```
-Issue Creator → Implementation Agent (Coder) → Verifier
-                        ↓
-            Single context window handles:
-            1. Read context (issue, spec, integration points)
-            2. Write tests (RED phase)
-            3. Implement code (GREEN phase)
-            4. Iterate until tests pass
+Issue Creator → Complexity Gate → Implementation Agent (Coder) → Verifier
+                      ↓                    ↓
+               Validates sizing     Single context window handles:
+               before burning       1. Read context (issue, spec, integration points)
+               expensive tokens     2. Write tests (RED phase)
+                                    3. Implement code (GREEN phase)
+                                    4. Iterate until tests pass
 ```
 
 The **Implementation Agent** is a "thick" agent with full context—it sees the issue, spec, integration points, tests, and implementation all at once. This eliminates handoff losses and enables real TDD iteration.
@@ -346,12 +347,27 @@ swarm-attack bug status bug-id
 | **SpecAuthor** | Generates engineering specs from PRDs |
 | **SpecCritic** | Reviews specs and scores them |
 | **SpecModerator** | Improves specs based on feedback |
-| **IssueCreator** | Creates GitHub issues with Interface Contracts |
-| **Implementation Agent** | TDD in single context (tests + code + iteration) |
+| **IssueCreator** | Creates GitHub issues with Interface Contracts and sizing guidelines |
+| **ComplexityGate** | Estimates issue complexity; rejects oversized issues with split suggestions |
+| **Implementation Agent** | TDD in single context (tests + code + iteration) with dynamic max_turns |
 | **Verifier** | Validates implementations and creates commits |
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
+
+## Complexity Gate
+
+The Complexity Gate prevents implementation timeouts by validating issue complexity before burning expensive tokens.
+
+**Sizing Limits:**
+| Size | Acceptance Criteria | Methods |
+|------|---------------------|---------|
+| Small | 1-4 | 1-2 |
+| Medium | 5-8 | 3-5 |
+| Large | 9-12 | 6-8 |
+| **Too Large** | >12 | >8 |
+
+Issues exceeding limits are rejected with actionable split suggestions (by layer, operation, trigger, or phase).
 
 ## License
 

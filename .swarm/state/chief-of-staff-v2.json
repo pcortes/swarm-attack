@@ -80,7 +80,7 @@
     },
     {
       "issue_number": 5,
-      "stage": "READY",
+      "stage": "BLOCKED",
       "title": "Add pre-execution budget checks and estimated_cost_usd field",
       "dependencies": [
         1
@@ -88,9 +88,40 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null
+      "blocked_reason": "Max retries exceeded: Regression detected: 35 tests failed in full suite",
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/budget.py",
+          "swarm_attack/chief_of_staff/goal_tracker.py",
+          "swarm_attack/chief_of_staff/config.py",
+          "swarm_attack/chief_of_staff/autopilot_runner.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/goal_tracker.py": [
+            "GoalStatus",
+            "GoalPriority",
+            "RecommendationPriority",
+            "DailyGoal",
+            "Recommendation",
+            "GoalTracker"
+          ],
+          "swarm_attack/chief_of_staff/config.py": [
+            "CheckpointConfig",
+            "PriorityConfig",
+            "StandupConfig",
+            "AutopilotConfig",
+            "ChiefOfStaffConfig"
+          ],
+          "swarm_attack/chief_of_staff/autopilot_runner.py": [
+            "GoalExecutionResult",
+            "AutopilotRunResult",
+            "SessionContext",
+            "AutopilotRunner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 4 file(s): swarm_attack/chief_of_staff/budget.py, swarm_attack/chief_of_staff/goal_tracker.py, swarm_attack/chief_of_staff/config.py (+1 more); Defined: GoalStatus, GoalPriority, RecommendationPriority, DailyGoal, Recommendation"
     },
     {
       "issue_number": 6,
@@ -206,12 +237,12 @@
       "completion_summary": null
     }
   ],
-  "current_session": null,
+  "current_session": "sess_20251218_220552_865914",
   "created_at": "2025-12-18T17:26:54.317143Z",
-  "updated_at": "2025-12-18T20:12:55.953238Z",
-  "cost_total_usd": 7.013859999999999,
+  "updated_at": "2025-12-18T21:21:18.741434Z",
+  "cost_total_usd": 9.02903995,
   "cost_by_phase": {
     "SPEC_IN_PROGRESS": 4.0447109999999995,
-    "IMPLEMENTATION": 2.969149
+    "IMPLEMENTATION": 4.98432895
   }
 }
