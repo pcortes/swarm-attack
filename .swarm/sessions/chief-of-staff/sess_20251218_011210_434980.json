@@ -1,0 +1,28 @@
+{
+  "session_id": "sess_20251218_011210_434980",
+  "feature_id": "chief-of-staff",
+  "issue_number": 5,
+  "started_at": "2025-12-18T01:12:10.434999Z",
+  "status": "active",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-18T01:14:13.467856Z",
+      "commit": null,
+      "cost_usd": 0.4084235
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-18T01:14:13.902572Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": null,
+  "end_status": null,
+  "cost_usd": 0.4084235,
+  "worktree_path": null,
+  "commits": []
+}
