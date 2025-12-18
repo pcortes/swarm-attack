@@ -1,12 +1,202 @@
 {
   "feature_id": "chief-of-staff-v2",
-  "phase": "SPEC_NEEDS_APPROVAL",
-  "tasks": [],
-  "current_session": null,
+  "phase": "IMPLEMENTING",
+  "tasks": [
+    {
+      "issue_number": 1,
+      "stage": "READY",
+      "title": "Add orchestrator dependency and tags field to DailyGoal",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/goal_tracker.py",
+          "swarm_attack/chief_of_staff/autopilot_runner.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/goal_tracker.py": [
+            "GoalStatus",
+            "GoalPriority",
+            "RecommendationPriority",
+            "DailyGoal",
+            "Recommendation",
+            "GoalTracker"
+          ],
+          "swarm_attack/chief_of_staff/autopilot_runner.py": [
+            "GoalExecutionResult",
+            "AutopilotRunResult",
+            "SessionContext",
+            "AutopilotRunner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): swarm_attack/chief_of_staff/goal_tracker.py, swarm_attack/chief_of_staff/autopilot_runner.py; Defined: GoalStatus, GoalPriority, RecommendationPriority, DailyGoal, Recommendation"
+    },
+    {
+      "issue_number": 2,
+      "stage": "BACKLOG",
+      "title": "Implement feature execution path in AutopilotRunner",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 3,
+      "stage": "BACKLOG",
+      "title": "Implement bug execution path in AutopilotRunner",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 4,
+      "stage": "BACKLOG",
+      "title": "Implement spec pipeline execution path in AutopilotRunner",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 5,
+      "stage": "BACKLOG",
+      "title": "Add pre-execution budget checks and estimated_cost_usd field",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 6,
+      "stage": "READY",
+      "title": "Create Checkpoint and CheckpointStore dataclasses",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 7,
+      "stage": "BACKLOG",
+      "title": "Implement CheckpointSystem with trigger detection",
+      "dependencies": [
+        6
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 8,
+      "stage": "BACKLOG",
+      "title": "Add checkpoint CLI commands",
+      "dependencies": [
+        6,
+        7
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 9,
+      "stage": "BACKLOG",
+      "title": "Integrate CheckpointSystem with AutopilotRunner",
+      "dependencies": [
+        1,
+        7
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 10,
+      "stage": "BACKLOG",
+      "title": "Create RecoveryManager with retry logic",
+      "dependencies": [
+        7
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 11,
+      "stage": "BACKLOG",
+      "title": "Add escalation to checkpoint with hiccup marking",
+      "dependencies": [
+        10
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 12,
+      "stage": "BACKLOG",
+      "title": "Implement Episode logging and PreferenceLearner",
+      "dependencies": [
+        7
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    }
+  ],
+  "current_session": "sess_20251218_200319_202900",
   "created_at": "2025-12-18T17:26:54.317143Z",
-  "updated_at": "2025-12-18T18:02:19.939816Z",
-  "cost_total_usd": 4.0447109999999995,
+  "updated_at": "2025-12-18T20:03:18.970619Z",
+  "cost_total_usd": 5.70535225,
   "cost_by_phase": {
-    "SPEC_IN_PROGRESS": 4.0447109999999995
+    "SPEC_IN_PROGRESS": 4.0447109999999995,
+    "IMPLEMENTATION": 1.66064125
   }
 }

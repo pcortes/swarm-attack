@@ -1661,6 +1661,7 @@ class Orchestrator:
         module_registry: dict[str, Any] = {}
         issue_dependencies: list[int] = []
         all_tasks: list = []
+        completed_summaries: list[dict[str, Any]] = []
         if self._state_store:
             module_registry = self._state_store.get_module_registry(feature_id)
             # Get dependencies for schema drift prevention
@@ -1671,6 +1672,11 @@ class Orchestrator:
                     if task.issue_number == issue_number:
                         issue_dependencies = task.dependencies
                         break
+
+            # Build completed summaries for context handoff between issues
+            # This is the PRIMARY mechanism for issue N+1 to know what issue N created
+            context_builder = ContextBuilder(self.config, self._state_store)
+            completed_summaries = context_builder.get_completed_summaries(feature_id)
 
         # Compute test_path for coder context handoff
         # This ensures orchestrator and coder use the same test file location
@@ -1722,6 +1728,9 @@ class Orchestrator:
             # NEW: Pass dependencies for schema drift prevention (compact schema filtering)
             "issue_dependencies": issue_dependencies,
             "all_tasks": all_tasks,
+            # P0 FIX: Pass completed summaries for issue-to-issue context handoff
+            # This enables issue N+1 to see what issue N actually created (classes, files, patterns)
+            "completed_summaries": completed_summaries,
         }
         total_cost = 0.0
 

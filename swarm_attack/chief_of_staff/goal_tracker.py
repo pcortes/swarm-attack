@@ -52,6 +52,7 @@ class DailyGoal:
     linked_feature: Optional[str] = None
     linked_bug: Optional[str] = None
     linked_spec: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DailyGoal":
@@ -73,6 +74,7 @@ class DailyGoal:
             linked_feature=data.get("linked_feature"),
             linked_bug=data.get("linked_bug"),
             linked_spec=data.get("linked_spec"),
+            tags=data.get("tags", []),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -88,6 +90,7 @@ class DailyGoal:
             "linked_feature": self.linked_feature,
             "linked_bug": self.linked_bug,
             "linked_spec": self.linked_spec,
+            "tags": self.tags,
         }
 
 

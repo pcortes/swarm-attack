@@ -1,0 +1,29 @@
+{
+  "feature_id": "chief-of-staff-v2",
+  "validated_at": "2025-12-18T19:23:00.871725Z",
+  "valid": false,
+  "summary": "Found 3 errors and 0 warnings across 12 issues",
+  "problems": [
+    {
+      "issue_order": 2,
+      "severity": "error",
+      "type": "missing_context",
+      "description": "Acceptance criteria require updating goal.error_count on failures, but the issue never introduces that field or references the issue that adds it, so the change cannot be implemented as written."
+    },
+    {
+      "issue_order": 3,
+      "severity": "error",
+      "type": "missing_context",
+      "description": "The bug execution path must increment goal.error_count, yet the issue gives no instructions for adding that field (it appears only later in order 5), leaving implementers without the required data model change."
+    },
+    {
+      "issue_order": 4,
+      "severity": "error",
+      "type": "missing_context",
+      "description": "This spec path also needs goal.error_count, which is not defined or linked via dependencies, so the work cannot be completed until the data model changes are clarified."
+    }
+  ],
+  "issues_checked": 12,
+  "passed": 9,
+  "failed": 3
+}

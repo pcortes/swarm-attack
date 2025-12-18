@@ -51,6 +51,7 @@ class CoderAgent(BaseAgent):
     # These features CAN write to swarm_attack/ directory (bypassing protection)
     INTERNAL_FEATURES = frozenset([
         "chief-of-staff",
+        "chief-of-staff-v2",
     ])
 
     def __init__(
@@ -642,6 +643,64 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         lines.append("If your implementation needs classes from these files, import them directly.")
         return "\n".join(lines)
 
+    def _format_completed_summaries(self, summaries: list[dict[str, Any]]) -> str:
+        """
+        Format completed issue summaries for prompt injection.
+
+        P0 FIX: This is the PRIMARY mechanism for issue-to-issue context handoff.
+        When Issue N completes, Issue N+1 can see exactly what was created:
+        - Semantic summary of what was implemented
+        - Files created and their locations
+        - Classes defined and their purposes
+
+        Args:
+            summaries: List of completion summaries from ContextBuilder.get_completed_summaries()
+
+        Returns:
+            Formatted markdown section for inclusion in prompt.
+        """
+        if not summaries:
+            return ""
+
+        lines = [
+            "## Completed Issues Context",
+            "",
+            "**The following issues have been implemented. Use this context for integration:**",
+            "",
+        ]
+
+        for summary in summaries:
+            issue_num = summary.get("issue_number", "?")
+            title = summary.get("title", "Unknown")
+            completion = summary.get("completion_summary", "")
+
+            lines.append(f"### Issue #{issue_num}: {title}")
+
+            if completion:
+                lines.append(f"**What was implemented:** {completion}")
+
+            files = summary.get("files_created", [])
+            if files:
+                lines.append(f"**Files created:** {', '.join(files)}")
+
+            classes = summary.get("classes_defined", {})
+            if classes:
+                class_items = []
+                for file_path, class_names in classes.items():
+                    if class_names:
+                        class_items.append(f"`{file_path}`: {', '.join(class_names)}")
+                if class_items:
+                    lines.append(f"**Classes:** {'; '.join(class_items)}")
+
+            lines.append("")
+
+        lines.append("---")
+        lines.append("**IMPORTANT:** Import and integrate with these existing implementations.")
+        lines.append("Do NOT recreate classes that already exist.")
+        lines.append("")
+
+        return "\n".join(lines)
+
     def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:
         """
         Extract classes/functions from written files.
@@ -696,9 +755,20 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         existing_implementation: Optional[dict[str, str]] = None,
         test_path: Optional[Path] = None,
         module_registry: Optional[dict[str, Any]] = None,
+        completed_summaries: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         """Build the full prompt for Claude."""
         skill_prompt = self._load_skill_prompt()
+
+        # P0 FIX: Inject project instructions from CLAUDE.md
+        from swarm_attack.context_builder import ContextBuilder
+        context_builder = ContextBuilder(self.config)
+        project_instructions = context_builder.format_project_instructions_for_prompt()
+
+        # P0 FIX: Format completed summaries for context handoff
+        completed_summaries_section = ""
+        if completed_summaries:
+            completed_summaries_section = self._format_completed_summaries(completed_summaries)
 
         modules_str = "\n".join(f"- {m}" for m in expected_modules) if expected_modules else "- (Infer from test imports)"
 
@@ -731,6 +801,10 @@ Review the failures below and make TARGETED fixes. DO NOT rewrite everything.
         return f"""{skill_prompt}
 
 ---
+
+{project_instructions}
+
+{completed_summaries_section}
 
 ## Context for This Task
 
@@ -927,6 +1001,9 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # NEW: Extract module registry for context handoff from prior issues
         module_registry = context.get("module_registry", {})
 
+        # P0 FIX: Extract completed summaries for issue-to-issue context handoff
+        completed_summaries = context.get("completed_summaries", [])
+
         self._log("coder_start", {
             "feature_id": feature_id,
             "issue_number": issue_number,
@@ -1065,6 +1142,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
             existing_implementation=existing_implementation,
             test_path=test_path,
             module_registry=module_registry,
+            completed_summaries=completed_summaries,
         )
 
         try:

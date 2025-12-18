@@ -88,8 +88,10 @@ class AutopilotRunner:
 
     Usage:
         runner = AutopilotRunner(
-            config=config,
+            orchestrator=orchestrator,
+            bug_orchestrator=bug_orchestrator,
             checkpoint_system=checkpoint_system,
+            config=config,
             session_store=session_store,
         )
 
@@ -102,11 +104,11 @@ class AutopilotRunner:
 
     def __init__(
         self,
-        config: ChiefOfStaffConfig,
+        orchestrator: Optional["Orchestrator"],
+        bug_orchestrator: Optional["BugOrchestrator"],
         checkpoint_system: CheckpointSystem,
+        config: ChiefOfStaffConfig,
         session_store: AutopilotSessionStore,
-        orchestrator: Optional["Orchestrator"] = None,
-        bug_orchestrator: Optional["BugOrchestrator"] = None,
         on_goal_start: Optional[Callable[[DailyGoal], None]] = None,
         on_goal_complete: Optional[Callable[[DailyGoal, GoalExecutionResult], None]] = None,
         on_checkpoint: Optional[Callable[[CheckpointTrigger], None]] = None,
@@ -114,20 +116,20 @@ class AutopilotRunner:
         """Initialize AutopilotRunner.
 
         Args:
-            config: ChiefOfStaffConfig with autopilot settings
-            checkpoint_system: CheckpointSystem for trigger detection
-            session_store: AutopilotSessionStore for persistence
             orchestrator: Optional Orchestrator for feature execution
             bug_orchestrator: Optional BugOrchestrator for bug execution
+            checkpoint_system: CheckpointSystem for trigger detection
+            config: ChiefOfStaffConfig with autopilot settings
+            session_store: AutopilotSessionStore for persistence
             on_goal_start: Optional callback when goal execution starts
             on_goal_complete: Optional callback when goal completes
             on_checkpoint: Optional callback when checkpoint triggers
         """
-        self.config = config
-        self.checkpoint_system = checkpoint_system
-        self.session_store = session_store
         self.orchestrator = orchestrator
         self.bug_orchestrator = bug_orchestrator
+        self.checkpoint_system = checkpoint_system
+        self.config = config
+        self.session_store = session_store
         self.on_goal_start = on_goal_start
         self.on_goal_complete = on_goal_complete
         self.on_checkpoint = on_checkpoint
