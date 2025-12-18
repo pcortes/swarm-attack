@@ -30,18 +30,20 @@ v2 transforms Chief of Staff from a **workflow tool** into a **truly autonomous 
 |------------|----------|-----------|
 | Execution | Stub (marks goals complete without work) | **Real orchestrator integration** |
 | Recovery | Manual intervention required | **4-level automatic retry** |
-| Memory | JSONL decisions only | **Episode memory + Reflexion** |
-| Planning | Single-day horizon | **Multi-day campaigns** |
+| Memory | JSONL decisions only | **Episode memory + Reflexion + Preference Learning** |
+| Planning | Single-day horizon | **Multi-day campaigns + Weekly summaries** |
 | Validation | Human reviews everything | **Internal critics pre-filter** |
+| Human Signoff | None | **Collaborative checkpoint system (P0)** |
 
 ### Expert Panel Priority Ranking (Final)
 
 | Rank | Extension | Impact × Feasibility | Rationale |
 |------|-----------|---------------------|-----------|
+| **P0** | Human-in-the-Loop Checkpoints | REQUIRED | PRD mandates collaborative autonomy |
 | **P1** | Real Execution | 10 × 9 = 90 | Foundation for everything - without this, nothing works |
 | **P2** | Hierarchical Recovery | 9 × 8 = 72 | Essential for overnight autonomy |
-| **P3** | Episode Memory + Reflexion | 9 × 7 = 63 | Low-cost learning with high ROI |
-| **P4** | Multi-Day Campaigns | 8 × 7 = 56 | Enables complex features without restarts |
+| **P3** | Episode Memory + Reflexion + Preferences | 9 × 7 = 63 | Low-cost learning with high ROI |
+| **P4** | Multi-Day Campaigns + Weekly Planning | 8 × 7 = 56 | Enables complex features without restarts |
 | **P5** | Internal Validation Critics | 8 × 6 = 48 | Reduces human review burden by ~70% |
 
 ### Scope Boundaries (What v2 Does NOT Include)
@@ -50,8 +52,7 @@ The following PRD items are explicitly **deferred to v3** per expert panel prior
 
 | Deferred Item | PRD Priority | Rationale |
 |---------------|--------------|-----------|
-| Parallel Execution (P6) | 7×6=42 | Jerry Liu warned against premature parallelism; sequential campaigns cover 95% of use cases |
-| Weekly Sprint Planning (P9) | 6×7=42 | UI/UX wrapper over campaign data; add after core engine works |
+| Parallel Execution (P6) | 7×6=42 | Jerry Liu warned against premature parallelism; sequential campaigns cover 95% of use cases for a single developer |
 | Semantic Memory/Embeddings (P8) | 6×5=30 | Nice-to-have infrastructure; simple JSONL retrieval is sufficient for v2 |
 | Prompt Self-Optimization (P10) | 5×4=20 | Risky self-modification; needs careful bounds designed in v3 |
 
@@ -65,11 +66,63 @@ The following PRD items are explicitly **deferred to v3** per expert panel prior
 
 **David Dohan:** "Agreed, but add defensive wrappers. Never let a goal execute without budget/time checks BEFORE the call, not just after."
 
-**Final Design:**
+### 2.1 Core Execution Design
 
 ```python
 class AutopilotRunner:
-    def _execute_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+    def __init__(
+        self,
+        orchestrator: Orchestrator,
+        bug_orchestrator: BugOrchestrator,
+        checkpoint_system: CheckpointSystem,
+        config: ChiefOfStaffConfig,
+    ):
+        self.orchestrator = orchestrator
+        self.bug_orchestrator = bug_orchestrator
+        self.checkpoint_system = checkpoint_system
+        self.config = config
+        self.session: Optional[AutopilotSession] = None
+
+    async def start(
+        self,
+        goals: list[DailyGoal],
+        budget_usd: float,
+    ) -> AutopilotResult:
+        """Start autopilot session with given goals."""
+        # Reset daily cost tracking at session start
+        self.checkpoint_system.reset_daily_cost()
+
+        self.session = AutopilotSession(
+            session_id=f"session-{uuid.uuid4().hex[:8]}",
+            goals=goals,
+            budget_usd=budget_usd,
+            cost_spent_usd=0.0,
+            started_at=datetime.now().isoformat(),
+        )
+
+        results = []
+        for goal in goals:
+            result = await self._execute_goal(goal)
+            results.append(result)
+
+            # Update session cost
+            self.session.cost_spent_usd += result.cost_usd
+
+            # Update checkpoint system's daily cost tracking
+            self.checkpoint_system.update_daily_cost(result.cost_usd)
+
+            if result.checkpoint_pending:
+                # Pause for human approval
+                break
+
+        return AutopilotResult(
+            session_id=self.session.session_id,
+            goals_completed=len([r for r in results if r.success]),
+            total_cost_usd=self.session.cost_spent_usd,
+            results=results,
+        )
+
+    async def _execute_goal(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a goal by calling the appropriate orchestrator."""
 
         # Pre-execution safety check (David's requirement)
@@ -79,6 +132,16 @@ class AutopilotRunner:
                 success=False,
                 error="Insufficient budget remaining",
                 cost_usd=0,
+            )
+
+        # P0: Human checkpoint before expensive/risky operations
+        checkpoint_result = await self.checkpoint_system.check_before_execution(goal)
+        if checkpoint_result.requires_approval and not checkpoint_result.approved:
+            return GoalExecutionResult(
+                success=False,
+                error="Awaiting human approval",
+                cost_usd=0,
+                checkpoint_pending=True,
             )
 
         try:
@@ -121,6 +184,8 @@ class AutopilotRunner:
                 )
 
         except Exception as e:
+            # Mark goal as having an error for hiccup detection
+            goal.error_count = getattr(goal, 'error_count', 0) + 1
             return GoalExecutionResult(
                 success=False,
                 error=str(e),
@@ -128,7 +193,433 @@ class AutopilotRunner:
             )
 ```
 
-### Implementation Tasks (5 issues)
+### 2.5 Human-in-the-Loop Checkpoint System (P0)
+
+**This is a P0 requirement from the PRD.** The system operates in **collaborative autonomy** mode—like a senior engineer who knows to check in before making big calls.
+
+#### Checkpoint Trigger Thresholds
+
+| Trigger | Threshold | Detection Method |
+|---------|-----------|------------------|
+| **UX/Flow Changes** | Any user-facing change | Goal tags contain "ui", "ux", "frontend", or linked issue has UI label |
+| **Cost - Single Action** | >$5 per action | Pre-execution cost estimate from goal metadata |
+| **Cost - Cumulative** | >$15/day | Session.cost_spent_usd tracking via update_daily_cost() |
+| **Architecture Decisions** | Any structural change | Goal tags contain "architecture", "refactor", or new file creation in core paths |
+| **Scope Changes** | Deviation from approved plan | Goal not in original day plan, or goal modified from plan |
+| **Hiccups** | Any unexpected situation | error_count > 0, recovery_level >= 2, is_hiccup flag, or unknown state |
+
+#### Checkpoint Data Model
+
+```python
+class CheckpointTrigger(Enum):
+    UX_CHANGE = "ux_change"
+    COST_SINGLE = "cost_single"
+    COST_CUMULATIVE = "cost_cumulative"
+    ARCHITECTURE = "architecture"
+    SCOPE_CHANGE = "scope_change"
+    HICCUP = "hiccup"
+
+@dataclass
+class CheckpointOption:
+    """A choice presented to the human."""
+    label: str
+    description: str
+    is_recommended: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CheckpointOption":
+        return cls(**data)
+
+@dataclass
+class Checkpoint:
+    """A decision point requiring human approval."""
+    checkpoint_id: str
+    trigger: CheckpointTrigger
+    context: str                    # What's happening and why we're asking
+    options: list[CheckpointOption]
+    recommendation: Optional[str]   # Which option we recommend and why
+    created_at: str
+    goal_id: Optional[str]          # Linked goal if applicable
+    campaign_id: Optional[str]      # Linked campaign if applicable
+
+    # Resolution
+    status: str = "pending"         # pending, approved, rejected, expired
+    chosen_option: Optional[str] = None
+    human_notes: Optional[str] = None
+    resolved_at: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "checkpoint_id": self.checkpoint_id,
+            "trigger": self.trigger.value,
+            "context": self.context,
+            "options": [o.to_dict() for o in self.options],
+            "recommendation": self.recommendation,
+            "created_at": self.created_at,
+            "goal_id": self.goal_id,
+            "campaign_id": self.campaign_id,
+            "status": self.status,
+            "chosen_option": self.chosen_option,
+            "human_notes": self.human_notes,
+            "resolved_at": self.resolved_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Checkpoint":
+        return cls(
+            checkpoint_id=data["checkpoint_id"],
+            trigger=CheckpointTrigger(data["trigger"]),
+            context=data["context"],
+            options=[CheckpointOption.from_dict(o) for o in data["options"]],
+            recommendation=data.get("recommendation"),
+            created_at=data["created_at"],
+            goal_id=data.get("goal_id"),
+            campaign_id=data.get("campaign_id"),
+            status=data.get("status", "pending"),
+            chosen_option=data.get("chosen_option"),
+            human_notes=data.get("human_notes"),
+            resolved_at=data.get("resolved_at"),
+        )
+
+@dataclass
+class CheckpointResult:
+    """Result of a checkpoint check."""
+    requires_approval: bool
+    approved: bool
+    checkpoint: Optional[Checkpoint]
+
+class CheckpointSystem:
+    """Manages human-in-the-loop checkpoints."""
+
+    def __init__(
+        self,
+        store: "CheckpointStore",
+        config: ChiefOfStaffConfig,
+        preference_learner: "PreferenceLearner",
+        episode_store: "EpisodeStore",
+    ):
+        self.store = store
+        self.config = config
+        self.preference_learner = preference_learner
+        self.episode_store = episode_store
+        self.daily_cost = 0.0
+
+    async def check_before_execution(self, goal: DailyGoal) -> CheckpointResult:
+        """Check if goal requires human approval before execution."""
+
+        triggers = self._detect_triggers(goal)
+
+        if not triggers:
+            return CheckpointResult(requires_approval=False, approved=True, checkpoint=None)
+
+        # Check for existing pending checkpoint
+        existing = await self.store.get_pending_for_goal(goal.goal_id)
+        if existing:
+            return CheckpointResult(
+                requires_approval=True,
+                approved=existing.status == "approved",
+                checkpoint=existing,
+            )
+
+        # Create new checkpoint
+        checkpoint = await self._create_checkpoint(goal, triggers[0])
+        await self.store.save(checkpoint)
+
+        return CheckpointResult(
+            requires_approval=True,
+            approved=False,
+            checkpoint=checkpoint,
+        )
+
+    def _detect_triggers(self, goal: DailyGoal) -> list[CheckpointTrigger]:
+        """Detect which triggers apply to this goal."""
+        triggers = []
+
+        # HICCUP detection (P0 requirement) - check this first
+        # Hiccup triggers: error_count > 0, recovery_level >= 2, explicit is_hiccup flag
+        if getattr(goal, 'error_count', 0) > 0:
+            triggers.append(CheckpointTrigger.HICCUP)
+        if getattr(goal, 'recovery_level', 0) >= 2:
+            triggers.append(CheckpointTrigger.HICCUP)
+        if getattr(goal, 'is_hiccup', False):
+            triggers.append(CheckpointTrigger.HICCUP)
+
+        # UX/Flow changes
+        ui_tags = {"ui", "ux", "frontend", "user-facing", "screen", "flow"}
+        if goal.tags and ui_tags & set(t.lower() for t in goal.tags):
+            triggers.append(CheckpointTrigger.UX_CHANGE)
+
+        # Cost - single action
+        if goal.estimated_cost_usd and goal.estimated_cost_usd > self.config.checkpoint_cost_single:
+            triggers.append(CheckpointTrigger.COST_SINGLE)
+
+        # Cost - cumulative (uses daily_cost updated by AutopilotRunner)
+        if self.daily_cost > self.config.checkpoint_cost_daily:
+            triggers.append(CheckpointTrigger.COST_CUMULATIVE)
+
+        # Architecture
+        arch_tags = {"architecture", "refactor", "core", "infrastructure", "breaking"}
+        if goal.tags and arch_tags & set(t.lower() for t in goal.tags):
+            triggers.append(CheckpointTrigger.ARCHITECTURE)
+
+        # Scope change (goal not in original plan)
+        if getattr(goal, 'is_unplanned', False):
+            triggers.append(CheckpointTrigger.SCOPE_CHANGE)
+
+        return triggers
+
+    async def _create_checkpoint(
+        self,
+        goal: DailyGoal,
+        trigger: CheckpointTrigger,
+    ) -> Checkpoint:
+        """Create a checkpoint with options and recommendation."""
+
+        context = self._build_context(goal, trigger)
+        options = self._build_options(goal, trigger)
+        recommendation = self._build_recommendation(goal, trigger, options)
+
+        return Checkpoint(
+            checkpoint_id=f"cp-{uuid.uuid4().hex[:8]}",
+            trigger=trigger,
+            context=context,
+            options=options,
+            recommendation=recommendation,
+            created_at=datetime.now().isoformat(),
+            goal_id=goal.goal_id,
+        )
+
+    def _build_context(self, goal: DailyGoal, trigger: CheckpointTrigger) -> str:
+        """Build context string for checkpoint."""
+        contexts = {
+            CheckpointTrigger.UX_CHANGE: f"About to make user-facing changes: {goal.content}",
+            CheckpointTrigger.COST_SINGLE: f"This action is estimated to cost ${goal.estimated_cost_usd:.2f}: {goal.content}",
+            CheckpointTrigger.COST_CUMULATIVE: f"Daily spending has exceeded ${self.config.checkpoint_cost_daily}. Next action: {goal.content}",
+            CheckpointTrigger.ARCHITECTURE: f"This involves architectural changes: {goal.content}",
+            CheckpointTrigger.SCOPE_CHANGE: f"This goal was not in the original plan: {goal.content}",
+            CheckpointTrigger.HICCUP: f"Encountered an unexpected situation: {goal.content}. Error count: {getattr(goal, 'error_count', 0)}, Recovery level: {getattr(goal, 'recovery_level', 0)}",
+        }
+        return contexts.get(trigger, f"Checkpoint for: {goal.content}")
+
+    def _build_options(self, goal: DailyGoal, trigger: CheckpointTrigger) -> list[CheckpointOption]:
+        """Build standard options for checkpoint."""
+        return [
+            CheckpointOption(
+                label="Proceed",
+                description="Approve this action and continue",
+                is_recommended=True,
+            ),
+            CheckpointOption(
+                label="Skip",
+                description="Skip this goal and move to the next one",
+            ),
+            CheckpointOption(
+                label="Modify",
+                description="I'll provide adjusted instructions",
+            ),
+            CheckpointOption(
+                label="Pause",
+                description="Pause the session for manual review",
+            ),
+        ]
+
+    def _build_recommendation(
+        self,
+        goal: DailyGoal,
+        trigger: CheckpointTrigger,
+        options: list[CheckpointOption],
+    ) -> str:
+        """Build recommendation string."""
+        if trigger == CheckpointTrigger.HICCUP:
+            return f"Review needed - encountered unexpected situation with {goal.content}"
+        return f"Proceed - {goal.content} aligns with the current plan and is within acceptable risk bounds."
+
+    async def resolve_checkpoint(
+        self,
+        checkpoint_id: str,
+        chosen_option: str,
+        notes: Optional[str] = None,
+    ) -> Checkpoint:
+        """Resolve a pending checkpoint with human decision."""
+        checkpoint = await self.store.get(checkpoint_id)
+        if not checkpoint:
+            raise ValueError(f"Checkpoint not found: {checkpoint_id}")
+
+        checkpoint.status = "approved" if chosen_option == "Proceed" else "rejected"
+        checkpoint.chosen_option = chosen_option
+        checkpoint.human_notes = notes
+        checkpoint.resolved_at = datetime.now().isoformat()
+
+        await self.store.save(checkpoint)
+
+        # Record for preference learning
+        await self._record_decision(checkpoint)
+
+        return checkpoint
+
+    async def _record_decision(self, checkpoint: Checkpoint) -> None:
+        """Record decision for preference learning."""
+        # Get the most recent episode for this goal (if any)
+        recent_episodes = self.episode_store.load_recent(limit=10)
+        matching_episode = None
+        for ep in reversed(recent_episodes):
+            if ep.goal.goal_id == checkpoint.goal_id:
+                matching_episode = ep
+                break
+
+        # Record with preference learner
+        await self.preference_learner.record_decision(checkpoint, matching_episode)
+
+    def update_daily_cost(self, cost: float) -> None:
+        """Update cumulative daily cost tracking. Called by AutopilotRunner after each goal."""
+        self.daily_cost += cost
+
+    def reset_daily_cost(self) -> None:
+        """Reset daily cost. Called by AutopilotRunner at session start."""
+        self.daily_cost = 0.0
+
+class CheckpointStore:
+    """Persistent storage for checkpoints."""
+
+    def __init__(self, base_path: Path):
+        self.base_path = base_path / "checkpoints"
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+    async def save(self, checkpoint: Checkpoint) -> None:
+        """Save checkpoint to JSON file."""
+        path = self.base_path / f"{checkpoint.checkpoint_id}.json"
+        with open(path, "w") as f:
+            json.dump(checkpoint.to_dict(), f, indent=2)
+
+    async def get(self, checkpoint_id: str) -> Optional[Checkpoint]:
+        """Load checkpoint by ID."""
+        path = self.base_path / f"{checkpoint_id}.json"
+        if not path.exists():
+            return None
+        with open(path, "r") as f:
+            return Checkpoint.from_dict(json.load(f))
+
+    async def get_pending_for_goal(self, goal_id: str) -> Optional[Checkpoint]:
+        """Get pending checkpoint for a goal."""
+        for path in self.base_path.glob("*.json"):
+            with open(path, "r") as f:
+                data = json.load(f)
+                if data.get("goal_id") == goal_id and data.get("status") == "pending":
+                    return Checkpoint.from_dict(data)
+        return None
+
+    async def list_pending(self) -> list[Checkpoint]:
+        """List all pending checkpoints."""
+        pending = []
+        for path in self.base_path.glob("*.json"):
+            with open(path, "r") as f:
+                data = json.load(f)
+                if data.get("status") == "pending":
+                    pending.append(Checkpoint.from_dict(data))
+        return pending
+```
+
+#### CLI Surface for Checkpoints
+
+```bash
+# View pending checkpoints
+swarm-attack cos checkpoints
+
+# Approve a checkpoint
+swarm-attack cos approve <checkpoint-id>
+
+# Approve with notes
+swarm-attack cos approve <checkpoint-id> --notes "Proceed with caution"
+
+# Reject/skip a checkpoint
+swarm-attack cos reject <checkpoint-id>
+
+# Modify and continue
+swarm-attack cos modify <checkpoint-id> --instructions "Use approach B instead"
+```
+
+#### Checkpoint CLI Implementation
+
+```python
+@cos_group.command("checkpoints")
+def list_checkpoints():
+    """List pending checkpoints requiring approval."""
+    pending = asyncio.run(checkpoint_store.list_pending())
+
+    if not pending:
+        click.echo("No pending checkpoints.")
+        return
+
+    for cp in pending:
+        click.echo(f"\n🔔 CHECKPOINT: {cp.trigger.value.upper()}")
+        click.echo(f"   ID: {cp.checkpoint_id}")
+        click.echo(f"   Context: {cp.context}")
+        click.echo(f"   Options:")
+        for opt in cp.options:
+            marker = "💡" if opt.is_recommended else "  "
+            click.echo(f"     {marker} {opt.label}: {opt.description}")
+        if cp.recommendation:
+            click.echo(f"   Recommendation: {cp.recommendation}")
+
+@cos_group.command("approve")
+@click.argument("checkpoint_id")
+@click.option("--notes", "-n", default=None, help="Optional notes")
+def approve_checkpoint(checkpoint_id: str, notes: Optional[str]):
+    """Approve a pending checkpoint."""
+    cp = asyncio.run(checkpoint_system.resolve_checkpoint(
+        checkpoint_id, "Proceed", notes
+    ))
+    click.echo(f"✓ Checkpoint {checkpoint_id} approved.")
+
+@cos_group.command("reject")
+@click.argument("checkpoint_id")
+@click.option("--notes", "-n", default=None, help="Optional notes")
+def reject_checkpoint(checkpoint_id: str, notes: Optional[str]):
+    """Reject/skip a pending checkpoint."""
+    cp = asyncio.run(checkpoint_system.resolve_checkpoint(
+        checkpoint_id, "Skip", notes
+    ))
+    click.echo(f"✗ Checkpoint {checkpoint_id} rejected.")
+```
+
+#### Integration with AutopilotRunner
+
+The checkpoint system integrates at the start of `_execute_goal()` as shown in section 2.1. When a checkpoint is pending:
+
+1. Execution pauses with `checkpoint_pending=True`
+2. CLI shows pending checkpoints on next `swarm-attack cos status`
+3. Human resolves via `swarm-attack cos approve/reject`
+4. Next autopilot cycle picks up the resolved checkpoint and continues
+
+#### Integration with CampaignExecutor
+
+```python
+class CampaignExecutor:
+    async def execute_day(self, campaign: Campaign) -> "DayResult":
+        """Execute one day of the campaign."""
+
+        # Check for campaign-level checkpoint (e.g., milestone boundary)
+        if self._at_milestone_boundary(campaign):
+            checkpoint = await self.checkpoint_system.create_milestone_checkpoint(campaign)
+            if not checkpoint.approved:
+                campaign.state = CampaignState.PAUSED
+                await self.store.save(campaign)
+                return DayResult(
+                    campaign_id=campaign.campaign_id,
+                    day=campaign.current_day,
+                    goals_completed=0,
+                    cost_usd=0,
+                    campaign_progress=self._calculate_progress(campaign),
+                    paused_for_checkpoint=True,
+                )
+
+        # ... rest of execute_day ...
+```
+
+### Implementation Tasks (10 issues)
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
@@ -137,6 +628,11 @@ class AutopilotRunner:
 | 7.3 | Implement bug execution path | M | 7.1 |
 | 7.4 | Implement spec pipeline execution path | M | 7.1 |
 | 7.5 | Add pre-execution budget checks | S | 7.1 |
+| 7.6 | Create Checkpoint and CheckpointStore dataclasses | M | - |
+| 7.7 | Implement CheckpointSystem with trigger detection (including hiccups) | M | 7.6 |
+| 7.8 | Add checkpoint CLI commands (checkpoints, approve, reject) | M | 7.6, 7.7 |
+| 7.9 | Integrate CheckpointSystem with AutopilotRunner (including cost tracking) | M | 7.1, 7.7 |
+| 7.10 | Add checkpoint integration to CampaignExecutor | S | 7.7, Phase 10 |
 
 ---
 
@@ -173,9 +669,10 @@ class RecoveryManager:
         RecoveryStrategy(RecoveryLevel.ESCALATE, max_attempts=1, backoff_seconds=0),
     ]
 
-    def __init__(self, config: ChiefOfStaffConfig, reflexion: ReflexionEngine):
+    def __init__(self, config: ChiefOfStaffConfig, reflexion: ReflexionEngine, checkpoint_system: CheckpointSystem):
         self.config = config
         self.reflexion = reflexion
+        self.checkpoint_system = checkpoint_system
         self.error_streak = 0
 
     async def execute_with_recovery(
@@ -186,8 +683,14 @@ class RecoveryManager:
         """Execute action with automatic recovery through all levels."""
 
         last_result = None
+        current_recovery_level = 0
 
         for strategy in self.LEVELS:
+            current_recovery_level = strategy.level.value
+
+            # Update goal's recovery level for hiccup detection
+            goal.recovery_level = current_recovery_level
+
             for attempt in range(strategy.max_attempts):
                 # Retrieve relevant past episodes for context (simple retrieval)
                 context = await self.reflexion.retrieve_relevant(goal, k=3)
@@ -207,6 +710,12 @@ class RecoveryManager:
                         if clarification:
                             goal = self._incorporate_clarification(goal, clarification)
 
+                elif strategy.level == RecoveryLevel.ESCALATE:
+                    # Mark goal as hiccup for checkpoint system
+                    goal.is_hiccup = True
+                    # Create hiccup checkpoint for human
+                    return await self._escalate_to_human(goal, last_result)
+
                 # Execute with backoff
                 if attempt > 0:
                     await asyncio.sleep(strategy.backoff_seconds * (2 ** attempt))
@@ -216,18 +725,50 @@ class RecoveryManager:
                 if result.success:
                     self.error_streak = 0
                     # Record success for Reflexion learning
-                    await self.reflexion.record_episode(goal, result, strategy.level)
+                    await self.reflexion.record_episode(goal, result, strategy.level.value)
                     return result
 
                 last_result = result
                 self.error_streak += 1
+
+                # Update goal error count for hiccup detection
+                goal.error_count = getattr(goal, 'error_count', 0) + 1
 
                 # Check circuit breaker
                 if self.error_streak >= self.config.error_streak_threshold:
                     break
 
         # All levels exhausted - escalate to human
+        goal.is_hiccup = True
         return await self._escalate_to_human(goal, last_result)
+
+    async def _escalate_to_human(
+        self,
+        goal: DailyGoal,
+        failure: GoalExecutionResult,
+    ) -> GoalExecutionResult:
+        """Create hiccup checkpoint and pause for human."""
+        checkpoint = Checkpoint(
+            checkpoint_id=f"cp-{uuid.uuid4().hex[:8]}",
+            trigger=CheckpointTrigger.HICCUP,
+            context=f"Recovery failed after 4 levels. Goal: {goal.content}. Error: {failure.error}",
+            options=[
+                CheckpointOption(label="Retry", description="Try again with fresh context"),
+                CheckpointOption(label="Skip", description="Skip this goal"),
+                CheckpointOption(label="Manual", description="I'll handle this manually"),
+            ],
+            recommendation="Skip - automatic recovery exhausted all options",
+            created_at=datetime.now().isoformat(),
+            goal_id=goal.goal_id,
+        )
+        await self.checkpoint_system.store.save(checkpoint)
+
+        return GoalExecutionResult(
+            success=False,
+            error=f"Escalated to human: {failure.error}",
+            cost_usd=failure.cost_usd,
+            checkpoint_pending=True,
+        )
 
     async def _generate_simple_alternative(
         self,
@@ -272,12 +813,12 @@ class RecoveryManager:
 | 8.1 | Create RecoveryManager class with level definitions | M | Phase 7 |
 | 8.2 | Implement Level 1 (retry same with backoff) | S | 8.1 |
 | 8.3 | Implement Level 2 (simple alternative generation) | M | 8.1 |
-| 8.4 | Implement Level 3-4 (clarification and escalation) | M | 8.1 |
+| 8.4 | Implement Level 3-4 (clarification and escalation with hiccup marking) | M | 8.1, 7.7 |
 | 8.5 | Add circuit breakers and error streak tracking | S | 8.1-8.4 |
 
 ---
 
-## 4. Phase 9: Episode Memory + Reflexion (P3)
+## 4. Phase 9: Episode Memory + Reflexion + Preference Learning (P3)
 
 ### Consensus Decision
 
@@ -287,7 +828,9 @@ class RecoveryManager:
 
 **Harrison Chase:** "Make sure episodes are structured. Goal → Actions → Outcome → Reflection. Then you can query any dimension."
 
-**Final Design (Simplified - No Embeddings):**
+**PRD Requirement:** "Track which recommendations I accept vs adjust. Adapt future recommendations based on preferences."
+
+### 4.1 Episode Memory Design
 
 ```python
 @dataclass
@@ -304,6 +847,11 @@ class Episode:
     duration_seconds: int
     tags: list[str]           # For simple filtering: ["feature", "bug", "spec", etc.]
 
+    # Preference learning (PRD requirement)
+    approval_response: Optional[str] = None  # "accepted", "modified", "rejected"
+    original_recommendation: Optional[str] = None
+    human_modification: Optional[str] = None
+
     def to_dict(self) -> dict:
         return {
             "episode_id": self.episode_id,
@@ -316,6 +864,9 @@ class Episode:
             "cost_usd": self.cost_usd,
             "duration_seconds": self.duration_seconds,
             "tags": self.tags,
+            "approval_response": self.approval_response,
+            "original_recommendation": self.original_recommendation,
+            "human_modification": self.human_modification,
         }
 
     @classmethod
@@ -331,6 +882,9 @@ class Episode:
             cost_usd=data["cost_usd"],
             duration_seconds=data["duration_seconds"],
             tags=data.get("tags", []),
+            approval_response=data.get("approval_response"),
+            original_recommendation=data.get("original_recommendation"),
+            human_modification=data.get("human_modification"),
         )
 
 @dataclass
@@ -362,7 +916,11 @@ class Outcome:
     @classmethod
     def from_dict(cls, data: dict) -> "Outcome":
         return cls(**data)
+```
 
+### 4.2 Reflexion Engine
+
+```python
 class ReflexionEngine:
     """Generates and retrieves episode reflections for learning."""
 
@@ -461,7 +1019,10 @@ class ReflexionEngine:
         goal: DailyGoal,
         result: GoalExecutionResult,
         recovery_level: int,
-        actions: list[Action],
+        actions: list[Action] = None,
+        approval_response: Optional[str] = None,
+        original_recommendation: Optional[str] = None,
+        human_modification: Optional[str] = None,
     ) -> Episode:
         """Record episode and generate reflection."""
 
@@ -478,13 +1039,16 @@ class ReflexionEngine:
             episode_id=f"ep-{uuid.uuid4().hex[:8]}",
             timestamp=datetime.now().isoformat(),
             goal=goal,
-            actions=actions,
+            actions=actions or [],
             outcome=outcome,
             reflection="",
             recovery_level_used=recovery_level,
             cost_usd=result.cost_usd,
             duration_seconds=result.duration_seconds,
             tags=tags,
+            approval_response=approval_response,
+            original_recommendation=original_recommendation,
+            human_modification=human_modification,
         )
 
         # Generate reflection
@@ -494,7 +1058,172 @@ class ReflexionEngine:
         await self.store.save(episode)
 
         return episode
+```
 
+### 4.3 Preference Learning (PRD Requirement)
+
+```python
+@dataclass
+class PreferenceWeight:
+    """A learned preference weight."""
+    key: str                  # e.g., "cost_vs_speed", "conservative_vs_aggressive"
+    value: float              # 0.0 to 1.0
+    confidence: float         # How confident we are in this weight
+    sample_count: int         # Number of data points
+    last_updated: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PreferenceWeight":
+        return cls(**data)
+
+class PreferenceLearner:
+    """Learns human preferences from approval patterns."""
+
+    # Bounded learning: max change per update (David's safety requirement)
+    MAX_WEIGHT_CHANGE = 0.1
+    MIN_SAMPLES_FOR_CONFIDENCE = 5
+
+    def __init__(self, store: "PreferenceStore"):
+        self.store = store
+        self.weights: dict[str, PreferenceWeight] = {}
+
+    async def load(self) -> None:
+        """Load preference weights from storage."""
+        self.weights = await self.store.load_all()
+
+    async def record_decision(
+        self,
+        checkpoint: Checkpoint,
+        episode: Optional[Episode] = None,
+    ) -> None:
+        """Record a human decision and update preferences.
+        
+        Called by CheckpointSystem._record_decision after checkpoint resolution.
+        """
+
+        # Extract preference signals from the decision
+        signals = self._extract_signals(checkpoint, episode)
+
+        for key, direction in signals.items():
+            await self._update_weight(key, direction)
+
+        await self.store.save_all(self.weights)
+
+    def _extract_signals(
+        self,
+        checkpoint: Checkpoint,
+        episode: Optional[Episode],
+    ) -> dict[str, float]:
+        """Extract preference signals from decision."""
+        signals = {}
+
+        # Cost sensitivity: did they accept expensive action?
+        if checkpoint.trigger == CheckpointTrigger.COST_SINGLE:
+            if checkpoint.chosen_option == "Proceed":
+                signals["cost_tolerance"] = 0.1  # Increase tolerance
+            else:
+                signals["cost_tolerance"] = -0.1  # Decrease tolerance
+
+        # Cumulative cost sensitivity
+        if checkpoint.trigger == CheckpointTrigger.COST_CUMULATIVE:
+            if checkpoint.chosen_option == "Proceed":
+                signals["daily_cost_tolerance"] = 0.1
+            else:
+                signals["daily_cost_tolerance"] = -0.1
+
+        # Risk tolerance: did they accept risky action?
+        if checkpoint.trigger in (CheckpointTrigger.ARCHITECTURE, CheckpointTrigger.UX_CHANGE):
+            if checkpoint.chosen_option == "Proceed":
+                signals["risk_tolerance"] = 0.05
+            else:
+                signals["risk_tolerance"] = -0.05
+
+        # Hiccup handling preference
+        if checkpoint.trigger == CheckpointTrigger.HICCUP:
+            if checkpoint.chosen_option == "Retry":
+                signals["retry_tolerance"] = 0.1
+            elif checkpoint.chosen_option == "Skip":
+                signals["skip_tendency"] = 0.1
+            elif checkpoint.chosen_option == "Manual":
+                signals["manual_preference"] = 0.1
+
+        # Speed vs safety: if they modified, they wanted something different
+        if checkpoint.chosen_option == "Modify":
+            signals["modification_tendency"] = 0.1
+
+        return signals
+
+    async def _update_weight(self, key: str, direction: float) -> None:
+        """Update a preference weight with bounded change."""
+
+        if key not in self.weights:
+            self.weights[key] = PreferenceWeight(
+                key=key,
+                value=0.5,  # Start neutral
+                confidence=0.0,
+                sample_count=0,
+                last_updated=datetime.now().isoformat(),
+            )
+
+        weight = self.weights[key]
+
+        # Bounded update (David's safety requirement)
+        change = min(abs(direction), self.MAX_WEIGHT_CHANGE) * (1 if direction > 0 else -1)
+
+        # Apply update
+        weight.value = max(0.0, min(1.0, weight.value + change))
+        weight.sample_count += 1
+        weight.confidence = min(1.0, weight.sample_count / self.MIN_SAMPLES_FOR_CONFIDENCE)
+        weight.last_updated = datetime.now().isoformat()
+
+    def get_weight(self, key: str, default: float = 0.5) -> float:
+        """Get a preference weight, or default if not enough data."""
+        if key not in self.weights:
+            return default
+        weight = self.weights[key]
+        if weight.confidence < 0.5:
+            return default
+        return weight.value
+
+    def get_preference_summary(self) -> dict:
+        """Get human-readable preference summary for standup."""
+        summary = {}
+        for key, weight in self.weights.items():
+            if weight.confidence >= 0.5:
+                if weight.value > 0.6:
+                    summary[key] = "high"
+                elif weight.value < 0.4:
+                    summary[key] = "low"
+                else:
+                    summary[key] = "neutral"
+        return summary
+
+class PreferenceStore:
+    """Persistent storage for preference weights."""
+
+    def __init__(self, base_path: Path):
+        self.path = base_path / "preferences.json"
+
+    async def load_all(self) -> dict[str, PreferenceWeight]:
+        """Load all preference weights."""
+        if not self.path.exists():
+            return {}
+        with open(self.path, "r") as f:
+            data = json.load(f)
+            return {k: PreferenceWeight.from_dict(v) for k, v in data.items()}
+
+    async def save_all(self, weights: dict[str, PreferenceWeight]) -> None:
+        """Save all preference weights."""
+        with open(self.path, "w") as f:
+            json.dump({k: v.to_dict() for k, v in weights.items()}, f, indent=2)
+```
+
+### 4.4 Episode Store
+
+```python
 class EpisodeStore:
     """Persistent storage for episodes using plain JSONL."""
 
@@ -535,7 +1264,7 @@ When episode count exceeds ~500 and retrieval quality degrades, add embedding su
 - Use cosine similarity for retrieval
 - This is a drop-in enhancement to `retrieve_relevant()`
 
-### Implementation Tasks (5 issues)
+### Implementation Tasks (6 issues)
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
@@ -544,10 +1273,11 @@ When episode count exceeds ~500 and retrieval quality degrades, add embedding su
 | 9.3 | Implement ReflexionEngine.reflect() | M | 9.1 |
 | 9.4 | Implement ReflexionEngine.retrieve_relevant() with heuristic scoring | M | 9.2 |
 | 9.5 | Integrate with RecoveryManager | M | Phase 8, 9.3, 9.4 |
+| 9.6 | Implement PreferenceLearner with checkpoint integration | M | 9.1, 7.7 |
 
 ---
 
-## 5. Phase 10: Multi-Day Campaigns (P4)
+## 5. Phase 10: Multi-Day Campaigns + Weekly Planning (P4)
 
 ### Consensus Decision
 
@@ -559,7 +1289,9 @@ When episode count exceeds ~500 and retrieval quality degrades, add embedding su
 
 **David Dohan:** "Budget caps must be per-campaign AND per-day. Daily cap prevents single-day runaway."
 
-**Final Design:**
+**PRD Requirement (User Story #6):** "I want a weekly planning session that projects forward, not just daily standups that look backward."
+
+### 5.1 Campaign Data Model
 
 ```python
 class CampaignState(Enum):
@@ -708,7 +1440,11 @@ class Campaign:
 
         progress_gap = self.days_behind() / self.original_duration_days
         return progress_gap > self.replanning_threshold
+```
 
+### 5.2 Campaign Planner
+
+```python
 class CampaignPlanner:
     """Plans multi-day campaigns using backward planning."""
 
@@ -820,7 +1556,11 @@ class CampaignPlanner:
         campaign.replan_count += 1
 
         return campaign
+```
 
+### 5.3 Campaign Executor
+
+```python
 class CampaignExecutor:
     """Executes campaign day by day."""
 
@@ -829,10 +1569,12 @@ class CampaignExecutor:
         autopilot: AutopilotRunner,
         planner: CampaignPlanner,
         store: "CampaignStore",
+        checkpoint_system: CheckpointSystem,
     ):
         self.autopilot = autopilot
         self.planner = planner
         self.store = store
+        self.checkpoint_system = checkpoint_system
 
     async def execute_day(self, campaign: Campaign) -> "DayResult":
         """Execute one day of the campaign."""
@@ -842,6 +1584,24 @@ class CampaignExecutor:
 
         if campaign.current_day > len(campaign.day_plans):
             raise ValueError("No more days planned")
+
+        # Check for milestone boundary checkpoint
+        if self._at_milestone_boundary(campaign):
+            checkpoint = await self._create_milestone_checkpoint(campaign)
+            pending = await self.checkpoint_system.store.get_pending_for_goal(
+                f"milestone-{campaign.campaign_id}"
+            )
+            if pending and pending.status != "approved":
+                campaign.state = CampaignState.PAUSED
+                await self.store.save(campaign)
+                return DayResult(
+                    campaign_id=campaign.campaign_id,
+                    day=campaign.current_day,
+                    goals_completed=0,
+                    cost_usd=0,
+                    campaign_progress=self._calculate_progress(campaign),
+                    paused_for_checkpoint=True,
+                )
 
         day_plan = campaign.day_plans[campaign.current_day - 1]
 
@@ -881,6 +1641,36 @@ class CampaignExecutor:
             campaign_progress=self._calculate_progress(campaign),
         )
 
+    def _at_milestone_boundary(self, campaign: Campaign) -> bool:
+        """Check if we're about to start a new milestone."""
+        for milestone in campaign.milestones:
+            if milestone.target_day == campaign.current_day and milestone.status == "pending":
+                return True
+        return False
+
+    async def _create_milestone_checkpoint(self, campaign: Campaign) -> Checkpoint:
+        """Create checkpoint at milestone boundary."""
+        milestone = next(
+            m for m in campaign.milestones
+            if m.target_day == campaign.current_day and m.status == "pending"
+        )
+        checkpoint = Checkpoint(
+            checkpoint_id=f"cp-{uuid.uuid4().hex[:8]}",
+            trigger=CheckpointTrigger.SCOPE_CHANGE,
+            context=f"Starting milestone '{milestone.name}': {milestone.description}",
+            options=[
+                CheckpointOption(label="Proceed", description="Start this milestone", is_recommended=True),
+                CheckpointOption(label="Adjust", description="Modify milestone scope"),
+                CheckpointOption(label="Pause", description="Pause campaign for review"),
+            ],
+            recommendation=f"Proceed with milestone: {milestone.name}",
+            created_at=datetime.now().isoformat(),
+            goal_id=f"milestone-{campaign.campaign_id}",
+            campaign_id=campaign.campaign_id,
+        )
+        await self.checkpoint_system.store.save(checkpoint)
+        return checkpoint
+
     def _calculate_progress(self, campaign: Campaign) -> float:
         """Calculate overall campaign progress 0-1."""
         if not campaign.milestones:
@@ -907,6 +1697,7 @@ class DayResult:
     goals_completed: int
     cost_usd: float
     campaign_progress: float
+    paused_for_checkpoint: bool = False
 
 class CampaignStore:
     """Persistent storage for campaigns."""
@@ -938,6 +1729,136 @@ class CampaignStore:
         return campaigns
 ```
 
+### 5.4 Weekly Planning (Minimal - PRD User Story #6)
+
+```python
+@dataclass
+class WeeklySummary:
+    """Weekly planning summary."""
+    week_start: str
+    week_end: str
+    campaigns_active: list[str]
+    campaigns_completed: list[str]
+    milestones_completed: int
+    milestones_remaining: int
+    total_cost_usd: float
+    goals_completed: int
+    goals_failed: int
+    next_week_projection: list[str]  # Projected goals for next week
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+class WeeklyPlanner:
+    """Lightweight weekly planning using campaign data."""
+
+    def __init__(
+        self,
+        campaign_store: CampaignStore,
+        episode_store: EpisodeStore,
+        llm: LLMClient,
+    ):
+        self.campaign_store = campaign_store
+        self.episode_store = episode_store
+        self.llm = llm
+
+    async def generate_weekly_summary(self) -> WeeklySummary:
+        """Generate weekly summary from campaign and episode data."""
+
+        # Get this week's date range
+        today = datetime.now()
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+
+        # Load campaigns
+        campaigns = await self.campaign_store.list_all()
+        active = [c for c in campaigns if c.state == CampaignState.ACTIVE]
+        completed = [c for c in campaigns if c.state == CampaignState.COMPLETED
+                     and c.ended_at and c.ended_at >= week_start.isoformat()]
+
+        # Load episodes from this week
+        episodes = self.episode_store.load_recent(limit=500)
+        week_episodes = [
+            e for e in episodes
+            if e.timestamp >= week_start.isoformat()
+        ]
+
+        # Calculate metrics
+        milestones_completed = sum(
+            len([m for m in c.milestones if m.status == "done"
+                 and m.completed_at and m.completed_at >= week_start.isoformat()])
+            for c in campaigns
+        )
+        milestones_remaining = sum(
+            len([m for m in c.milestones if m.status != "done"])
+            for c in active
+        )
+
+        goals_completed = len([e for e in week_episodes if e.outcome.success])
+        goals_failed = len([e for e in week_episodes if not e.outcome.success])
+        total_cost = sum(e.cost_usd for e in week_episodes)
+
+        # Project next week
+        next_week_projection = await self._project_next_week(active)
+
+        return WeeklySummary(
+            week_start=week_start.strftime("%Y-%m-%d"),
+            week_end=week_end.strftime("%Y-%m-%d"),
+            campaigns_active=[c.name for c in active],
+            campaigns_completed=[c.name for c in completed],
+            milestones_completed=milestones_completed,
+            milestones_remaining=milestones_remaining,
+            total_cost_usd=total_cost,
+            goals_completed=goals_completed,
+            goals_failed=goals_failed,
+            next_week_projection=next_week_projection,
+        )
+
+    async def _project_next_week(self, active_campaigns: list[Campaign]) -> list[str]:
+        """Project goals for next week based on active campaigns."""
+        projections = []
+
+        for campaign in active_campaigns:
+            remaining_days = len(campaign.day_plans) - campaign.current_day + 1
+            if remaining_days <= 0:
+                continue
+
+            # Get next 5 days of goals
+            for i in range(min(5, remaining_days)):
+                day_idx = campaign.current_day - 1 + i
+                if day_idx < len(campaign.day_plans):
+                    day_plan = campaign.day_plans[day_idx]
+                    for goal in day_plan.goals[:2]:  # Top 2 goals per day
+                        projections.append(f"[{campaign.name}] {goal.content}")
+
+        return projections[:10]  # Top 10 projections
+
+    async def generate_weekly_report(self) -> str:
+        """Generate human-readable weekly report."""
+        summary = await self.generate_weekly_summary()
+
+        report = f"""
+# Weekly Summary: {summary.week_start} to {summary.week_end}
+
+## Campaigns
+- Active: {', '.join(summary.campaigns_active) or 'None'}
+- Completed this week: {', '.join(summary.campaigns_completed) or 'None'}
+
+## Progress
+- Milestones completed: {summary.milestones_completed}
+- Milestones remaining: {summary.milestones_remaining}
+- Goals completed: {summary.goals_completed}
+- Goals failed: {summary.goals_failed}
+- Total cost: ${summary.total_cost_usd:.2f}
+
+## Next Week Projection
+"""
+        for proj in summary.next_week_projection:
+            report += f"- {proj}\n"
+
+        return report
+```
+
 ### CLI Extensions
 
 ```bash
@@ -949,9 +1870,13 @@ swarm-attack cos campaign run [CAMPAIGN_ID]      # Execute today's goals
 swarm-attack cos campaign resume [CAMPAIGN_ID]   # Resume paused campaign
 swarm-attack cos campaign pause [CAMPAIGN_ID]
 swarm-attack cos campaign replan [CAMPAIGN_ID]   # Force replan
+
+# Weekly planning (PRD User Story #6)
+swarm-attack cos weekly                          # Generate weekly summary
+swarm-attack cos weekly --report                 # Full weekly report
 ```
 
-### Implementation Tasks (7 issues)
+### Implementation Tasks (8 issues)
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
@@ -962,6 +1887,7 @@ swarm-attack cos campaign replan [CAMPAIGN_ID]   # Force replan
 | 10.5 | Implement CampaignExecutor.execute_day() | L | 10.1, Phase 7 |
 | 10.6 | Add campaign CLI commands | M | 10.2, 10.5 |
 | 10.7 | Add campaign progress to standup | S | 10.2 |
+| 10.8 | Implement WeeklyPlanner and weekly CLI command | M | 10.2, 9.2 |
 
 ---
 
@@ -975,7 +1901,7 @@ swarm-attack cos campaign replan [CAMPAIGN_ID]   # Force replan
 
 **David Dohan:** "Track critic accuracy over time. If a critic is consistently wrong, reduce its weight. But never zero - preserve voice."
 
-**Final Design:**
+### 6.1 Critic Data Model
 
 ```python
 class CriticFocus(Enum):
@@ -1039,7 +1965,11 @@ class ValidationResult:
             "consensus_summary": self.consensus_summary,
             "human_review_required": self.human_review_required,
         }
+```
 
+### 6.2 Critic Implementations
+
+```python
 class Critic:
     """Base class for validation critics."""
 
@@ -1151,7 +2081,11 @@ class TestCritic(Critic):
             suggestions=data["suggestions"],
             reasoning=data["reasoning"],
         )
+```
 
+### 6.3 Validation Layer
+
+```python
 class ValidationLayer:
     """Orchestrates multiple critics for consensus building."""
 
@@ -1243,11 +2177,11 @@ class ValidationLayer:
             return f"NEEDS REVIEW: concerns in {', '.join(concerns)} (avg: {avg_score:.2f})"
 ```
 
-### Integration Flow (How Validation Gates Work)
+### 6.4 Integration Flow
 
 The ValidationLayer integrates at three key points in the pipeline:
 
-#### 1. Spec Pipeline Integration
+#### Spec Pipeline Integration
 
 ```python
 # In Orchestrator.run_spec_pipeline()
@@ -1278,7 +2212,7 @@ class Orchestrator:
             )
 ```
 
-#### 2. Code Execution Integration
+#### Code Execution Integration
 
 ```python
 # In AutopilotRunner._execute_goal()
@@ -1306,7 +2240,7 @@ class AutopilotRunner:
         return result
 ```
 
-#### 3. CLI Validation Command
+#### CLI Validation Command
 
 ```bash
 # Manual validation check
@@ -1353,7 +2287,879 @@ def validate_artifact(artifact_type: str, path: str):
 
 ---
 
-## 7. Success Metrics
+## 7. World-Class Enhancements (Research-Driven)
+
+Based on analysis of LangGraph interrupt patterns, Apify orchestration, and agent-harness architecture, these enhancements elevate the checkpoint system to industry-leading standards.
+
+### 7.1 Risk Scoring Engine
+
+**Pattern:** Calculate risk 0-1 instead of binary pattern matching. More nuanced than current trigger detection.
+
+```python
+@dataclass
+class RiskAssessment:
+    """Computed risk assessment for an action."""
+    score: float                    # 0.0 to 1.0
+    factors: dict[str, float]       # Individual risk factors
+    reversibility: str              # "full", "partial", "none"
+    estimated_cost: float
+    estimated_duration_seconds: int
+    recommendation: str             # "proceed", "checkpoint", "block"
+
+class RiskScoringEngine:
+    """Calculate nuanced risk scores for checkpoint decisions."""
+
+    # Risk weights by category
+    WEIGHTS = {
+        "cost": 0.25,           # Cost impact
+        "scope": 0.20,          # Scope of changes
+        "reversibility": 0.25,  # Can we undo this?
+        "confidence": 0.15,     # How confident are we?
+        "precedent": 0.15,      # Have we done similar before?
+    }
+
+    def __init__(self, episode_store: EpisodeStore, preference_learner: PreferenceLearner):
+        self.episode_store = episode_store
+        self.preference_learner = preference_learner
+
+    def assess_risk(self, goal: DailyGoal, context: dict) -> RiskAssessment:
+        """Calculate comprehensive risk score."""
+        factors = {}
+
+        # Cost factor (0-1 based on budget percentage)
+        budget = context.get("session_budget", 25.0)
+        est_cost = goal.estimated_cost_usd or 0
+        factors["cost"] = min(1.0, est_cost / (budget * 0.3))  # 30% of budget = 1.0 risk
+
+        # Scope factor (files touched, core paths)
+        files_affected = len(context.get("files_to_modify", []))
+        core_path_affected = any(
+            "core" in f or "models" in f or "api" in f
+            for f in context.get("files_to_modify", [])
+        )
+        factors["scope"] = min(1.0, (files_affected / 10) + (0.3 if core_path_affected else 0))
+
+        # Reversibility factor
+        is_destructive = any(
+            kw in goal.content.lower()
+            for kw in ["delete", "drop", "remove", "destroy", "reset"]
+        )
+        is_external = any(
+            kw in goal.content.lower()
+            for kw in ["deploy", "publish", "push", "release", "migrate"]
+        )
+        if is_destructive:
+            factors["reversibility"] = 1.0
+        elif is_external:
+            factors["reversibility"] = 0.7
+        else:
+            factors["reversibility"] = 0.2
+
+        # Confidence factor (based on similar past successes)
+        similar_episodes = self.episode_store.find_similar(goal.content, k=5)
+        if similar_episodes:
+            success_rate = sum(1 for e in similar_episodes if e.outcome.success) / len(similar_episodes)
+            factors["confidence"] = 1.0 - success_rate  # Low success = high risk
+        else:
+            factors["confidence"] = 0.5  # Unknown = medium risk
+
+        # Precedent factor (has human approved similar before?)
+        similar_decisions = self.preference_learner.find_similar_decisions(goal)
+        if similar_decisions:
+            approval_rate = sum(1 for d in similar_decisions if d["was_accepted"]) / len(similar_decisions)
+            factors["precedent"] = 1.0 - approval_rate  # Low approval = high risk
+        else:
+            factors["precedent"] = 0.5  # No precedent = medium risk
+
+        # Weighted score
+        score = sum(factors[k] * self.WEIGHTS[k] for k in factors)
+
+        # Determine reversibility category
+        if factors["reversibility"] > 0.8:
+            reversibility = "none"
+        elif factors["reversibility"] > 0.4:
+            reversibility = "partial"
+        else:
+            reversibility = "full"
+
+        # Determine recommendation
+        if score > 0.7:
+            recommendation = "block"      # Too risky - require explicit approval
+        elif score > 0.4:
+            recommendation = "checkpoint" # Medium risk - checkpoint with recommendation
+        else:
+            recommendation = "proceed"    # Low risk - proceed with logging
+
+        return RiskAssessment(
+            score=score,
+            factors=factors,
+            reversibility=reversibility,
+            estimated_cost=est_cost,
+            estimated_duration_seconds=context.get("estimated_duration", 300),
+            recommendation=recommendation,
+        )
+```
+
+**Integration:** Risk score feeds into checkpoint trigger detection:
+
+```python
+class CheckpointSystem:
+    def _detect_triggers(self, goal: DailyGoal) -> list[CheckpointTrigger]:
+        triggers = []
+
+        # NEW: Risk-based trigger (replaces simple pattern matching)
+        risk = self.risk_engine.assess_risk(goal, self._get_context())
+        if risk.recommendation == "block":
+            triggers.append(CheckpointTrigger.HIGH_RISK)
+        elif risk.recommendation == "checkpoint":
+            # Include risk assessment in checkpoint
+            self._pending_risk_assessment = risk
+
+        # ... existing trigger detection ...
+```
+
+### 7.2 Pre-flight Validation
+
+**Pattern:** Validate BEFORE execution starts, not just after. Catch issues early.
+
+```python
+class PreFlightChecker:
+    """Validate before execution to catch issues early."""
+
+    def __init__(
+        self,
+        risk_engine: RiskScoringEngine,
+        checkpoint_system: CheckpointSystem,
+        config: ChiefOfStaffConfig,
+    ):
+        self.risk_engine = risk_engine
+        self.checkpoint_system = checkpoint_system
+        self.config = config
+
+    async def validate_before_execute(
+        self,
+        goal: DailyGoal,
+        action_plan: dict,
+    ) -> PreFlightResult:
+        """Run all pre-execution validations."""
+        issues = []
+        warnings = []
+
+        # 1. Budget check
+        remaining_budget = action_plan.get("session_budget", 0) - action_plan.get("spent", 0)
+        estimated_cost = goal.estimated_cost_usd or 0
+        if estimated_cost > remaining_budget:
+            issues.append(PreFlightIssue(
+                severity="critical",
+                category="budget",
+                message=f"Estimated cost ${estimated_cost:.2f} exceeds remaining budget ${remaining_budget:.2f}",
+                suggested_action="Reduce scope or request budget increase",
+            ))
+        elif estimated_cost > remaining_budget * 0.5:
+            warnings.append(PreFlightWarning(
+                category="budget",
+                message=f"This action will use {estimated_cost/remaining_budget*100:.0f}% of remaining budget",
+            ))
+
+        # 2. Dependency check
+        dependencies = action_plan.get("dependencies", [])
+        for dep in dependencies:
+            if not await self._check_dependency_available(dep):
+                issues.append(PreFlightIssue(
+                    severity="blocking",
+                    category="dependency",
+                    message=f"Required dependency not available: {dep}",
+                    suggested_action=f"Complete {dep} first or remove dependency",
+                ))
+
+        # 3. Risk assessment
+        risk = self.risk_engine.assess_risk(goal, action_plan)
+        if risk.score > 0.7:
+            issues.append(PreFlightIssue(
+                severity="high_risk",
+                category="risk",
+                message=f"Risk score {risk.score:.2f} exceeds threshold (0.7)",
+                factors=risk.factors,
+                suggested_action="Review risk factors and consider breaking into smaller tasks",
+            ))
+
+        # 4. Conflict check (files being modified elsewhere)
+        conflicts = await self._check_file_conflicts(action_plan.get("files_to_modify", []))
+        if conflicts:
+            issues.append(PreFlightIssue(
+                severity="blocking",
+                category="conflict",
+                message=f"Files are being modified by another session: {conflicts}",
+                suggested_action="Wait for other session to complete or coordinate changes",
+            ))
+
+        # Determine result
+        has_blocking = any(i.severity in ("critical", "blocking") for i in issues)
+
+        return PreFlightResult(
+            passed=not has_blocking,
+            issues=issues,
+            warnings=warnings,
+            risk_assessment=risk,
+            requires_checkpoint=risk.recommendation in ("checkpoint", "block"),
+        )
+
+# Integration in AutopilotRunner
+class AutopilotRunner:
+    async def _execute_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        # PRE-FLIGHT CHECK (NEW - before any execution)
+        action_plan = await self._plan_goal_execution(goal)
+        preflight = await self.preflight_checker.validate_before_execute(goal, action_plan)
+
+        if not preflight.passed:
+            # Surface issues to user via checkpoint
+            checkpoint = await self._create_preflight_checkpoint(goal, preflight)
+            return GoalExecutionResult(
+                success=False,
+                error="Pre-flight validation failed",
+                checkpoint_pending=True,
+                preflight_issues=preflight.issues,
+            )
+
+        if preflight.requires_checkpoint:
+            # Create checkpoint with risk context
+            checkpoint_result = await self.checkpoint_system.check_before_execution(
+                goal,
+                risk_assessment=preflight.risk_assessment,
+            )
+            if not checkpoint_result.approved:
+                return GoalExecutionResult(
+                    success=False,
+                    error="Awaiting human approval",
+                    checkpoint_pending=True,
+                )
+
+        # ... proceed with execution ...
+```
+
+### 7.3 Discovery Phase (Vibe Plan)
+
+**Pattern:** Unstructured exploration BEFORE formal spec writing. Prevents premature convergence.
+
+```python
+@dataclass
+class DiscoveryNotes:
+    """Output of discovery phase - unstructured exploration."""
+    feature_id: str
+    created_at: str
+
+    # Unstructured outputs
+    initial_reactions: str          # Excitement, concerns, ambiguities
+    architecture_options: list[str] # Different approaches considered
+    technology_considerations: str  # Libraries, frameworks, patterns
+    edge_cases: list[str]           # Things that could go wrong
+    risks: list[str]                # Potential problems
+    questions_for_pm: list[str]     # Clarifications needed
+    implementation_approaches: list[dict]  # MVP vs full vision
+
+    # Raw exploration
+    exploration_notes: str          # Free-form markdown
+
+class DiscoveryAgent:
+    """Run unstructured exploration before spec writing."""
+
+    DISCOVERY_PROMPT = """
+    You are exploring a feature request BEFORE writing any formal spec.
+    Think freely and explore deeply. There are NO structured output requirements.
+
+    Feature: {prd_summary}
+
+    Explore:
+    1. **Initial Reactions** - What excites you? What concerns you? What's unclear?
+    2. **Architecture Options** - At least 3 different approaches. Pros/cons of each.
+    3. **Technology Considerations** - Libraries, frameworks, patterns that could help.
+    4. **Edge Cases** - What could go wrong? Unusual scenarios?
+    5. **Risks** - Technical risks, scope risks, integration risks.
+    6. **Questions for PM** - What do you need clarified before speccing?
+    7. **Implementation Approaches** - MVP (minimal) vs Full Vision. What's the difference?
+
+    Output: Free-form markdown notes. Think out loud. Explore tangents.
+    This is NOT a spec - it's exploration to inform the spec.
+    """
+
+    async def explore(self, prd_path: str, feature_id: str) -> DiscoveryNotes:
+        """Run discovery phase on a PRD."""
+        prd_content = Path(prd_path).read_text()
+        prd_summary = self._extract_summary(prd_content)
+
+        prompt = self.DISCOVERY_PROMPT.format(prd_summary=prd_summary)
+
+        result = await self.llm.complete(
+            prompt,
+            max_tokens=4000,
+            temperature=0.8,  # Higher temperature for creativity
+        )
+
+        notes = self._parse_discovery_notes(result.content, feature_id)
+
+        # Save to .swarm/discovery/{feature_id}.md
+        self._save_discovery_notes(notes)
+
+        return notes
+
+# Integration in Orchestrator
+class Orchestrator:
+    async def run_spec_pipeline(self, feature_id: str) -> SpecResult:
+        prd_path = self._get_prd_path(feature_id)
+
+        # NEW: Discovery phase before spec author
+        discovery = await self.discovery_agent.explore(prd_path, feature_id)
+
+        # Surface questions to PM via checkpoint
+        if discovery.questions_for_pm:
+            await self._checkpoint_for_pm_questions(discovery)
+
+        # Pass discovery context to spec author
+        spec_result = await self.spec_author.run(
+            prd_path,
+            discovery_context=discovery,  # NEW: discovery informs spec
+        )
+
+        # ... rest of spec pipeline ...
+```
+
+### 7.4 Interval Checkpoints
+
+**Pattern:** Periodic checkpoints every N issues, not just on events. Regular human touchpoints.
+
+```python
+@dataclass
+class IntervalCheckpointConfig:
+    """Configuration for interval-based checkpoints."""
+    enabled: bool = True
+    issues_per_checkpoint: int = 3      # Checkpoint every 3 issues
+    time_based_minutes: int = 60        # Or every 60 minutes
+    force_on_milestone: bool = True     # Always checkpoint at milestones
+
+class CheckpointSystem:
+    def __init__(self, ...):
+        # ... existing init ...
+        self._issues_since_checkpoint = 0
+        self._last_checkpoint_time = datetime.now()
+
+    def _check_interval_trigger(self, goal: DailyGoal) -> bool:
+        """Check if interval checkpoint is due."""
+        if not self.config.interval_checkpoints.enabled:
+            return False
+
+        # Issue count trigger
+        if self._issues_since_checkpoint >= self.config.interval_checkpoints.issues_per_checkpoint:
+            return True
+
+        # Time-based trigger
+        minutes_elapsed = (datetime.now() - self._last_checkpoint_time).total_seconds() / 60
+        if minutes_elapsed >= self.config.interval_checkpoints.time_based_minutes:
+            return True
+
+        # Milestone trigger
+        if self.config.interval_checkpoints.force_on_milestone:
+            if self._is_milestone_boundary(goal):
+                return True
+
+        return False
+
+    def _detect_triggers(self, goal: DailyGoal) -> list[CheckpointTrigger]:
+        triggers = []
+
+        # NEW: Interval checkpoint
+        if self._check_interval_trigger(goal):
+            triggers.append(CheckpointTrigger.INTERVAL)
+
+        # ... existing triggers ...
+
+        return triggers
+
+    def mark_checkpoint_completed(self) -> None:
+        """Reset interval counters after checkpoint."""
+        self._issues_since_checkpoint = 0
+        self._last_checkpoint_time = datetime.now()
+
+    def increment_issue_count(self) -> None:
+        """Called after each issue completes."""
+        self._issues_since_checkpoint += 1
+```
+
+**CLI Enhancement:**
+
+```bash
+# Configure interval checkpoints
+swarm-attack cos config set interval_checkpoint_issues 3
+swarm-attack cos config set interval_checkpoint_minutes 60
+
+# View checkpoint due status
+swarm-attack cos status
+# Output includes: "Next checkpoint in: 2 issues or 45 minutes"
+```
+
+### 7.5 Feedback Incorporation Loop
+
+**Pattern:** Capture human feedback at checkpoints, inject into subsequent agent prompts. Learning that sticks.
+
+```python
+@dataclass
+class HumanFeedback:
+    """Structured feedback from checkpoint resolution."""
+    checkpoint_id: str
+    timestamp: str
+    feedback_type: str              # "guidance", "correction", "preference"
+    content: str
+    applies_to: list[str]           # Tags for what this feedback applies to
+    expires_at: Optional[str]       # When this feedback becomes stale
+
+class FeedbackIncorporator:
+    """Manages feedback incorporation into agent prompts."""
+
+    def __init__(self, feedback_store: FeedbackStore):
+        self.store = feedback_store
+
+    def record_feedback(self, checkpoint: Checkpoint, notes: str) -> HumanFeedback:
+        """Record human feedback from checkpoint resolution."""
+        # Analyze feedback to extract structure
+        feedback_type = self._classify_feedback(notes)
+        applies_to = self._extract_tags(checkpoint, notes)
+
+        feedback = HumanFeedback(
+            checkpoint_id=checkpoint.checkpoint_id,
+            timestamp=datetime.now().isoformat(),
+            feedback_type=feedback_type,
+            content=notes,
+            applies_to=applies_to,
+            expires_at=self._calculate_expiry(feedback_type),
+        )
+
+        self.store.save(feedback)
+        return feedback
+
+    def get_relevant_feedback(self, goal: DailyGoal) -> list[HumanFeedback]:
+        """Get feedback relevant to current goal."""
+        all_feedback = self.store.load_active()
+
+        relevant = []
+        for fb in all_feedback:
+            # Check tag overlap
+            goal_tags = set(goal.tags or [])
+            feedback_tags = set(fb.applies_to)
+            if goal_tags & feedback_tags:
+                relevant.append(fb)
+
+            # Check content similarity
+            elif self._is_content_similar(goal.content, fb.content):
+                relevant.append(fb)
+
+        return relevant
+
+    def build_feedback_context(self, goal: DailyGoal) -> str:
+        """Build context string for agent prompt."""
+        relevant = self.get_relevant_feedback(goal)
+
+        if not relevant:
+            return ""
+
+        context = "\n\n## Human Feedback from Recent Checkpoints\n"
+        context += "Incorporate this guidance from the PM/founder:\n\n"
+
+        for fb in relevant:
+            context += f"- **{fb.feedback_type}**: {fb.content}\n"
+
+        return context
+
+# Integration in agent prompts
+class CoderAgent:
+    async def run(self, goal: DailyGoal, context: dict) -> CoderResult:
+        # Get relevant human feedback
+        feedback_context = self.feedback_incorporator.build_feedback_context(goal)
+
+        prompt = f"""
+        {self.BASE_PROMPT}
+
+        {feedback_context}  # NEW: Human feedback injected
+
+        Goal: {goal.content}
+        """
+
+        # ... rest of coder logic ...
+```
+
+### 7.6 Progress Snapshot API
+
+**Pattern:** Real-time computed metrics without recalculation. Visibility into agent progress.
+
+```python
+@dataclass
+class ProgressSnapshot:
+    """Computed progress metrics at a point in time."""
+    # Counts
+    total: int
+    completed: int
+    in_progress: int
+    blocked: int
+    failed: int
+    pending: int
+
+    # Percentages
+    percent_complete: float
+    percent_blocked: float
+
+    # Velocity
+    issues_per_hour: float
+    estimated_completion_hours: float
+
+    # Cost
+    total_cost_usd: float
+    average_cost_per_issue: float
+    remaining_budget_usd: float
+
+    # Time
+    elapsed_seconds: int
+    average_seconds_per_issue: float
+
+    # Trends
+    velocity_trend: str             # "increasing", "stable", "decreasing"
+    cost_trend: str                 # "under_budget", "on_budget", "over_budget"
+
+class ProgressTracker:
+    """Track and compute progress metrics."""
+
+    def __init__(self, state_store: StateStore):
+        self.state_store = state_store
+        self._history: list[ProgressSnapshot] = []
+
+    def get_snapshot(self, feature_id: str) -> ProgressSnapshot:
+        """Compute current progress snapshot."""
+        state = self.state_store.load(feature_id)
+        tasks = state.tasks
+
+        total = len(tasks)
+        completed = sum(1 for t in tasks if t.stage == TaskStage.DONE)
+        in_progress = sum(1 for t in tasks if t.stage == TaskStage.IMPLEMENTING)
+        blocked = sum(1 for t in tasks if t.stage == TaskStage.BLOCKED)
+        failed = sum(1 for t in tasks if t.stage == TaskStage.FAILED)
+        pending = total - completed - in_progress - blocked - failed
+
+        # Calculate velocity
+        elapsed = (datetime.now() - state.started_at).total_seconds() if state.started_at else 1
+        issues_per_hour = (completed / elapsed) * 3600 if elapsed > 0 else 0
+        remaining = total - completed
+        estimated_hours = remaining / issues_per_hour if issues_per_hour > 0 else float('inf')
+
+        # Cost metrics
+        total_cost = sum(t.cost_usd for t in tasks if t.cost_usd)
+        avg_cost = total_cost / completed if completed > 0 else 0
+        remaining_budget = state.budget_usd - total_cost
+
+        # Trends
+        velocity_trend = self._calculate_velocity_trend(feature_id)
+        cost_trend = self._calculate_cost_trend(state.budget_usd, total_cost, completed, total)
+
+        snapshot = ProgressSnapshot(
+            total=total,
+            completed=completed,
+            in_progress=in_progress,
+            blocked=blocked,
+            failed=failed,
+            pending=pending,
+            percent_complete=(completed / total * 100) if total > 0 else 0,
+            percent_blocked=(blocked / total * 100) if total > 0 else 0,
+            issues_per_hour=issues_per_hour,
+            estimated_completion_hours=estimated_hours,
+            total_cost_usd=total_cost,
+            average_cost_per_issue=avg_cost,
+            remaining_budget_usd=remaining_budget,
+            elapsed_seconds=int(elapsed),
+            average_seconds_per_issue=elapsed / completed if completed > 0 else 0,
+            velocity_trend=velocity_trend,
+            cost_trend=cost_trend,
+        )
+
+        self._history.append(snapshot)
+        return snapshot
+```
+
+**CLI Integration:**
+
+```bash
+swarm-attack cos progress chief-of-staff-v2
+
+# Output:
+# Progress: 12/35 issues (34.3%)
+# ━━━━━━━━━━━━░░░░░░░░░░░░░░░░░░░░░░
+#
+# Status: 1 in progress, 2 blocked, 0 failed
+# Velocity: 2.4 issues/hour (stable)
+# Cost: $15.40 spent, $34.60 remaining (on budget)
+# ETA: ~9.6 hours
+#
+# Next checkpoint in: 1 issue
+```
+
+### 7.7 Continue-on-Block Strategy
+
+**Pattern:** Don't halt entire feature when one issue fails. Continue with independent issues.
+
+```python
+class ExecutionStrategy(Enum):
+    SEQUENTIAL = "sequential"           # Stop on any failure (current)
+    CONTINUE_ON_BLOCK = "continue"      # Continue independent issues
+    PARALLEL_SAFE = "parallel_safe"     # Parallel non-conflicting issues
+
+@dataclass
+class DependencyGraph:
+    """Track dependencies between issues."""
+    issues: list[TaskRef]
+    dependencies: dict[int, list[int]]  # issue_number -> depends_on
+
+    def get_ready_issues(self, completed: set[int], blocked: set[int]) -> list[TaskRef]:
+        """Get issues that can start (dependencies met, not blocked)."""
+        ready = []
+        for issue in self.issues:
+            if issue.issue_number in completed or issue.issue_number in blocked:
+                continue
+
+            deps = self.dependencies.get(issue.issue_number, [])
+            if all(d in completed for d in deps):
+                ready.append(issue)
+
+        return ready
+
+class AutopilotRunner:
+    async def _execute_goals_continue_on_block(
+        self,
+        goals: list[DailyGoal],
+    ) -> list[GoalExecutionResult]:
+        """Execute goals, continuing past blocked issues."""
+        results = []
+        completed: set[str] = set()
+        blocked: set[str] = set()
+
+        # Build dependency graph
+        dep_graph = self._build_dependency_graph(goals)
+
+        while True:
+            # Get ready goals (dependencies met, not blocked)
+            ready = dep_graph.get_ready_goals(completed, blocked)
+
+            if not ready:
+                # No more ready goals
+                break
+
+            for goal in ready:
+                result = await self._execute_goal(goal)
+                results.append(result)
+
+                if result.success:
+                    completed.add(goal.goal_id)
+                else:
+                    # Mark as blocked, but continue with other goals
+                    blocked.add(goal.goal_id)
+
+                    # Create hiccup checkpoint for blocked goal
+                    if result.error:
+                        goal.is_hiccup = True
+                        await self._create_hiccup_checkpoint(goal, result.error)
+
+                # Check session-level triggers
+                if result.checkpoint_pending:
+                    break
+
+        return results
+```
+
+### 7.8 Enhanced Q&A Format
+
+**Pattern:** Structured Q&A with tradeoffs, similar past decisions, and clear recommendations.
+
+```python
+@dataclass
+class EnhancedCheckpointOption:
+    """Rich option with tradeoffs and context."""
+    id: str
+    label: str
+    description: str
+    tradeoffs: dict[str, str]       # {"pros": ..., "cons": ...}
+    estimated_cost: Optional[float]
+    estimated_time: Optional[str]
+    risk_level: str                 # "low", "medium", "high"
+    is_recommended: bool = False
+    recommendation_reason: Optional[str] = None
+
+@dataclass
+class EnhancedCheckpoint:
+    """World-class checkpoint format."""
+    checkpoint_id: str
+    trigger: CheckpointTrigger
+
+    # Context
+    context: str
+    current_progress: ProgressSnapshot
+    risk_assessment: RiskAssessment
+
+    # Q&A Format
+    question: str                           # Clear question
+    options: list[EnhancedCheckpointOption]
+    recommended_option_id: str
+    recommendation_rationale: str
+
+    # Learning context
+    similar_past_decisions: list[PastDecision]
+    preference_insights: list[str]          # "You usually prefer X over Y"
+
+    # Metadata
+    created_at: str
+    expires_at: Optional[str]
+    urgency: str                            # "immediate", "soon", "whenever"
+
+class CheckpointSystem:
+    async def _create_enhanced_checkpoint(
+        self,
+        goal: DailyGoal,
+        trigger: CheckpointTrigger,
+    ) -> EnhancedCheckpoint:
+        """Create world-class checkpoint with full context."""
+
+        # Get risk assessment
+        risk = self.risk_engine.assess_risk(goal, self._get_context())
+
+        # Get progress snapshot
+        progress = self.progress_tracker.get_snapshot(goal.linked_feature)
+
+        # Get similar past decisions
+        similar = self.preference_learner.find_similar_decisions(goal)
+
+        # Get preference insights
+        insights = self.preference_learner.get_insights_for_context(goal)
+
+        # Build enhanced options with tradeoffs
+        options = self._build_enhanced_options(goal, trigger, risk)
+
+        # Determine recommendation
+        rec_option, rec_reason = self._determine_recommendation(
+            goal, trigger, options, similar, insights
+        )
+
+        return EnhancedCheckpoint(
+            checkpoint_id=f"cp-{uuid.uuid4().hex[:8]}",
+            trigger=trigger,
+            context=self._build_context(goal, trigger),
+            current_progress=progress,
+            risk_assessment=risk,
+            question=self._build_question(goal, trigger),
+            options=options,
+            recommended_option_id=rec_option.id,
+            recommendation_rationale=rec_reason,
+            similar_past_decisions=similar,
+            preference_insights=insights,
+            created_at=datetime.now().isoformat(),
+            expires_at=self._calculate_expiry(trigger),
+            urgency=self._determine_urgency(trigger, risk),
+        )
+
+    def _build_enhanced_options(
+        self,
+        goal: DailyGoal,
+        trigger: CheckpointTrigger,
+        risk: RiskAssessment,
+    ) -> list[EnhancedCheckpointOption]:
+        """Build options with tradeoffs."""
+
+        if trigger == CheckpointTrigger.COST_SINGLE:
+            return [
+                EnhancedCheckpointOption(
+                    id="proceed",
+                    label="Proceed with estimated cost",
+                    description=f"Execute as planned (${goal.estimated_cost_usd:.2f})",
+                    tradeoffs={
+                        "pros": "Complete goal without modification",
+                        "cons": f"Uses {goal.estimated_cost_usd/risk.estimated_cost*100:.0f}% of typical budget",
+                    },
+                    estimated_cost=goal.estimated_cost_usd,
+                    risk_level="medium",
+                    is_recommended=True,
+                    recommendation_reason="Within session budget limits",
+                ),
+                EnhancedCheckpointOption(
+                    id="optimize",
+                    label="Optimize to reduce cost",
+                    description="Break into smaller chunks or use cheaper models",
+                    tradeoffs={
+                        "pros": "Preserve budget for later goals",
+                        "cons": "May take longer or reduce output quality",
+                    },
+                    estimated_cost=goal.estimated_cost_usd * 0.6,
+                    risk_level="low",
+                ),
+                EnhancedCheckpointOption(
+                    id="skip",
+                    label="Skip this goal",
+                    description="Move to next goal, come back later",
+                    tradeoffs={
+                        "pros": "Zero cost, preserve full budget",
+                        "cons": "Goal remains incomplete, may block dependents",
+                    },
+                    estimated_cost=0,
+                    risk_level="low",
+                ),
+            ]
+
+        # ... similar for other trigger types ...
+```
+
+**CLI Output:**
+
+```
+🔔 CHECKPOINT: COST (Single Action)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Context: About to implement user authentication flow
+Risk Score: 0.45 (medium) | Reversibility: full
+
+Progress: 5/20 issues (25%) | Budget: $18.60 remaining
+
+❓ How should we proceed with this $7.50 action?
+
+  1. ✅ Proceed with estimated cost [$7.50] (Recommended)
+     Pros: Complete goal without modification
+     Cons: Uses 40% of remaining budget
+
+  2. 💰 Optimize to reduce cost [$4.50]
+     Pros: Preserve budget for later goals
+     Cons: May take longer or reduce quality
+
+  3. ⏭️  Skip this goal [$0]
+     Pros: Zero cost, preserve full budget
+     Cons: Goal remains incomplete
+
+💡 Recommendation: Proceed - similar past decisions were approved 4/5 times
+   You typically approve cost actions under $10.
+
+📊 Similar past decisions:
+   - [Dec 15] Auth middleware: Approved ($6.20)
+   - [Dec 14] API routes: Approved ($8.10)
+
+[1] Proceed  [2] Optimize  [3] Skip  [?] Discuss
+```
+
+### 7.9 Implementation Tasks (Additional)
+
+| # | Task | Size | Dependencies |
+|---|------|------|--------------|
+| 12.1 | Implement RiskScoringEngine | M | 9.2, 9.3 |
+| 12.2 | Implement PreFlightChecker | M | 12.1 |
+| 12.3 | Implement DiscoveryAgent and discovery phase | M | - |
+| 12.4 | Add interval checkpoint configuration and triggers | S | 7.7 |
+| 12.5 | Implement FeedbackIncorporator | M | 7.6 |
+| 12.6 | Implement ProgressTracker and snapshot API | S | - |
+| 12.7 | Implement continue-on-block execution strategy | M | 7.2 |
+| 12.8 | Implement EnhancedCheckpoint format | M | 7.6, 12.1 |
+| 12.9 | Add progress and feedback CLI commands | S | 12.5, 12.6 |
+
+---
+
+## 8. Success Metrics
 
 | Metric | v1 Baseline | v2 Target | Measurement |
 |--------|-------------|-----------|-------------|
@@ -1363,6 +3169,7 @@ def validate_artifact(artifact_type: str, path: str):
 | Multi-day completion | N/A | >75% | Campaigns finished as planned |
 | Learning improvement | None | +10%/month | Goal completion rate trend |
 | Cost efficiency | Unmeasured | Track | $/completed goal trend |
+| Checkpoint response time | N/A | <30 min avg | Time from checkpoint to resolution |
 
 ---
 
@@ -1371,57 +3178,93 @@ def validate_artifact(artifact_type: str, path: str):
 | Risk | Mitigation | Owner |
 |------|------------|-------|
 | Runaway execution | Per-day + per-campaign budget caps, mandatory checkpoints | David's design |
-| Bad learning loops | Bounded weight changes (±20%/week), rollback on degradation | Kanjun's design |
+| Bad learning loops | Bounded weight changes (±10% per update), rollback on degradation | Kanjun's design |
 | Infinite recovery | 4-level cap with forced escalation, circuit breakers | Shunyu's design |
 | Context bloat | Episode pruning (keep last 100), recency decay | Jerry's design |
+| Missed checkpoints | Explicit trigger thresholds including hiccups, default to checkpoint on uncertainty | P0 design |
 
 ---
 
 ## 9. Implementation Roadmap
 
-### Phase 7: Real Execution (MVP - Do First)
-**5 issues**
+### Phase 7: Real Execution + Checkpoints (MVP - Do First)
+**10 issues** (5 execution + 5 checkpoint)
 
-This is the foundation. Without real execution, v2 is just a more elaborate stub.
+This is the foundation. Without real execution, v2 is just a more elaborate stub. Checkpoints are P0 - required for collaborative autonomy.
 
 ### Phase 8: Hierarchical Recovery (Core Autonomy)
-**5 issues** (simplified from 6)
+**5 issues**
 
 Enables overnight runs. Combined with Phase 7, you can say "work on this" and trust it to make progress without babysitting.
 
-### Phase 9: Episode Memory + Reflexion (Learning)
-**5 issues** (simplified from 6 - no embeddings)
+### Phase 9: Episode Memory + Reflexion + Preferences (Learning)
+**6 issues** (5 memory + 1 preference learning)
 
-Cheap investment, high payoff. Every execution makes future executions better.
+Cheap investment, high payoff. Every execution makes future executions better. Preference learning satisfies PRD requirement.
 
-### Phase 10: Multi-Day Campaigns (Strategic)
-**7 issues**
+### Phase 10: Multi-Day Campaigns + Weekly Planning (Strategic)
+**8 issues** (7 campaigns + 1 weekly)
 
-Graduate from "daily tasks" to "build this feature over the week."
+Graduate from "daily tasks" to "build this feature over the week." Weekly planning satisfies PRD User Story #6.
 
 ### Phase 11: Internal Validation (Scale)
 **6 issues**
 
 Reduces human bottleneck. Most specs/code auto-approve; you only see the hard cases.
 
-**Total: 28 issues across 5 phases**
+### Phase 12: World-Class Enhancements (Research-Driven)
+**9 issues**
+
+Industry-leading patterns from LangGraph, Apify, and agent-harness:
+- Risk scoring engine (nuanced 0-1 scores vs binary)
+- Pre-flight validation (catch issues before execution)
+- Discovery phase (exploration before spec)
+- Interval checkpoints (regular human touchpoints)
+- Feedback incorporation (learning that sticks)
+- Progress tracking (real-time visibility)
+- Continue-on-block (resilient execution)
+- Enhanced Q&A format (tradeoffs, recommendations, context)
+
+**Total: 44 issues across 6 phases**
 
 ---
 
 ## 10. Expert Panel Final Statement
 
-**Harrison Chase:** "The roadmap is pragmatic. Phase 7 → 8 → 9 builds a solid autonomous agent. Phases 10-11 add strategic capability. Ship Phase 7-9 first, validate, then proceed."
+**Harrison Chase:** "The roadmap is pragmatic. Phase 7 → 8 → 9 builds a solid autonomous agent. Phases 10-11 add strategic capability. **Phase 12's world-class enhancements** from LangGraph interrupt patterns are exactly right for the Q&A checkpoint experience. Ship Phase 7-9 first, validate, then proceed."
 
-**Jerry Liu:** "Episode memory with simple retrieval is the right call for startup scale. Add embeddings when you have thousands of episodes, not before."
+**Jerry Liu:** "Episode memory with simple retrieval is the right call for startup scale. Add embeddings when you have thousands of episodes, not before. **The progress snapshot API** gives you visibility without complexity. Parallel execution can wait for v3."
 
-**Kanjun Qiu:** "Bounded learning is critical. The 4-level recovery and weight caps prevent runaway self-modification. Good safety design."
+**Kanjun Qiu:** "Bounded learning is critical. **Risk scoring** (0-1 nuanced vs binary) is a massive upgrade - it lets the system learn what 'risky' means for YOUR codebase. **Feedback incorporation loop** ensures human guidance persists across sessions."
 
-**David Dohan:** "I'm satisfied with the checkpoint system and escalation paths. The security veto in validation is essential. Don't compromise on that."
+**David Dohan:** "I'm satisfied with the checkpoint system and escalation paths. **Pre-flight validation** is the right addition - catch issues BEFORE spending tokens, not after. The security veto in validation is essential. Don't compromise on that."
 
-**Shunyu Yao:** "Simplified recovery is the right call. One alternative on failure, not three. Keep it lean until you have data showing you need more."
+**Shunyu Yao:** "Simplified recovery is the right call. **Discovery phase** before spec writing prevents premature convergence - let the system explore before committing. **Continue-on-block** is pragmatic - don't halt the whole campaign for one stuck issue."
+
+---
+
+## 11. Summary: What Makes This World-Class
+
+| Dimension | Standard Approach | World-Class Approach (This Spec) |
+|-----------|-------------------|----------------------------------|
+| **Risk Detection** | Pattern matching on keywords | Multi-factor scoring (cost, scope, reversibility, precedent) |
+| **Checkpoints** | Event-triggered only | Event + interval + milestone triggers |
+| **Q&A Format** | Yes/no approval | Options with tradeoffs, recommendations, similar past decisions |
+| **Feedback** | One-time approval | Feedback incorporated into future prompts |
+| **Learning** | Static weights | Preference learning from approval patterns |
+| **Visibility** | Post-hoc logs | Real-time progress snapshots with velocity/cost trends |
+| **Resilience** | Stop on failure | Continue with independent issues |
+| **Planning** | Jump to spec | Discovery exploration → spec |
+
+This spec combines:
+- **LangGraph** interrupt/resume patterns for human-in-the-loop
+- **Apify** role-based orchestration and maker-checker loops
+- **agent-harness** interval checkpoints and feedback incorporation
+- **Industry best practices** for risk scoring and pre-flight validation
 
 ---
 
 *Spec finalized: December 2025*
 *Expert Panel: LangChain, LlamaIndex, Imbue, Anthropic, Princeton*
+*Research Sources: Apify, LangGraph, agent-harness, Azure AI Patterns*
 *Ready for implementation*

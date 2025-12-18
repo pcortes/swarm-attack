@@ -59,6 +59,71 @@ Chief of Staff v1 is complete (20/20 issues, 279 tests). This PRD defines v2: th
 
 6. **As the developer**, I want a weekly planning session that projects forward, not just daily standups that look backward.
 
+7. **As the PM/founder**, I want the system to get my signoff before any work that impacts UX, flows, cost, or architecture - like a senior engineer who knows to check in before making big calls.
+
+8. **As the PM/founder**, I want a Q&A process where the system presents decision points with suggested options and recommendations, waits for my approval or adjustment, then proceeds.
+
+---
+
+## CRITICAL REQUIREMENT: Human-in-the-Loop UX/PM Signoff
+
+**This is a P0 requirement that must be in v2.**
+
+The system must operate in **collaborative autonomy** mode, not black-box autonomy. Think of it like: I'm the PM/eng-manager, Chief of Staff is the senior engineer who knows to check in before making big calls.
+
+### Signoff Triggers
+
+The system MUST pause and get human approval before:
+
+| Trigger | Threshold | Example |
+|---------|-----------|---------|
+| **UX/Flow Changes** | Any user-facing change | New screens, changed interactions, copy changes |
+| **Cost** | Single action >$5 OR cumulative >$15/day | Expensive LLM calls, multiple retries |
+| **Architecture Decisions** | Any structural change | New modules, changed interfaces, dependencies |
+| **Scope Changes** | Deviation from approved plan | Adding/removing features, changing approach |
+| **Hiccups** | Any unexpected situation | Errors, blockers, unclear requirements |
+
+### Q&A Checkpoint Format
+
+When a checkpoint triggers, the system should:
+
+1. **Present the Decision Point**
+   ```
+   🔔 CHECKPOINT: [Trigger Type]
+
+   Context: [What's happening and why we're asking]
+
+   Options:
+   1. [Option A] - [Tradeoffs]
+   2. [Option B] - [Tradeoffs]
+   3. [Option C] - [Tradeoffs]
+
+   💡 Recommendation: Option [X] because [rationale]
+
+   [Approve Recommended] [Choose Different] [Discuss More]
+   ```
+
+2. **Wait for Human Response** - Never proceed without explicit approval
+
+3. **Record the Decision** - Log what was proposed, what was approved, and why
+
+### Sync Cadence
+
+| Sync Type | When | Purpose |
+|-----------|------|---------|
+| **Daily Standup** | Morning (existing v1) | Plan the day, review yesterday |
+| **Pre-flight Check** | Before significant work | Confirm approach before investing time |
+| **Hiccup Sync** | Any unexpected situation | Surface problems early |
+| **Review Gate** | Before merging/shipping | Final approval on deliverables |
+
+### Decision Learning
+
+The system should learn from my approval patterns:
+- Track which recommendations I accept vs adjust
+- Surface patterns: "You usually prefer X over Y in these situations"
+- Adapt future recommendations based on preferences
+- But NEVER skip checkpoints - learning improves suggestions, not autonomy level
+
 ---
 
 ## Expert Panel Q&A Phase

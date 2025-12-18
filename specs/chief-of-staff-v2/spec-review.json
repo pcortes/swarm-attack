@@ -1,50 +1,49 @@
 {
   "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/chief-of-staff-v2/spec-draft.md",
   "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/chief-of-staff-v2.md",
-  "reviewed_at": "2025-12-18T17:32:30.407490Z",
+  "reviewed_at": "2025-12-18T17:53:52.412999Z",
   "scores": {
     "clarity": 0.65,
     "coverage": 0.45,
-    "architecture": 0.4,
-    "risk": 0.55
+    "architecture": 0.5,
+    "risk": 0.45
   },
   "issues": [
     {
       "severity": "critical",
       "dimension": "coverage",
-      "location": "specs/chief-of-staff-v2/spec-draft.md:Scope Boundaries",
-      "description": "The spec explicitly defers Parallel Execution (P6) even though the PRD\u2019s User Story #3 requires the system to coordinate multiple features in parallel; shipping v2 without even a minimal plan for concurrent workstreams leaves a core requirement unaddressed.",
-      "suggestion": "Reintroduce a lightweight parallel plan\u2014e.g., allow two campaigns to run on separate branches with conflict checks\u2014and describe how AutopilotRunner arbitrates shared files so the PRD user story is met."
+      "location": "specs/chief-of-staff-v2/spec-draft.md:49",
+      "description": "OVER-ENGINEERING: The spec explicitly defers parallel execution (user story #3) to v3, so v2 cannot coordinate multiple workstreams despite the PRD calling this out as part of the v2 vision.",
+      "suggestion": "Restore a lightweight coordination plan for at least two concurrent workstreams (e.g., branch-per-goal with lock checking) so v2 meets the PRD requirement without the full coordination layer."
+    },
+    {
+      "severity": "critical",
+      "dimension": "coverage",
+      "location": "specs/chief-of-staff-v2/spec-draft.md:275",
+      "description": "OVER-ENGINEERING: `_detect_triggers` never emits the P0 `HICCUP` trigger, so unexpected errors will never pause for approval even though the PRD makes hiccup checkpoints mandatory.",
+      "suggestion": "Add explicit hiccup detection (error counters, recovery level >=2, unknown states) so the checkpoint system can raise `CheckpointTrigger.HICCUP` immediately when something unexpected happens."
     },
     {
       "severity": "moderate",
       "dimension": "coverage",
-      "location": "specs/chief-of-staff-v2/spec-draft.md:Scope Boundaries",
-      "description": "Weekly sprint planning (PRD User Story #6) is deferred to a future version, yet the PRD expects forward-looking weekly planning in v2, so the spec omits a promised deliverable.",
-      "suggestion": "Add at least a basic weekly planning session (could be a CLI command that summarizes campaign state and proposes next-week goals) so v2 satisfies the PRD commitment."
-    },
-    {
-      "severity": "critical",
-      "dimension": "architecture",
-      "location": "specs/chief-of-staff-v2/spec-draft.md:Phase 8",
-      "description": "OVER-ENGINEERING: The RecoveryManager mandates Tree-of-Thought alternative generation, clarification dialogues, and multi-level LLM orchestration for every failure\u2014significant new infrastructure and latency for what is essentially an automatic retry requirement for ~100 users.",
-      "suggestion": "Simplify recovery to bounded retries with one alternative strategy and a single clarification prompt only on persistent failure; drop the ToT generator and consensus machinery until real-world failures justify the extra complexity."
+      "location": "specs/chief-of-staff-v2/spec-draft.md:395",
+      "description": "OVER-ENGINEERING: The cumulative cost trigger depends on `update_daily_cost`, but the spec never describes calling it from AutopilotRunner/CampaignExecutor, so the >$15/day checkpoint cannot fire.",
+      "suggestion": "Spell out where every execution path increments and resets `daily_cost` (e.g., after each goal result) so the cumulative checkpoint actually reflects real spending."
     },
     {
       "severity": "moderate",
-      "dimension": "architecture",
-      "location": "specs/chief-of-staff-v2/spec-draft.md:Phase 9",
-      "description": "Despite stating that semantic memory/embeddings are deferred, the Episode Memory design still depends on generating and storing embeddings plus a separate vector store, adding operational overhead that v2 doesn\u2019t need just to retrieve a handful of reflections.",
-      "suggestion": "Start with plain JSONL storage and simple heuristic filtering (recency + goal tags) for episode retrieval; only add embedding infrastructure if retrieval quality becomes a bottleneck."
+      "dimension": "coverage",
+      "location": "specs/chief-of-staff-v2/spec-draft.md:390",
+      "description": "OVER-ENGINEERING: `_record_decision` is left as a stub and no flow connects checkpoint resolutions to the `PreferenceLearner`, so approvals/modifications never feed learning as the PRD requires.",
+      "suggestion": "Define how `_record_decision` instantiates and calls `PreferenceLearner.record_decision` (with the latest episode data) and add a task to wire it up so human feedback actually updates preferences."
     }
   ],
   "disputed_issues": [],
   "strengths": [
-    "Phase 7 clearly describes how to wire AutopilotRunner into the existing orchestrator/bug orchestrator with pre-flight budget checks, so real execution can ship quickly.",
-    "Campaign planning (Phase 10) defines budgets, state transitions, and replan triggers that help bound scope and cost for multi-day work.",
-    "Validation layer enforces a security veto and majority approval so automated outputs still have guardrails before surfacing to humans."
+    "AutopilotRunner real-execution wiring reuses the existing Orchestrator/BugOrchestrator APIs instead of inventing new systems (specs/chief-of-staff-v2/spec-draft.md:70).",
+    "ValidationLayer adds a pragmatic consensus + security-veto gate so humans only see artifacts once internal critics are satisfied (specs/chief-of-staff-v2/spec-draft.md:1975)."
   ],
-  "summary": "Spec gives detailed designs for execution, campaigns, and validation but skips PRD-required weekly planning and parallel workstreams while layering on heavyweight recovery and embedding infrastructure that will slow shipping. Trim the over-designed recovery/memory pieces and reincorporate the missing PRD deliverables so v2 stays simple and achievable.",
+  "summary": "The draft covers most major components, but it drops the PRD\u2019s parallel workstream story entirely and omits key checkpoint wiring (hiccups, cumulative spend, preference learning), so the mandatory human-in-loop safety loops would never fire. Tighten the checkpoint/learning plumbing and restore a simple parallel-execution plan before implementing.",
   "recommendation": "REVISE",
   "pass_threshold_met": false
 }
