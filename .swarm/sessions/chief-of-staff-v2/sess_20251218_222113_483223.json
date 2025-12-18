@@ -1,0 +1,13 @@
+{
+  "session_id": "sess_20251218_222113_483223",
+  "feature_id": "chief-of-staff-v2",
+  "issue_number": 7,
+  "started_at": "2025-12-18T22:21:13.483242Z",
+  "status": "complete",
+  "checkpoints": [],
+  "ended_at": "2025-12-18T22:21:14.839359Z",
+  "end_status": "failed",
+  "cost_usd": 0.0,
+  "worktree_path": null,
+  "commits": []
+}

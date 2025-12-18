@@ -38,7 +38,7 @@
     },
     {
       "issue_number": 2,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement feature execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -61,8 +61,34 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v2/test_issue_3.py",
+          "swarm_attack/chief_of_staff/autopilot_runner.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v2/test_issue_3.py": [
+            "TestDailyGoalLinkedBugField",
+            "TestExecuteGoalDetectsLinkedBug",
+            "TestExecuteGoalCallsBugOrchestrator",
+            "TestExecuteGoalReturnsGoalExecutionResultForBugs",
+            "TestExecuteGoalMapsStatusForBugs",
+            "TestExecuteGoalExceptionHandlingForBugs",
+            "TestExecuteGoalNoBugOrchestrator",
+            "TestExecuteBugGoalMethod",
+            "TestIntegrationBugOrchestratorCalled",
+            "TestExecuteGoalRoutesToCorrectMethod"
+          ],
+          "swarm_attack/chief_of_staff/autopilot_runner.py": [
+            "GoalExecutionResult",
+            "AutopilotRunResult",
+            "SessionContext",
+            "AutopilotRunner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v2/test_issue_3.py, swarm_attack/chief_of_staff/autopilot_runner.py; Defined: TestDailyGoalLinkedBugField, TestExecuteGoalDetectsLinkedBug, TestExecuteGoalCallsBugOrchestrator, TestExecuteGoalReturnsGoalExecutionResultForBugs, TestExecuteGoalMapsStatusForBugs"
     },
     {
       "issue_number": 4,
@@ -80,7 +106,7 @@
     },
     {
       "issue_number": 5,
-      "stage": "BLOCKED",
+      "stage": "DONE",
       "title": "Add pre-execution budget checks and estimated_cost_usd field",
       "dependencies": [
         1
@@ -237,12 +263,12 @@
       "completion_summary": null
     }
   ],
-  "current_session": "sess_20251218_220552_865914",
+  "current_session": "sess_20251218_222133_635512",
   "created_at": "2025-12-18T17:26:54.317143Z",
-  "updated_at": "2025-12-18T21:21:18.741434Z",
-  "cost_total_usd": 9.02903995,
+  "updated_at": "2025-12-18T22:08:38.077112Z",
+  "cost_total_usd": 9.4101524,
   "cost_by_phase": {
     "SPEC_IN_PROGRESS": 4.0447109999999995,
-    "IMPLEMENTATION": 4.98432895
+    "IMPLEMENTATION": 5.3654414
   }
 }

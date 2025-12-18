@@ -496,6 +496,16 @@ class TestExecuteGoalBudgetCheck:
             linked_feature="my-feature",
         )
 
+        # Mock _execute_goal to return success (testing budget check, not execution)
+        from swarm_attack.chief_of_staff.autopilot_runner import GoalExecutionResult
+        runner._execute_goal = MagicMock(return_value=GoalExecutionResult(
+            success=True,
+            cost_usd=2.0,
+            duration_seconds=60,
+            error=None,
+            output="Test output",
+        ))
+
         # Set session context with sufficient budget
         result = runner._execute_goal_with_budget_check(
             goal=goal,

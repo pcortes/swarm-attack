@@ -52,6 +52,7 @@ class DailyGoal:
     linked_feature: Optional[str] = None
     linked_bug: Optional[str] = None
     linked_spec: Optional[str] = None
+    linked_issue: Optional[int] = None
     tags: list[str] = field(default_factory=list)
     estimated_cost_usd: Optional[float] = None
     is_unplanned: bool = False
@@ -78,6 +79,7 @@ class DailyGoal:
             linked_feature=data.get("linked_feature"),
             linked_bug=data.get("linked_bug"),
             linked_spec=data.get("linked_spec"),
+            linked_issue=data.get("linked_issue"),
             tags=data.get("tags", []),
             estimated_cost_usd=data.get("estimated_cost_usd"),
             is_unplanned=data.get("is_unplanned", False),
@@ -98,6 +100,7 @@ class DailyGoal:
             "linked_feature": self.linked_feature,
             "linked_bug": self.linked_bug,
             "linked_spec": self.linked_spec,
+            "linked_issue": self.linked_issue,
             "tags": self.tags,
             "estimated_cost_usd": self.estimated_cost_usd,
             "is_unplanned": self.is_unplanned,
