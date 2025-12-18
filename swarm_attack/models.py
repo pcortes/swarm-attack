@@ -106,6 +106,7 @@ class IssueOutput:
     """
     files_created: list[str] = field(default_factory=list)
     classes_defined: dict[str, list[str]] = field(default_factory=dict)  # file -> [class names]
+    semantic_summary: Optional[str] = None  # LLM-generated summary of implementation
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -133,6 +134,7 @@ class TaskRef:
     technical_risk_score: float = 0.5  # 0-1, higher is riskier
     blocked_reason: Optional[str] = None  # Why this task is blocked (error message)
     outputs: Optional[IssueOutput] = None  # Files/classes created (populated after DONE)
+    completion_summary: Optional[str] = None  # Semantic summary after DONE
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

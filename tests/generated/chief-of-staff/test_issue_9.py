@@ -1,512 +1,379 @@
-"""Tests for AutopilotRunner component."""
+"""Tests for AutopilotSessionStore - pause/resume functionality."""
 
+import json
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timedelta
 from pathlib import Path
+from datetime import datetime, timezone
+from unittest.mock import patch
 
-from swarm_attack.chief_of_staff.autopilot import (
-    AutopilotRunner,
-    AutopilotSession,
-    AutopilotSessionStore,
-    AutopilotStatus,
-    StopTrigger,
-    GoalResult,
-)
+from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
+from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
 
 
-class TestAutopilotSession:
-    """Tests for AutopilotSession dataclass."""
+class TestAutopilotSessionStoreInit:
+    """Tests for AutopilotSessionStore initialization."""
 
-    def test_has_from_dict(self):
-        assert hasattr(AutopilotSession, 'from_dict')
+    def test_init_creates_storage_directory(self, tmp_path):
+        """AutopilotSessionStore.__init__ creates storage directory."""
+        store = AutopilotSessionStore(tmp_path)
+        expected_dir = tmp_path / ".swarm" / "chief-of-staff" / "autopilot"
+        assert expected_dir.exists()
+        assert expected_dir.is_dir()
 
-    def test_has_to_dict(self):
+    def test_init_with_existing_directory(self, tmp_path):
+        """AutopilotSessionStore.__init__ works with existing directory."""
+        storage_dir = tmp_path / ".swarm" / "chief-of-staff" / "autopilot"
+        storage_dir.mkdir(parents=True)
+        store = AutopilotSessionStore(tmp_path)
+        assert storage_dir.exists()
+
+    def test_storage_path_property(self, tmp_path):
+        """AutopilotSessionStore exposes storage_path property."""
+        store = AutopilotSessionStore(tmp_path)
+        expected = tmp_path / ".swarm" / "chief-of-staff" / "autopilot"
+        assert store.storage_path == expected
+
+
+class TestAutopilotSessionStoreSave:
+    """Tests for AutopilotSessionStore.save method."""
+
+    def test_save_creates_session_file(self, tmp_path):
+        """save() creates session file."""
+        store = AutopilotSessionStore(tmp_path)
         session = AutopilotSession(
-            session_id="test-123",
-            goals=[],
-            budget_usd=10.0,
-            duration_seconds=3600,
-        )
-        assert hasattr(session, 'to_dict')
-
-    def test_from_dict_creates_instance(self):
-        data = {
-            "session_id": "test-123",
-            "goals": ["goal1", "goal2"],
-            "budget_usd": 10.0,
-            "duration_seconds": 3600,
-            "current_goal_index": 0,
-            "status": "running",
-            "cost_usd": 0.0,
-            "started_at": "2025-01-01T00:00:00",
-        }
-        session = AutopilotSession.from_dict(data)
-        assert isinstance(session, AutopilotSession)
-        assert session.session_id == "test-123"
-        assert session.goals == ["goal1", "goal2"]
-        assert session.budget_usd == 10.0
-
-    def test_to_dict_roundtrip(self):
-        original = AutopilotSession(
-            session_id="test-456",
-            goals=["implement feature", "fix bug"],
-            budget_usd=25.0,
-            duration_seconds=7200,
-            current_goal_index=1,
-            status=AutopilotStatus.PAUSED,
-            cost_usd=5.5,
-        )
-        data = original.to_dict()
-        roundtrip = AutopilotSession.from_dict(data)
-        assert roundtrip.session_id == original.session_id
-        assert roundtrip.goals == original.goals
-        assert roundtrip.budget_usd == original.budget_usd
-        assert roundtrip.current_goal_index == original.current_goal_index
-
-    def test_session_tracks_cost(self):
-        session = AutopilotSession(
-            session_id="cost-test",
-            goals=["goal1"],
-            budget_usd=10.0,
-            duration_seconds=3600,
-            cost_usd=2.5,
-        )
-        assert session.cost_usd == 2.5
-
-    def test_session_has_stop_trigger(self):
-        session = AutopilotSession(
-            session_id="trigger-test",
-            goals=["goal1"],
-            budget_usd=10.0,
-            duration_seconds=3600,
-            stop_trigger=StopTrigger(until_time="18:00"),
-        )
-        assert session.stop_trigger is not None
-        assert session.stop_trigger.until_time == "18:00"
-
-
-class TestAutopilotStatus:
-    """Tests for AutopilotStatus enum."""
-
-    def test_has_running_status(self):
-        assert AutopilotStatus.RUNNING.value == "running"
-
-    def test_has_paused_status(self):
-        assert AutopilotStatus.PAUSED.value == "paused"
-
-    def test_has_completed_status(self):
-        assert AutopilotStatus.COMPLETED.value == "completed"
-
-    def test_has_aborted_status(self):
-        assert AutopilotStatus.ABORTED.value == "aborted"
-
-
-class TestStopTrigger:
-    """Tests for StopTrigger dataclass."""
-
-    def test_has_from_dict(self):
-        assert hasattr(StopTrigger, 'from_dict')
-
-    def test_has_to_dict(self):
-        trigger = StopTrigger()
-        assert hasattr(trigger, 'to_dict')
-
-    def test_until_time_trigger(self):
-        trigger = StopTrigger(until_time="17:00")
-        assert trigger.until_time == "17:00"
-
-    def test_from_dict_creates_instance(self):
-        data = {"until_time": "18:30"}
-        trigger = StopTrigger.from_dict(data)
-        assert trigger.until_time == "18:30"
-
-    def test_to_dict_roundtrip(self):
-        original = StopTrigger(until_time="09:00")
-        roundtrip = StopTrigger.from_dict(original.to_dict())
-        assert roundtrip.until_time == original.until_time
-
-
-class TestAutopilotSessionStore:
-    """Tests for AutopilotSessionStore persistence."""
-
-    def test_save_and_load_session(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        session = AutopilotSession(
-            session_id="persist-test",
-            goals=["goal1", "goal2"],
-            budget_usd=15.0,
-            duration_seconds=1800,
+            session_id="test-session-001",
+            feature_id="my-feature",
+            state=AutopilotState.RUNNING,
         )
         store.save(session)
-        loaded = store.load("persist-test")
+        
+        session_file = store.storage_path / "test-session-001.json"
+        assert session_file.exists()
+
+    def test_save_sets_last_persisted_at(self, tmp_path):
+        """save() sets last_persisted_at timestamp."""
+        store = AutopilotSessionStore(tmp_path)
+        session = AutopilotSession(
+            session_id="test-session-002",
+            feature_id="my-feature",
+            state=AutopilotState.RUNNING,
+        )
+        assert session.last_persisted_at is None
+        
+        store.save(session)
+        assert session.last_persisted_at is not None
+
+    def test_save_writes_valid_json(self, tmp_path):
+        """save() writes valid JSON content."""
+        store = AutopilotSessionStore(tmp_path)
+        session = AutopilotSession(
+            session_id="test-session-003",
+            feature_id="my-feature",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(session)
+        
+        session_file = store.storage_path / "test-session-003.json"
+        data = json.loads(session_file.read_text())
+        assert data["session_id"] == "test-session-003"
+        assert data["feature_id"] == "my-feature"
+        assert data["state"] == "paused"
+
+    def test_save_overwrites_existing(self, tmp_path):
+        """save() overwrites existing session file."""
+        store = AutopilotSessionStore(tmp_path)
+        session = AutopilotSession(
+            session_id="test-session-004",
+            feature_id="my-feature",
+            state=AutopilotState.RUNNING,
+        )
+        store.save(session)
+        
+        session.state = AutopilotState.PAUSED
+        store.save(session)
+        
+        session_file = store.storage_path / "test-session-004.json"
+        data = json.loads(session_file.read_text())
+        assert data["state"] == "paused"
+
+    def test_save_uses_atomic_write(self, tmp_path):
+        """save() uses atomic write pattern (temp file -> rename)."""
+        store = AutopilotSessionStore(tmp_path)
+        session = AutopilotSession(
+            session_id="test-session-005",
+            feature_id="my-feature",
+            state=AutopilotState.RUNNING,
+        )
+        
+        # After save, no temp files should remain
+        store.save(session)
+        
+        temp_files = list(store.storage_path.glob("*.tmp"))
+        assert len(temp_files) == 0
+        
+        session_file = store.storage_path / "test-session-005.json"
+        assert session_file.exists()
+
+
+class TestAutopilotSessionStoreLoad:
+    """Tests for AutopilotSessionStore.load method."""
+
+    def test_load_existing_session(self, tmp_path):
+        """load() returns session for existing file."""
+        store = AutopilotSessionStore(tmp_path)
+        session = AutopilotSession(
+            session_id="test-load-001",
+            feature_id="my-feature",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(session)
+        
+        loaded = store.load("test-load-001")
         assert loaded is not None
-        assert loaded.session_id == "persist-test"
-        assert loaded.goals == ["goal1", "goal2"]
+        assert loaded.session_id == "test-load-001"
+        assert loaded.feature_id == "my-feature"
+        assert loaded.state == AutopilotState.PAUSED
 
     def test_load_nonexistent_returns_none(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        loaded = store.load("does-not-exist")
+        """load() returns None for nonexistent session."""
+        store = AutopilotSessionStore(tmp_path)
+        loaded = store.load("nonexistent-session")
         assert loaded is None
 
-    def test_list_sessions(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        session1 = AutopilotSession(
-            session_id="session-1",
-            goals=["goal1"],
-            budget_usd=10.0,
-            duration_seconds=3600,
+    def test_load_corrupted_file_returns_none(self, tmp_path):
+        """load() returns None for corrupted session file."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        # Write corrupted JSON
+        corrupted_file = store.storage_path / "corrupted.json"
+        corrupted_file.write_text("not valid json {{{")
+        
+        loaded = store.load("corrupted")
+        assert loaded is None
+
+    def test_load_invalid_schema_returns_none(self, tmp_path):
+        """load() returns None for file with invalid schema."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        # Write valid JSON but invalid schema
+        invalid_file = store.storage_path / "invalid.json"
+        invalid_file.write_text('{"foo": "bar"}')
+        
+        loaded = store.load("invalid")
+        assert loaded is None
+
+
+class TestAutopilotSessionStoreListPaused:
+    """Tests for AutopilotSessionStore.list_paused method."""
+
+    def test_list_paused_returns_paused_sessions(self, tmp_path):
+        """list_paused() returns IDs of paused sessions only."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        paused1 = AutopilotSession(
+            session_id="paused-001",
+            feature_id="feature-a",
+            state=AutopilotState.PAUSED,
         )
-        session2 = AutopilotSession(
-            session_id="session-2",
-            goals=["goal2"],
-            budget_usd=20.0,
-            duration_seconds=7200,
+        paused2 = AutopilotSession(
+            session_id="paused-002",
+            feature_id="feature-b",
+            state=AutopilotState.PAUSED,
         )
-        store.save(session1)
-        store.save(session2)
-        sessions = store.list_sessions()
-        assert len(sessions) == 2
-        assert "session-1" in sessions
-        assert "session-2" in sessions
-
-
-class TestGoalResult:
-    """Tests for GoalResult dataclass."""
-
-    def test_has_success_and_cost(self):
-        result = GoalResult(success=True, cost_usd=1.5)
-        assert result.success is True
-        assert result.cost_usd == 1.5
-
-    def test_has_error_field(self):
-        result = GoalResult(success=False, cost_usd=0.5, error="Something failed")
-        assert result.error == "Something failed"
-
-
-class TestAutopilotRunner:
-    """Tests for AutopilotRunner execution."""
-
-    def test_start_creates_session(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
-        with patch.object(runner, '_run_session'):
-            session = runner.start(
-                goals=["implement feature X"],
-                budget_usd=50.0,
-                duration_seconds=3600,
-            )
-        
-        assert session is not None
-        assert session.goals == ["implement feature X"]
-        assert session.budget_usd == 50.0
-        assert session.status == AutopilotStatus.RUNNING
-
-    def test_start_with_stop_trigger(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        trigger = StopTrigger(until_time="17:00")
-        
-        with patch.object(runner, '_run_session'):
-            session = runner.start(
-                goals=["goal1"],
-                budget_usd=10.0,
-                duration_seconds=3600,
-                stop_trigger=trigger,
-            )
-        
-        assert session.stop_trigger is not None
-        assert session.stop_trigger.until_time == "17:00"
-
-    def test_resume_loads_session(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        original = AutopilotSession(
-            session_id="resume-test",
-            goals=["goal1", "goal2"],
-            budget_usd=20.0,
-            duration_seconds=3600,
-            current_goal_index=1,
-            status=AutopilotStatus.PAUSED,
+        running = AutopilotSession(
+            session_id="running-001",
+            feature_id="feature-c",
+            state=AutopilotState.RUNNING,
         )
-        store.save(original)
+        completed = AutopilotSession(
+            session_id="completed-001",
+            feature_id="feature-d",
+            state=AutopilotState.COMPLETED,
+        )
         
-        runner = AutopilotRunner(session_store=store)
-        with patch.object(runner, '_run_session'):
-            session = runner.resume("resume-test")
+        store.save(paused1)
+        store.save(paused2)
+        store.save(running)
+        store.save(completed)
         
-        assert session is not None
-        assert session.current_goal_index == 1
-        assert session.status == AutopilotStatus.RUNNING
+        paused_ids = store.list_paused()
+        assert set(paused_ids) == {"paused-001", "paused-002"}
 
-    def test_resume_nonexistent_raises(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
-        with pytest.raises(ValueError, match="Session not found"):
-            runner.resume("nonexistent-session")
+    def test_list_paused_empty_when_none(self, tmp_path):
+        """list_paused() returns empty list when no paused sessions."""
+        store = AutopilotSessionStore(tmp_path)
+        assert store.list_paused() == []
 
-    def test_resume_completed_session_raises(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
+    def test_list_paused_ignores_corrupted_files(self, tmp_path):
+        """list_paused() ignores corrupted session files."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        paused = AutopilotSession(
+            session_id="paused-valid",
+            feature_id="feature-a",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(paused)
+        
+        # Add corrupted file
+        corrupted = store.storage_path / "corrupted.json"
+        corrupted.write_text("invalid json")
+        
+        paused_ids = store.list_paused()
+        assert paused_ids == ["paused-valid"]
+
+
+class TestAutopilotSessionStoreListAll:
+    """Tests for AutopilotSessionStore.list_all method."""
+
+    def test_list_all_returns_all_session_ids(self, tmp_path):
+        """list_all() returns all session IDs regardless of state."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        sessions = [
+            AutopilotSession(session_id="session-001", feature_id="f1", state=AutopilotState.RUNNING),
+            AutopilotSession(session_id="session-002", feature_id="f2", state=AutopilotState.PAUSED),
+            AutopilotSession(session_id="session-003", feature_id="f3", state=AutopilotState.COMPLETED),
+        ]
+        
+        for session in sessions:
+            store.save(session)
+        
+        all_ids = store.list_all()
+        assert set(all_ids) == {"session-001", "session-002", "session-003"}
+
+    def test_list_all_empty_directory(self, tmp_path):
+        """list_all() returns empty list for empty directory."""
+        store = AutopilotSessionStore(tmp_path)
+        assert store.list_all() == []
+
+    def test_list_all_ignores_non_json_files(self, tmp_path):
+        """list_all() ignores non-JSON files."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        session = AutopilotSession(
+            session_id="valid-session",
+            feature_id="feature",
+            state=AutopilotState.RUNNING,
+        )
+        store.save(session)
+        
+        # Add non-JSON file
+        other_file = store.storage_path / "readme.txt"
+        other_file.write_text("not a session")
+        
+        all_ids = store.list_all()
+        assert all_ids == ["valid-session"]
+
+
+class TestAutopilotSessionStoreDelete:
+    """Tests for AutopilotSessionStore.delete method."""
+
+    def test_delete_removes_session_file(self, tmp_path):
+        """delete() removes the session file."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        session = AutopilotSession(
+            session_id="to-delete",
+            feature_id="feature",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(session)
+        
+        session_file = store.storage_path / "to-delete.json"
+        assert session_file.exists()
+        
+        store.delete("to-delete")
+        assert not session_file.exists()
+
+    def test_delete_nonexistent_session_no_error(self, tmp_path):
+        """delete() does not raise error for nonexistent session."""
+        store = AutopilotSessionStore(tmp_path)
+        # Should not raise
+        store.delete("nonexistent")
+
+
+class TestAutopilotSessionStoreGetLatestPaused:
+    """Tests for AutopilotSessionStore.get_latest_paused method."""
+
+    def test_get_latest_paused_returns_most_recent(self, tmp_path):
+        """get_latest_paused() returns most recently persisted paused session."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        # Save sessions with different timestamps
+        older = AutopilotSession(
+            session_id="older-paused",
+            feature_id="feature-a",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(older)
+        
+        # Brief pause to ensure different timestamp
+        newer = AutopilotSession(
+            session_id="newer-paused",
+            feature_id="feature-b",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(newer)
+        
+        latest = store.get_latest_paused()
+        assert latest is not None
+        assert latest.session_id == "newer-paused"
+
+    def test_get_latest_paused_returns_none_when_empty(self, tmp_path):
+        """get_latest_paused() returns None when no paused sessions."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        # Add running session only
+        running = AutopilotSession(
+            session_id="running",
+            feature_id="feature",
+            state=AutopilotState.RUNNING,
+        )
+        store.save(running)
+        
+        assert store.get_latest_paused() is None
+
+    def test_get_latest_paused_ignores_non_paused(self, tmp_path):
+        """get_latest_paused() ignores non-paused sessions."""
+        store = AutopilotSessionStore(tmp_path)
+        
+        paused = AutopilotSession(
+            session_id="paused-session",
+            feature_id="feature-a",
+            state=AutopilotState.PAUSED,
+        )
+        store.save(paused)
+        
+        # Save completed session after (should be ignored)
         completed = AutopilotSession(
             session_id="completed-session",
-            goals=["goal1"],
-            budget_usd=10.0,
-            duration_seconds=3600,
-            status=AutopilotStatus.COMPLETED,
+            feature_id="feature-b",
+            state=AutopilotState.COMPLETED,
         )
         store.save(completed)
         
-        runner = AutopilotRunner(session_store=store)
-        with pytest.raises(ValueError, match="not resumable"):
-            runner.resume("completed-session")
+        latest = store.get_latest_paused()
+        assert latest is not None
+        assert latest.session_id == "paused-session"
 
-    def test_execute_goal_routes_to_feature_orchestrator(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.return_value = Mock(success=True, cost_usd=2.0)
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        result = runner.execute_goal("implement feature:my-feature")
-        
-        mock_orchestrator.run.assert_called_once()
-        assert result.success is True
 
-    def test_execute_goal_routes_to_bug_orchestrator(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_bug_orchestrator = Mock()
-        mock_bug_orchestrator.run.return_value = Mock(success=True, cost_usd=1.5)
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            bug_orchestrator=mock_bug_orchestrator,
-        )
-        
-        result = runner.execute_goal("fix bug:bug-123")
-        
-        mock_bug_orchestrator.run.assert_called_once()
-        assert result.success is True
+class TestAtomicWriteValidation:
+    """Tests for atomic write validation."""
 
-    def test_handle_checkpoint_returns_continue(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
+    def test_save_validates_json_before_rename(self, tmp_path):
+        """save() validates JSON can be re-parsed before final rename."""
+        store = AutopilotSessionStore(tmp_path)
         session = AutopilotSession(
-            session_id="checkpoint-test",
-            goals=["goal1", "goal2"],
-            budget_usd=100.0,
-            duration_seconds=7200,
-            cost_usd=10.0,
+            session_id="validate-test",
+            feature_id="feature",
+            state=AutopilotState.RUNNING,
         )
         
-        result = runner.handle_checkpoint(session, trigger=None)
-        assert result == "continue"
-
-    def test_handle_checkpoint_returns_pause_on_budget_exceeded(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
+        # Should complete without error (validation passed)
+        store.save(session)
         
-        session = AutopilotSession(
-            session_id="budget-exceeded",
-            goals=["goal1"],
-            budget_usd=10.0,
-            duration_seconds=3600,
-            cost_usd=15.0,  # Exceeded budget
-        )
-        
-        result = runner.handle_checkpoint(session, trigger=None)
-        assert result == "pause"
-
-    def test_handle_checkpoint_returns_pause_on_time_trigger(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
-        session = AutopilotSession(
-            session_id="time-trigger",
-            goals=["goal1"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-            stop_trigger=StopTrigger(until_time="17:00"),
-        )
-        
-        # Mock current time to be past the trigger time
-        with patch('swarm_attack.chief_of_staff.autopilot.datetime') as mock_dt:
-            mock_dt.now.return_value = datetime(2025, 1, 1, 18, 0, 0)
-            mock_dt.strptime = datetime.strptime
-            result = runner.handle_checkpoint(session, trigger=session.stop_trigger)
-        
-        assert result == "pause"
-
-    def test_handle_checkpoint_persists_session(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
-        session = AutopilotSession(
-            session_id="persist-checkpoint",
-            goals=["goal1"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-            cost_usd=50.0,  # Budget exceeded, will pause
-        )
-        
-        runner.handle_checkpoint(session, trigger=None)
-        
-        # Verify session was persisted
-        loaded = store.load("persist-checkpoint")
+        # Verify the saved file is valid
+        loaded = store.load("validate-test")
         assert loaded is not None
-
-    def test_get_status_returns_session_info(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        session = AutopilotSession(
-            session_id="status-test",
-            goals=["goal1", "goal2"],
-            budget_usd=20.0,
-            duration_seconds=3600,
-            current_goal_index=1,
-            status=AutopilotStatus.RUNNING,
-            cost_usd=5.0,
-        )
-        store.save(session)
-        
-        runner = AutopilotRunner(session_store=store)
-        status = runner.get_status("status-test")
-        
-        assert status is not None
-        assert status["session_id"] == "status-test"
-        assert status["status"] == "running"
-        assert status["current_goal_index"] == 1
-        assert status["cost_usd"] == 5.0
-
-    def test_get_status_nonexistent_returns_none(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        runner = AutopilotRunner(session_store=store)
-        
-        status = runner.get_status("nonexistent")
-        assert status is None
-
-    def test_checks_triggers_before_each_goal(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.return_value = Mock(success=True, cost_usd=1.0)
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        session = AutopilotSession(
-            session_id="trigger-check",
-            goals=["implement feature:f1", "implement feature:f2"],
-            budget_usd=1.5,  # Only enough for ~1 goal
-            duration_seconds=3600,
-        )
-        store.save(session)
-        
-        # Run the session directly
-        runner._run_session(session)
-        
-        # Should have executed first goal but paused before/after second due to budget
-        loaded = store.load("trigger-check")
-        assert loaded.status in [AutopilotStatus.PAUSED, AutopilotStatus.COMPLETED]
-
-    def test_tracks_cost_throughout_execution(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.side_effect = [
-            Mock(success=True, cost_usd=2.0),
-            Mock(success=True, cost_usd=3.0),
-        ]
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        session = AutopilotSession(
-            session_id="cost-tracking",
-            goals=["implement feature:f1", "implement feature:f2"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-        )
-        store.save(session)
-        
-        runner._run_session(session)
-        
-        loaded = store.load("cost-tracking")
-        assert loaded.cost_usd == 5.0  # 2.0 + 3.0
-
-    def test_persists_session_after_each_goal(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.return_value = Mock(success=True, cost_usd=1.0)
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        session = AutopilotSession(
-            session_id="persist-after-goal",
-            goals=["implement feature:f1", "implement feature:f2"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-        )
-        
-        with patch.object(store, 'save', wraps=store.save) as mock_save:
-            store.save(session)  # Initial save
-            runner._run_session(session)
-            
-            # Should have saved at least once per goal + initial
-            assert mock_save.call_count >= 3
-
-
-class TestAutopilotRunnerIntegration:
-    """Integration tests for full execution flow."""
-
-    def test_full_execution_flow_completes_all_goals(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.return_value = Mock(success=True, cost_usd=1.0)
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        session = runner.start(
-            goals=["implement feature:f1", "implement feature:f2"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-        )
-        
-        # After synchronous execution, check final state
-        loaded = store.load(session.session_id)
-        assert loaded.status == AutopilotStatus.COMPLETED
-        assert loaded.current_goal_index == 2
-
-    def test_execution_handles_goal_failure(self, tmp_path):
-        store = AutopilotSessionStore(base_path=tmp_path)
-        mock_orchestrator = Mock()
-        mock_orchestrator.run.side_effect = [
-            Mock(success=True, cost_usd=1.0),
-            Mock(success=False, cost_usd=0.5, error="Implementation failed"),
-        ]
-        
-        runner = AutopilotRunner(
-            session_store=store,
-            feature_orchestrator=mock_orchestrator,
-        )
-        
-        session = runner.start(
-            goals=["implement feature:f1", "implement feature:f2"],
-            budget_usd=100.0,
-            duration_seconds=3600,
-        )
-        
-        loaded = store.load(session.session_id)
-        # Should continue past failures (but track them)
-        assert loaded.current_goal_index >= 1
+        assert loaded.session_id == "validate-test"

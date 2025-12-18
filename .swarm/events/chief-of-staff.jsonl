@@ -1,0 +1,14 @@
+{"ts": "2025-12-18T00:53:22.648347Z", "event": "issue_started", "issue": 3, "session": "sess_20251218_005322_647552"}
+{"ts": "2025-12-18T00:54:21.319502Z", "event": "retry_started", "issue": 3, "attempt": 1}
+{"ts": "2025-12-18T00:56:10.427164Z", "event": "retry_started", "issue": 3, "attempt": 2}
+{"ts": "2025-12-18T00:57:09.345110Z", "event": "retry_started", "issue": 3, "attempt": 3}
+{"ts": "2025-12-18T00:58:04.217278Z", "event": "issue_blocked", "issue": 3, "reason": "Max retries exceeded: Issue tests failed: 1 failed, 16 passed", "retries": 3}
+{"ts": "2025-12-18T00:59:42.471289Z", "event": "issue_started", "issue": 7, "session": "sess_20251218_005942_470529"}
+{"ts": "2025-12-18T01:01:11.349860Z", "event": "retry_started", "issue": 7, "attempt": 1}
+{"ts": "2025-12-18T01:01:51.351624Z", "event": "retry_started", "issue": 7, "attempt": 2}
+{"ts": "2025-12-18T01:02:32.291841Z", "event": "retry_started", "issue": 7, "attempt": 3}
+{"ts": "2025-12-18T01:03:15.617739Z", "event": "issue_blocked", "issue": 7, "reason": "Max retries exceeded: Issue tests failed: 1 failed, 33 passed", "retries": 3}
+{"ts": "2025-12-18T01:04:07.424617Z", "event": "issue_started", "issue": 4, "session": "sess_20251218_010407_423864"}
+{"ts": "2025-12-18T01:04:45.141510Z", "event": "issue_started", "issue": 4, "session": "sess_20251218_010445_140718"}
+{"ts": "2025-12-18T01:05:47.923151Z", "event": "issue_started", "issue": 4, "session": "sess_20251218_010547_922297"}
+{"ts": "2025-12-18T01:10:24.715978Z", "event": "issue_started", "issue": 9, "session": "sess_20251218_011024_715262"}

@@ -161,7 +161,7 @@ class TestTestFileExistenceGate:
         orchestrator_with_mocks._coder.run = track_coder_call
         orchestrator_with_mocks._state_store = None
 
-        success, result, cost = orchestrator_with_mocks._run_implementation_cycle(
+        success, coder_result, verifier_result, cost = orchestrator_with_mocks._run_implementation_cycle(
             feature_id="test-feature",
             issue_number=1,
             session_id="test-session",
@@ -188,7 +188,7 @@ class TestTestFileExistenceGate:
         orchestrator_with_mocks._coder.run = track_coder_call
         orchestrator_with_mocks._state_store = None
 
-        success, result, cost = orchestrator_with_mocks._run_implementation_cycle(
+        success, coder_result, verifier_result, cost = orchestrator_with_mocks._run_implementation_cycle(
             feature_id="test-feature",
             issue_number=1,
             session_id="test-session",
@@ -198,7 +198,7 @@ class TestTestFileExistenceGate:
         # Should fail without calling coder
         assert not success
         assert not coder_was_called["called"], "Coder should NOT be called when test file missing on retry"
-        assert "not found on retry" in result.errors[0]
+        assert "not found on retry" in verifier_result.errors[0]
 
     def test_retry_succeeds_with_test_file(
         self, orchestrator_with_mocks: Orchestrator, mock_config: SwarmConfig, tmp_path: Path
@@ -219,7 +219,7 @@ class TestTestFileExistenceGate:
         orchestrator_with_mocks._coder.run = track_coder_call
         orchestrator_with_mocks._state_store = None
 
-        success, result, cost = orchestrator_with_mocks._run_implementation_cycle(
+        success, coder_result, verifier_result, cost = orchestrator_with_mocks._run_implementation_cycle(
             feature_id="test-feature",
             issue_number=1,
             session_id="test-session",
@@ -243,7 +243,7 @@ class TestTestFileExistenceGate:
 
         orchestrator_with_mocks._state_store = None
 
-        success, result, cost = orchestrator_with_mocks._run_implementation_cycle(
+        success, coder_result, verifier_result, cost = orchestrator_with_mocks._run_implementation_cycle(
             feature_id="test-feature",
             issue_number=1,
             session_id="test-session",
@@ -252,4 +252,4 @@ class TestTestFileExistenceGate:
 
         # Should fail because file is not at the expected path
         assert not success
-        assert "not found on retry" in result.errors[0]
+        assert "not found on retry" in verifier_result.errors[0]

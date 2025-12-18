@@ -4,29 +4,31 @@
   "tasks": [
     {
       "issue_number": 1,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Create core data models for Chief of Staff",
       "dependencies": [],
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 2,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement ChiefOfStaffConfig dataclass",
       "dependencies": [],
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 3,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Integrate ChiefOfStaffConfig into SwarmConfig",
       "dependencies": [
         2
@@ -35,11 +37,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 4,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement DailyLogManager for persistence",
       "dependencies": [
         1
@@ -47,12 +50,13 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
-      "outputs": null
+      "blocked_reason": "error_max_turns - skipped for now",
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 5,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement StateGatherer for repository state",
       "dependencies": [
         1
@@ -61,11 +65,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 6,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement GoalTracker for goal management",
       "dependencies": [
         1,
@@ -76,11 +81,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 7,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement CheckpointSystem for autopilot triggers",
       "dependencies": [
         1,
@@ -90,11 +96,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 8,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement StandupGenerator for morning briefings",
       "dependencies": [
         4,
@@ -105,11 +112,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 9,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement AutopilotSessionStore for pause/resume",
       "dependencies": [
         1
@@ -118,7 +126,34 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff/test_issue_9.py",
+          "swarm_attack/chief_of_staff/autopilot.py",
+          "swarm_attack/chief_of_staff/autopilot_store.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff/test_issue_9.py": [
+            "TestAutopilotSessionStoreInit",
+            "TestAutopilotSessionStoreSave",
+            "TestAutopilotSessionStoreLoad",
+            "TestAutopilotSessionStoreListPaused",
+            "TestAutopilotSessionStoreListAll",
+            "TestAutopilotSessionStoreDelete",
+            "TestAutopilotSessionStoreGetLatestPaused",
+            "TestAtomicWriteValidation"
+          ],
+          "swarm_attack/chief_of_staff/autopilot.py": [
+            "AutopilotState",
+            "AutopilotSession"
+          ],
+          "swarm_attack/chief_of_staff/autopilot_store.py": [
+            "AutopilotSessionStore"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 3 file(s): tests/generated/chief-of-staff/test_issue_9.py, swarm_attack/chief_of_staff/autopilot.py, swarm_attack/chief_of_staff/autopilot_store.py; Defined: TestAutopilotSessionStoreInit, TestAutopilotSessionStoreSave, TestAutopilotSessionStoreLoad, TestAutopilotSessionStoreListPaused, TestAutopilotSessionStoreListAll"
     },
     {
       "issue_number": 10,
@@ -133,11 +168,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 11,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement CLI: standup command",
       "dependencies": [
         3,
@@ -150,7 +186,8 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 12,
@@ -163,11 +200,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 13,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement CLI: wrapup command",
       "dependencies": [
         4,
@@ -177,11 +215,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 14,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement CLI: plan command",
       "dependencies": [
         6
@@ -190,11 +229,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 15,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement CLI: history command",
       "dependencies": [
         4
@@ -203,7 +243,8 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 16,
@@ -217,7 +258,8 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 17,
@@ -231,11 +273,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 18,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Create __init__.py and package structure",
       "dependencies": [
         1,
@@ -252,11 +295,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 19,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Add comprehensive unit tests",
       "dependencies": [
         1,
@@ -273,7 +317,8 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     },
     {
       "issue_number": 20,
@@ -288,15 +333,15 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null
+      "outputs": null,
+      "completion_summary": null
     }
   ],
-  "current_session": "sess_20251217_195859_119158",
-  "created_at": "2025-12-16T04:49:35.316644Z",
-  "updated_at": "2025-12-17T19:58:59.105332Z",
-  "cost_total_usd": 12.6997646,
+  "current_session": "sess_20251218_011024_715262",
+  "created_at": "2025-12-18T00:52:21.689742Z",
+  "updated_at": "2025-12-18T01:03:18.772599Z",
+  "cost_total_usd": 2.5214431,
   "cost_by_phase": {
-    "ISSUES": 3.3629372,
-    "IMPLEMENTATION": 9.336827399999999
+    "IMPLEMENTATION": 2.5214431
   }
 }

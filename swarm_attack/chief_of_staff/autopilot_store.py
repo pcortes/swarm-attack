@@ -1,161 +1,156 @@
-"""AutopilotSessionStore for persisting autopilot sessions for pause/resume."""
+"""AutopilotSessionStore for persisting autopilot sessions."""
 
 import json
-import shutil
-from datetime import datetime
+import os
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-from .models import AutopilotSession
+from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
 
 
 class AutopilotSessionStore:
-    """Persists autopilot sessions for pause/resume capability.
+    """Persists autopilot session state to enable pause/resume functionality."""
     
-    Storage path: .swarm/chief-of-staff/autopilot/
-    Session files: {session_id}.json
-    """
-
     def __init__(self, base_path: Path) -> None:
-        """Initialize with storage path.
+        """Initialize storage in .swarm/chief-of-staff/autopilot/.
         
         Args:
-            base_path: Base storage path (.swarm/chief-of-staff/)
+            base_path: Base path for the project (typically project root).
         """
-        self.base_path = base_path / "autopilot"
-        self.base_path.mkdir(parents=True, exist_ok=True)
-
-    def _session_path(self, session_id: str) -> Path:
-        """Get the file path for a session.
-        
-        Args:
-            session_id: Session identifier.
-            
-        Returns:
-            Path to the session JSON file.
-        """
-        return self.base_path / f"{session_id}.json"
-
+        self._storage_path = base_path / ".swarm" / "chief-of-staff" / "autopilot"
+        self._storage_path.mkdir(parents=True, exist_ok=True)
+    
+    @property
+    def storage_path(self) -> Path:
+        """Return the storage directory path."""
+        return self._storage_path
+    
     def save(self, session: AutopilotSession) -> None:
-        """Save autopilot session to disk atomically.
+        """Save session atomically with validation.
         
-        Uses atomic write pattern:
-        1. Write to temp file
-        2. Validate by re-reading
-        3. Backup existing file
-        4. Atomic rename
-        5. Set last_persisted_at
+        Uses temp file -> validate -> rename pattern for atomic writes.
+        Sets last_persisted_at timestamp on the session.
         
         Args:
-            session: AutopilotSession to save.
-            
-        Raises:
-            Exception: If validation fails or write fails.
+            session: The autopilot session to save.
         """
         # Set persistence timestamp
-        session.last_persisted_at = datetime.now().isoformat()
+        session.last_persisted_at = datetime.now(timezone.utc)
         
-        path = self._session_path(session.session_id)
-        temp_path = path.with_suffix(".tmp")
-        backup_path = path.with_suffix(".bak")
+        # Convert to JSON
+        data = session.to_dict()
+        json_content = json.dumps(data, indent=2)
+        
+        # Write to temp file first
+        target_file = self._storage_path / f"{session.session_id}.json"
+        fd, temp_path = tempfile.mkstemp(
+            suffix=".tmp",
+            dir=self._storage_path,
+        )
         
         try:
-            # Write to temp file
-            temp_path.write_text(json.dumps(session.to_dict(), indent=2))
+            # Write content
+            with os.fdopen(fd, "w") as f:
+                f.write(json_content)
             
-            # Validate by re-reading
-            validation_data = json.loads(temp_path.read_text())
-            AutopilotSession.from_dict(validation_data)
-            
-            # Backup existing file if present
-            if path.exists():
-                shutil.copy2(path, backup_path)
+            # Validate by re-parsing
+            with open(temp_path, "r") as f:
+                parsed = json.load(f)
+                # Validate we can reconstruct the session
+                AutopilotSession.from_dict(parsed)
             
             # Atomic rename
-            temp_path.rename(path)
-            
-            # Remove backup after successful rename
-            if backup_path.exists():
-                backup_path.unlink()
-                
-        except Exception as e:
-            # Restore from backup if available
-            if backup_path.exists():
-                shutil.copy2(backup_path, path)
-            # Clean up temp file
-            if temp_path.exists():
-                temp_path.unlink()
+            os.replace(temp_path, target_file)
+        except Exception:
+            # Clean up temp file on error
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
             raise
-
+    
     def load(self, session_id: str) -> Optional[AutopilotSession]:
-        """Load autopilot session from disk.
+        """Load session from disk.
         
         Args:
-            session_id: Session identifier to load.
+            session_id: The session ID to load.
             
         Returns:
-            AutopilotSession if found and valid, None otherwise.
+            The loaded AutopilotSession, or None if not found or corrupted.
         """
-        path = self._session_path(session_id)
-        if not path.exists():
+        session_file = self._storage_path / f"{session_id}.json"
+        
+        if not session_file.exists():
             return None
         
         try:
-            data = json.loads(path.read_text())
+            with open(session_file, "r") as f:
+                data = json.load(f)
+            
+            # Validate required fields exist
+            if "session_id" not in data or "feature_id" not in data:
+                return None
+            
             return AutopilotSession.from_dict(data)
-        except Exception:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return None
-
+    
     def list_paused(self) -> list[str]:
-        """List all paused session IDs.
+        """Return IDs of all paused sessions.
         
         Returns:
-            List of session IDs with status "paused".
+            List of session IDs with state == PAUSED.
         """
-        paused = []
-        for path in self.base_path.glob("*.json"):
-            session = self.load(path.stem)
-            if session and session.status == "paused":
-                paused.append(session.session_id)
-        return paused
-
+        paused_ids = []
+        
+        for session_file in self._storage_path.glob("*.json"):
+            session_id = session_file.stem
+            session = self.load(session_id)
+            
+            if session is not None and session.state == AutopilotState.PAUSED:
+                paused_ids.append(session_id)
+        
+        return paused_ids
+    
     def list_all(self) -> list[str]:
-        """List all session IDs.
+        """Return all session IDs.
         
         Returns:
-            List of all session IDs.
+            List of all session IDs (file stems of JSON files).
         """
-        return [path.stem for path in self.base_path.glob("*.json")]
-
+        return [f.stem for f in self._storage_path.glob("*.json")]
+    
     def delete(self, session_id: str) -> None:
-        """Delete a session file.
+        """Remove session file.
         
         Args:
-            session_id: Session identifier to delete.
+            session_id: The session ID to delete.
         """
-        path = self._session_path(session_id)
-        if path.exists():
-            path.unlink()
-
+        session_file = self._storage_path / f"{session_id}.json"
+        
+        if session_file.exists():
+            session_file.unlink()
+    
     def get_latest_paused(self) -> Optional[AutopilotSession]:
-        """Get the most recently paused session.
+        """Return most recent paused session.
         
         Returns:
-            Most recently paused AutopilotSession, or None if no paused sessions.
+            The most recently persisted paused session, or None if none exist.
         """
         paused_sessions = []
         
         for session_id in self.list_paused():
             session = self.load(session_id)
-            if session:
+            if session is not None:
                 paused_sessions.append(session)
         
         if not paused_sessions:
             return None
         
-        # Sort by last_persisted_at (most recent first)
-        def get_timestamp(s: AutopilotSession) -> str:
-            return s.last_persisted_at or ""
+        # Sort by last_persisted_at, most recent first
+        paused_sessions.sort(
+            key=lambda s: s.last_persisted_at or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
         
-        paused_sessions.sort(key=get_timestamp, reverse=True)
         return paused_sessions[0]

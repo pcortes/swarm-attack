@@ -6,13 +6,19 @@ This module handles:
 - Atomic writes to prevent corruption
 - Graceful handling of missing or corrupted state files
 - Session state persistence to .swarm/sessions/<feature>/<session_id>.json
+- File-based locking for concurrent access protection
+- Git state synchronization to detect already-implemented issues
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
+import re
+import subprocess
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Generator, Optional
 
 from swarm_attack.models import (
     FeaturePhase,
@@ -92,6 +98,75 @@ class StateStore:
         """Log an event if logger is configured."""
         if self._logger:
             self._logger.log(event_type, data, level=level)
+
+    def _get_lock_path(self, feature_id: str) -> Path:
+        """Get path to feature lock file."""
+        return self._state_dir / f".{feature_id}.lock"
+
+    @contextmanager
+    def exclusive_lock(
+        self,
+        feature_id: str,
+        timeout: Optional[float] = None
+    ) -> Generator[None, None, None]:
+        """
+        Acquire an exclusive lock for a feature's state.
+
+        Use this context manager when performing read-modify-write operations
+        to prevent concurrent processes from overwriting each other's changes.
+
+        Args:
+            feature_id: The feature identifier to lock.
+            timeout: Optional timeout in seconds. None means block indefinitely.
+
+        Yields:
+            None when lock is acquired.
+
+        Raises:
+            StateStoreError: If lock cannot be acquired.
+
+        Example:
+            with state_store.exclusive_lock(feature_id):
+                state = state_store.load(feature_id)
+                # modify state...
+                state_store.save(state)
+        """
+        self._ensure_directories()
+        lock_path = self._get_lock_path(feature_id)
+
+        # Create lock file if it doesn't exist
+        lock_file = None
+        try:
+            lock_file = open(lock_path, "w")
+
+            self._log("lock_acquiring", {"feature_id": feature_id}, level="debug")
+
+            # Try to acquire exclusive lock
+            # LOCK_EX = exclusive lock, LOCK_NB would be non-blocking
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            except (IOError, OSError) as e:
+                raise StateStoreError(
+                    f"Failed to acquire lock for {feature_id}: {e}"
+                )
+
+            self._log("lock_acquired", {"feature_id": feature_id}, level="debug")
+
+            yield
+
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    self._log(
+                        "lock_released",
+                        {"feature_id": feature_id},
+                        level="debug"
+                    )
+                except (IOError, OSError):
+                    pass  # Best effort release
+                finally:
+                    lock_file.close()
 
     # Feature State Operations
 
@@ -526,6 +601,137 @@ class StateStore:
                     }
 
         return registry
+
+    def save_completion_summary(
+        self,
+        feature_id: str,
+        issue_number: int,
+        summary: str,
+    ) -> None:
+        """
+        Save semantic completion summary for an issue.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue that was completed.
+            summary: Semantic summary of what was accomplished.
+        """
+        with self.exclusive_lock(feature_id):
+            state = self.load(feature_id)
+            if state is None:
+                return
+
+            for task in state.tasks:
+                if task.issue_number == issue_number:
+                    task.completion_summary = summary
+                    break
+
+            self.save(state)
+            self._log("completion_summary_saved", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+            })
+
+    def sync_state_from_git(self, feature_id: str) -> list[int]:
+        """
+        Synchronize state with git history.
+
+        Scans git commit history for implemented issues and marks them as DONE
+        in state if they're not already marked. This prevents re-implementing
+        issues that are already in git but not reflected in state (e.g., due to
+        state file corruption, race conditions, or process crashes).
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            List of issue numbers that were marked as DONE from git history.
+
+        Note:
+            Looks for commits matching pattern:
+            "feat(<feature_id>): Implement issue #N"
+        """
+        synced_issues: list[int] = []
+
+        state = self.load(feature_id)
+        if state is None:
+            return synced_issues
+
+        # Get completed issues from git log
+        try:
+            # Search for commits matching our implementation pattern
+            result = subprocess.run(
+                [
+                    "git", "log",
+                    "--oneline",
+                    "--grep", f"feat({feature_id}): Implement issue #",
+                    "--format=%s",
+                ],
+                cwd=str(self._config.repo_root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            if result.returncode != 0:
+                self._log("git_sync_error", {
+                    "feature_id": feature_id,
+                    "error": result.stderr,
+                }, level="warning")
+                return synced_issues
+
+            # Parse issue numbers from commit messages
+            # Pattern: "feat(feature-id): Implement issue #N" or similar variations
+            pattern = rf"feat\({re.escape(feature_id)}\):\s*[Ii]mplement\s+issue\s+#(\d+)"
+
+            committed_issues: set[int] = set()
+            for line in result.stdout.strip().split("\n"):
+                if not line:
+                    continue
+                match = re.search(pattern, line)
+                if match:
+                    committed_issues.add(int(match.group(1)))
+
+            if not committed_issues:
+                return synced_issues
+
+            # Mark issues as DONE if they're not already
+            with self.exclusive_lock(feature_id):
+                # Reload state inside lock
+                state = self.load(feature_id)
+                if state is None:
+                    return synced_issues
+
+                for task in state.tasks:
+                    if task.issue_number in committed_issues:
+                        if task.stage != TaskStage.DONE:
+                            old_stage = task.stage
+                            task.stage = TaskStage.DONE
+                            synced_issues.append(task.issue_number)
+                            self._log("git_sync_marked_done", {
+                                "feature_id": feature_id,
+                                "issue_number": task.issue_number,
+                                "old_stage": old_stage.name,
+                            })
+
+                if synced_issues:
+                    self.save(state)
+
+        except subprocess.TimeoutExpired:
+            self._log("git_sync_timeout", {
+                "feature_id": feature_id,
+            }, level="warning")
+        except FileNotFoundError:
+            self._log("git_not_found", {
+                "feature_id": feature_id,
+            }, level="warning")
+        except Exception as e:
+            self._log("git_sync_error", {
+                "feature_id": feature_id,
+                "error": str(e),
+            }, level="error")
+
+        return synced_issues
 
 
 # Module-level singleton for convenience

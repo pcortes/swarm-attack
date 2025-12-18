@@ -662,9 +662,10 @@ class SessionManager:
         issue_number: int,
     ) -> bool:
         """
-        Lock an issue for this session.
+        Lock an issue for this session atomically.
 
-        Prevents concurrent work on the same issue.
+        Prevents concurrent work on the same issue using atomic file creation
+        (O_CREAT | O_EXCL) to avoid TOCTOU race conditions.
 
         Args:
             feature_id: The feature identifier.
@@ -673,27 +674,63 @@ class SessionManager:
         Returns:
             True if claimed successfully, False if already claimed.
         """
+        import os
+
         lock_dir = self.config.swarm_path / "locks" / feature_id
         lock_dir.mkdir(parents=True, exist_ok=True)
 
         lock_file = lock_dir / f"issue_{issue_number}.lock"
 
+        # First check if lock exists and is stale
         if lock_file.exists():
-            # Check if lock is stale
             try:
                 lock_data = lock_file.read_text()
-                # Lock file contains timestamp
                 if lock_data:
                     locked_at = datetime.fromisoformat(lock_data.replace("Z", "+00:00"))
                     stale_timeout = self.config.sessions.stale_timeout_minutes
                     if datetime.now(timezone.utc) - locked_at < timedelta(minutes=stale_timeout):
                         # Lock is still valid
                         return False
+                    # Lock is stale - try to remove and reclaim
+                    try:
+                        lock_file.unlink()
+                    except OSError:
+                        # Another process may have already removed it
+                        pass
             except (ValueError, OSError):
-                pass  # Corrupted lock, we can claim it
+                # Corrupted lock - try to remove it
+                try:
+                    lock_file.unlink()
+                except OSError:
+                    pass
 
-        # Create lock
-        lock_file.write_text(self._now_iso())
+        # Atomic lock creation using O_CREAT | O_EXCL
+        # This ensures check-and-create is atomic at the filesystem level
+        try:
+            fd = os.open(
+                str(lock_file),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                0o644
+            )
+            try:
+                os.write(fd, self._now_iso().encode())
+            finally:
+                os.close(fd)
+        except FileExistsError:
+            # Another process claimed the lock between our check and create
+            return False
+        except OSError as e:
+            # Unexpected error - log and fail safely
+            self._log(
+                "issue_claim_error",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "error": str(e),
+                },
+                level="error",
+            )
+            return False
 
         self._log(
             "issue_claimed",

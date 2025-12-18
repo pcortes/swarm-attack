@@ -38,7 +38,13 @@ from swarm_attack.agents import (
     VerifierAgent,
 )
 from swarm_attack.agents.gate import GateAgent, GateResult
+from swarm_attack.agents.summarizer import SummarizerAgent
+from swarm_attack.context_builder import ContextBuilder
+from swarm_attack.event_logger import EventLogger
+from swarm_attack.github.issue_context import IssueContextManager
+from swarm_attack.github_sync import GitHubSync
 from swarm_attack.models import FeaturePhase, TaskStage
+from swarm_attack.planning.dependency_graph import DependencyGraph
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -152,6 +158,15 @@ class Orchestrator:
         # Gate agent for pre-coder validation (lazy initialized)
         self._gate_agent: Optional[GateAgent] = None
         self._post_coder_gate_agent: Optional[GateAgent] = None
+
+        # Coordination Layer v2 components
+        self._context_builder = ContextBuilder(config, state_store)
+        self._github_sync = GitHubSync(config, logger)
+        self._event_logger = EventLogger(config)
+
+        # Schema drift prevention components
+        self._summarizer = SummarizerAgent(config, logger)
+        self._issue_context = IssueContextManager(config, logger)
 
     @property
     def author(self) -> SpecAuthorAgent:
@@ -1218,6 +1233,93 @@ class Orchestrator:
                     level="warning",
                 )
 
+    def _is_already_implemented(self, feature_id: str, issue_number: int) -> bool:
+        """
+        Belt-and-suspenders check for existing implementation.
+
+        Checks multiple sources to determine if an issue is already implemented:
+        1. Git commit exists with implementation pattern
+        2. Test file exists and all tests pass
+        3. Task is marked DONE in state
+
+        This is an idempotency guard to prevent re-implementing completed work
+        even if state synchronization failed.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number to check.
+
+        Returns:
+            True if implementation already exists, False otherwise.
+        """
+        # Check 1: Git commit exists
+        try:
+            import re as regex
+            result = subprocess.run(
+                [
+                    "git", "log",
+                    "--oneline",
+                    "--grep", f"feat({feature_id}): Implement issue #{issue_number}",
+                    "-n", "1",
+                ],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.stdout.strip():
+                self._log("duplicate_detection_git", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "source": "git_commit",
+                })
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass  # Git check failed, continue to other checks
+
+        # Check 2: Test file exists and passes
+        test_path = (
+            Path(self.config.repo_root)
+            / "tests"
+            / "generated"
+            / feature_id
+            / f"test_issue_{issue_number}.py"
+        )
+        if test_path.exists():
+            try:
+                result = subprocess.run(
+                    ["python", "-m", "pytest", str(test_path), "-v", "--tb=no", "-q"],
+                    cwd=str(self.config.repo_root),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    env={**os.environ, "PYTHONPATH": str(self.config.repo_root)},
+                )
+                if result.returncode == 0:
+                    self._log("duplicate_detection_tests", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "source": "tests_pass",
+                    })
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass  # Test check failed, continue
+
+        # Check 3: Task is DONE in state (should be redundant if sync worked)
+        if self._state_store:
+            state = self._state_store.load(feature_id)
+            if state:
+                for task in state.tasks:
+                    if task.issue_number == issue_number and task.stage == TaskStage.DONE:
+                        self._log("duplicate_detection_state", {
+                            "feature_id": feature_id,
+                            "issue_number": issue_number,
+                            "source": "state_done",
+                        })
+                        return True
+
+        return False
+
     def _select_issue(self, feature_id: str) -> Optional[int]:
         """
         Select the next issue to work on using PrioritizationAgent.
@@ -1334,6 +1436,201 @@ class Orchestrator:
 
         return test_files
 
+    def _generate_completion_summary(
+        self,
+        feature_id: str,
+        issue_number: int,
+        coder_result: Optional[AgentResult],
+    ) -> Optional[str]:
+        """
+        Generate 1-2 sentence summary of what was accomplished.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number.
+            coder_result: Result from coder agent with files/classes info.
+
+        Returns:
+            Semantic summary string, or None if no info available.
+        """
+        if not coder_result or not coder_result.output:
+            return None
+
+        issue_outputs = coder_result.output.get("issue_outputs")
+        if not issue_outputs:
+            return None
+
+        # Extract info from IssueOutput (handle both object and dict)
+        if hasattr(issue_outputs, 'files_created'):
+            files_created = issue_outputs.files_created
+            classes_defined = issue_outputs.classes_defined
+        else:
+            files_created = issue_outputs.get('files_created', [])
+            classes_defined = issue_outputs.get('classes_defined', {})
+
+        # Build simple summary
+        parts = []
+        if files_created:
+            file_list = ', '.join(files_created[:3])
+            parts.append(f"Created {len(files_created)} file(s): {file_list}")
+            if len(files_created) > 3:
+                parts[-1] = parts[-1].replace(file_list, f"{file_list} (+{len(files_created)-3} more)")
+
+        if classes_defined:
+            all_classes = []
+            for file_classes in classes_defined.values():
+                all_classes.extend(file_classes)
+            if all_classes:
+                class_list = ', '.join(all_classes[:5])
+                parts.append(f"Defined: {class_list}")
+
+        if parts:
+            return "; ".join(parts)
+        return f"Implemented issue #{issue_number}"
+
+    def _generate_and_propagate_context(
+        self,
+        feature_id: str,
+        issue_number: int,
+        issue_title: str,
+        coder_result: Optional[AgentResult],
+        commit_hash: Optional[str] = None,
+    ) -> None:
+        """
+        Generate rich implementation summary and propagate to dependent issues.
+
+        This is the key method for schema drift prevention. After an issue completes:
+        1. SummarizerAgent generates a structured summary (classes, imports, usage)
+        2. Summary is added to the completed GitHub issue
+        3. Summary is propagated to all transitive dependent issues
+
+        This ensures that when a coder picks up a dependent issue, it sees
+        context from ALL issues it depends on directly in the issue body.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The completed issue number.
+            issue_title: Title of the completed issue.
+            coder_result: Result from coder agent with files/classes info.
+            commit_hash: Optional commit hash for the implementation.
+        """
+        self._log("context_propagation_start", {
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+        })
+
+        # Extract issue outputs
+        files_created: list[str] = []
+        classes_defined: dict[str, list[str]] = {}
+
+        if coder_result and coder_result.output:
+            issue_outputs = coder_result.output.get("issue_outputs")
+            if issue_outputs:
+                if hasattr(issue_outputs, 'files_created'):
+                    files_created = issue_outputs.files_created
+                    classes_defined = issue_outputs.classes_defined
+                else:
+                    files_created = issue_outputs.get('files_created', [])
+                    classes_defined = issue_outputs.get('classes_defined', {})
+
+        # Get issue body for context
+        issue_body = ""
+        if self._state_store:
+            state = self._state_store.load(feature_id)
+            if state:
+                for task in state.tasks:
+                    if task.issue_number == issue_number:
+                        issue_body = task.title  # Use title as minimal context
+                        break
+
+        # Step 1: Generate rich summary using SummarizerAgent
+        try:
+            summarizer_context = {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "issue_title": issue_title,
+                "issue_body": issue_body,
+                "commit_hash": commit_hash,
+                "files_created": files_created,
+                "classes_defined": classes_defined,
+            }
+
+            summarizer_result = self._summarizer.run(summarizer_context)
+
+            if not summarizer_result.success:
+                self._log("summarizer_failed", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "errors": summarizer_result.errors,
+                }, level="warning")
+                return
+
+            summary_output = summarizer_result.output
+            github_markdown = summary_output.get("github_markdown", "")
+            context_markdown = summary_output.get("context_markdown", "")
+
+            self._log("summarizer_complete", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "cost_usd": summarizer_result.cost_usd,
+            })
+
+        except Exception as e:
+            self._log("summarizer_error", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "error": str(e),
+            }, level="error")
+            return
+
+        # Step 2: Add summary to completed issue
+        try:
+            if github_markdown:
+                self._issue_context.add_summary_to_issue(issue_number, github_markdown)
+        except Exception as e:
+            self._log("add_summary_failed", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "error": str(e),
+            }, level="warning")
+
+        # Step 3: Propagate context to transitive dependents
+        try:
+            if not context_markdown or not self._state_store:
+                return
+
+            state = self._state_store.load(feature_id)
+            if not state or not state.tasks:
+                return
+
+            # Build dependency graph
+            graph = DependencyGraph(state.tasks)
+
+            # Get all issues that depend on this one (transitively)
+            dependents = graph.get_transitive_dependents(issue_number)
+
+            if dependents:
+                results = self._issue_context.propagate_context_to_dependents(
+                    issue_number,
+                    list(dependents),
+                    context_markdown,
+                )
+
+                success_count = sum(1 for s in results.values() if s)
+                self._log("context_propagated", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "dependent_count": len(dependents),
+                    "success_count": success_count,
+                })
+
+        except Exception as e:
+            self._log("context_propagation_error", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "error": str(e),
+            }, level="warning")
+
     def _run_implementation_cycle(
         self,
         feature_id: str,
@@ -1341,7 +1638,7 @@ class Orchestrator:
         session_id: str,
         retry_number: int = 0,
         previous_failures: Optional[list[dict[str, Any]]] = None,
-    ) -> tuple[bool, AgentResult, float]:
+    ) -> tuple[bool, Optional[AgentResult], AgentResult, float]:
         """
         Run one implementation cycle (coder → verifier).
 
@@ -1353,7 +1650,7 @@ class Orchestrator:
             previous_failures: Failure details from previous verifier run.
 
         Returns:
-            Tuple of (success, verifier_result, total_cost).
+            Tuple of (success, coder_result, verifier_result, total_cost).
         """
         # Get test files from DONE issues only for regression check
         # This prevents BLOCKED issues from causing cascading failures
@@ -1362,8 +1659,18 @@ class Orchestrator:
 
         # Build module registry from completed issues for context handoff
         module_registry: dict[str, Any] = {}
+        issue_dependencies: list[int] = []
+        all_tasks: list = []
         if self._state_store:
             module_registry = self._state_store.get_module_registry(feature_id)
+            # Get dependencies for schema drift prevention
+            state = self._state_store.load(feature_id)
+            if state and state.tasks:
+                all_tasks = state.tasks
+                for task in state.tasks:
+                    if task.issue_number == issue_number:
+                        issue_dependencies = task.dependencies
+                        break
 
         # Compute test_path for coder context handoff
         # This ensures orchestrator and coder use the same test file location
@@ -1391,6 +1698,7 @@ class Orchestrator:
             )
             return (
                 False,
+                None,
                 AgentResult.failure_result(
                     f"Test file not found on retry: {test_path}. "
                     "Coder should have created tests on first run."
@@ -1411,6 +1719,9 @@ class Orchestrator:
             "test_failures": previous_failures or [],
             # NEW: Pass module registry for context handoff from prior issues
             "module_registry": module_registry,
+            # NEW: Pass dependencies for schema drift prevention (compact schema filtering)
+            "issue_dependencies": issue_dependencies,
+            "all_tasks": all_tasks,
         }
         total_cost = 0.0
 
@@ -1444,7 +1755,7 @@ class Orchestrator:
                 )
 
             if not coder_result.success:
-                return False, coder_result, total_cost
+                return False, coder_result, coder_result, total_cost
 
             # Run post-coder gate validation
             # Gate validates implementation artifacts before verifier runs
@@ -1469,7 +1780,17 @@ class Orchestrator:
         # Run verifier
         if self._verifier:
             self._verifier.reset()
-            verifier_result = self._verifier.run(context)
+
+            # Pass schema drift detection context to verifier
+            # Extract newly created classes from coder output for validation
+            verifier_context = context.copy()
+            if coder_result and coder_result.output:
+                issue_outputs = coder_result.output.get("issue_outputs")
+                if issue_outputs and hasattr(issue_outputs, "classes_defined"):
+                    verifier_context["new_classes_defined"] = issue_outputs.classes_defined
+                    # module_registry is already in context from _prepare_coder_context
+
+            verifier_result = self._verifier.run(verifier_context)
             total_cost += verifier_result.cost_usd
 
             if self._session_manager:
@@ -1485,10 +1806,10 @@ class Orchestrator:
                         feature_id, issue_number, issue_outputs
                     )
 
-            return verifier_result.success, verifier_result, total_cost
+            return verifier_result.success, coder_result, verifier_result, total_cost
 
         # No verifier - return failure
-        return False, AgentResult.failure_result("No verifier agent configured"), total_cost
+        return False, coder_result, AgentResult.failure_result("No verifier agent configured"), total_cost
 
     def _run_pre_coder_gate(
         self,
@@ -1710,15 +2031,16 @@ class Orchestrator:
         return ""
 
     def _mark_task_done(self, feature_id: str, issue_number: int) -> None:
-        """Mark task as DONE in state."""
+        """Mark task as DONE in state with exclusive locking."""
         if self._state_store:
-            state = self._state_store.load(feature_id)
-            if state:
-                for task in state.tasks:
-                    if task.issue_number == issue_number:
-                        task.stage = TaskStage.DONE
-                        break
-                self._state_store.save(state)
+            with self._state_store.exclusive_lock(feature_id):
+                state = self._state_store.load(feature_id)
+                if state:
+                    for task in state.tasks:
+                        if task.issue_number == issue_number:
+                            task.stage = TaskStage.DONE
+                            break
+                    self._state_store.save(state)
 
     def _post_github_comment(self, issue_number: int, comment: str) -> bool:
         """Post a comment to a GitHub issue.
@@ -1746,7 +2068,7 @@ class Orchestrator:
     def _mark_task_blocked(
         self, feature_id: str, issue_number: int, reason: Optional[str] = None
     ) -> None:
-        """Mark task as BLOCKED in state with optional reason.
+        """Mark task as BLOCKED in state with optional reason and exclusive locking.
 
         Also posts a comment to the GitHub issue explaining why it's blocked.
 
@@ -1756,14 +2078,15 @@ class Orchestrator:
             reason: Optional error message explaining why the task is blocked.
         """
         if self._state_store:
-            state = self._state_store.load(feature_id)
-            if state:
-                for task in state.tasks:
-                    if task.issue_number == issue_number:
-                        task.stage = TaskStage.BLOCKED
-                        task.blocked_reason = reason
-                        break
-                self._state_store.save(state)
+            with self._state_store.exclusive_lock(feature_id):
+                state = self._state_store.load(feature_id)
+                if state:
+                    for task in state.tasks:
+                        if task.issue_number == issue_number:
+                            task.stage = TaskStage.BLOCKED
+                            task.blocked_reason = reason
+                            break
+                    self._state_store.save(state)
 
         # Post comment to GitHub issue
         if reason:
@@ -1834,6 +2157,14 @@ class Orchestrator:
                     error=f"Feature '{feature_id}' not found",
                 )
 
+            # Sync state from git to detect already-implemented issues
+            synced = self._state_store.sync_state_from_git(feature_id)
+            if synced:
+                self._log("git_sync_completed", {
+                    "feature_id": feature_id,
+                    "synced_issues": synced,
+                })
+
         # Step 1: Select issue if not specified
         if issue_number is None:
             issue_number = self._select_issue(feature_id)
@@ -1855,6 +2186,39 @@ class Orchestrator:
             "feature_id": feature_id,
             "issue_number": issue_number,
         })
+
+        # BELT-AND-SUSPENDERS: Check if issue is already implemented
+        # This catches cases where sync_state_from_git missed the commit
+        # (e.g., different commit message format, branch not merged yet)
+        if self._is_already_implemented(feature_id, issue_number):
+            self._log("duplicate_implementation_prevented", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+            })
+            # Mark task as DONE in state if not already
+            if self._state_store:
+                with self._state_store.exclusive_lock(feature_id):
+                    state = self._state_store.load(feature_id)
+                    if state:
+                        for task in state.tasks:
+                            if task.issue_number == issue_number:
+                                if task.stage != TaskStage.DONE:
+                                    task.stage = TaskStage.DONE
+                                    self._state_store.save(state)
+                                break
+
+            return IssueSessionResult(
+                status="success",
+                issue_number=issue_number,
+                session_id="",
+                tests_written=0,
+                tests_passed=0,
+                tests_failed=0,
+                commits=[],
+                cost_usd=0.0,
+                retries=0,
+                error=None,
+            )
 
         # Track whether we've claimed the lock (for finally block cleanup)
         lock_claimed = False
@@ -1896,6 +2260,13 @@ class Orchestrator:
                 # Start session
                 session = self._session_manager.start_session(feature_id, issue_number)
                 session_id = session.session_id
+
+            # Log issue started event
+            try:
+                self._event_logger.log_issue_started(feature_id, issue_number, session_id)
+            except Exception:
+                pass  # Event logging failures must not block implementation
+
             # Step 4: Implementation cycle with retries
             # Thick-agent architecture: CoderAgent handles full TDD workflow
             # (test writing + implementation + verification iteration)
@@ -1905,9 +2276,11 @@ class Orchestrator:
             attempt = 0
             # Track failures from previous run to pass to coder on retry
             previous_failures: list[dict[str, Any]] = []
+            # Track last coder result for summary generation
+            last_coder_result: Optional[AgentResult] = None
 
             while attempt <= max_retries:
-                cycle_success, verifier_result, cycle_cost = self._run_implementation_cycle(
+                cycle_success, coder_result, verifier_result, cycle_cost = self._run_implementation_cycle(
                     feature_id,
                     issue_number,
                     session_id,
@@ -1915,6 +2288,9 @@ class Orchestrator:
                     previous_failures=previous_failures,
                 )
                 total_cost += cycle_cost
+                # Track coder result for summary generation
+                if coder_result:
+                    last_coder_result = coder_result
 
                 if cycle_success:
                     success = True
@@ -1966,6 +2342,11 @@ class Orchestrator:
                         "retry": attempt,
                         "failures_to_fix": len(previous_failures),
                     })
+                    # Log retry event
+                    try:
+                        self._event_logger.log_retry_started(feature_id, issue_number, attempt)
+                    except Exception:
+                        pass  # Event logging failures must not block implementation
                 else:
                     # We've exceeded max retries
                     retries = max_retries
@@ -1991,6 +2372,15 @@ class Orchestrator:
                     success = False  # Override - don't mark DONE with failing tests
 
             if success:
+                # Generate and save completion summary
+                summary: Optional[str] = None
+                try:
+                    summary = self._generate_completion_summary(feature_id, issue_number, last_coder_result)
+                    if summary and self._state_store:
+                        self._state_store.save_completion_summary(feature_id, issue_number, summary)
+                except Exception:
+                    pass  # Summary generation failures should not block implementation
+
                 # Create commit
                 commit_hash = self._create_commit(
                     feature_id,
@@ -2008,6 +2398,53 @@ class Orchestrator:
 
                 # Mark task done
                 self._mark_task_done(feature_id, issue_number)
+
+                # Schema drift prevention: Generate and propagate context
+                try:
+                    # Get issue title for context
+                    issue_title = f"Issue #{issue_number}"
+                    if self._state_store:
+                        state = self._state_store.load(feature_id)
+                        if state:
+                            for task in state.tasks:
+                                if task.issue_number == issue_number:
+                                    issue_title = task.title
+                                    break
+
+                    self._generate_and_propagate_context(
+                        feature_id,
+                        issue_number,
+                        issue_title,
+                        last_coder_result,
+                        commit_hash,
+                    )
+                except Exception:
+                    pass  # Context propagation failures must not block implementation
+
+                # Event logging and GitHub sync
+                try:
+                    self._event_logger.log_issue_done(feature_id, issue_number, commit_hash or "", total_cost)
+                except Exception:
+                    pass  # Event logging failures must not block implementation
+                try:
+                    self._github_sync.update_issue_state(issue_number, "done")
+                    files_created = []
+                    if last_coder_result and last_coder_result.output:
+                        issue_outputs = last_coder_result.output.get("issue_outputs")
+                        if issue_outputs:
+                            if hasattr(issue_outputs, 'files_created'):
+                                files_created = issue_outputs.files_created
+                            else:
+                                files_created = issue_outputs.get("files_created", [])
+                    self._github_sync.post_done_comment(
+                        issue_number,
+                        commit_hash or "",
+                        files_created=files_created,
+                        test_count=tests_passed,
+                        completion_summary=summary,
+                    )
+                except Exception:
+                    pass  # GitHub sync failures must not block implementation
 
                 # Update cost in state
                 self._update_cost(feature_id, total_cost, "IMPLEMENTATION")
@@ -2050,6 +2487,22 @@ class Orchestrator:
 
                 # Mark blocked with reason
                 self._mark_task_blocked(feature_id, issue_number, reason=error_msg)
+
+                # Event logging and GitHub sync
+                try:
+                    self._event_logger.log_issue_blocked(feature_id, issue_number, error_msg, retries)
+                except Exception:
+                    pass  # Event logging failures must not block implementation
+                try:
+                    self._github_sync.update_issue_state(issue_number, "blocked")
+                    self._github_sync.post_blocked_comment(
+                        issue_number,
+                        error_msg,
+                        retry_count=retries,
+                        feature_id=feature_id,
+                    )
+                except Exception:
+                    pass  # GitHub sync failures must not block implementation
 
                 # Update cost in state
                 self._update_cost(feature_id, total_cost, "IMPLEMENTATION")
