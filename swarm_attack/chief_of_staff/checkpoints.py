@@ -8,10 +8,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 import json
 import aiofiles
 import aiofiles.os
+
+if TYPE_CHECKING:
+    from swarm_attack.chief_of_staff.goal_tracker import DailyGoal
+    from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 
 
 class CheckpointTrigger(Enum):
@@ -240,6 +244,13 @@ class CheckpointStore:
         return pending
 
 
+# Tags that trigger UX_CHANGE (case-insensitive)
+UX_CHANGE_TAGS = {"ui", "ux", "frontend"}
+
+# Tags that trigger ARCHITECTURE (case-insensitive)
+ARCHITECTURE_TAGS = {"architecture", "refactor", "core"}
+
+
 class CheckpointSystem:
     """System for detecting checkpoint triggers.
 
@@ -274,6 +285,59 @@ class CheckpointSystem:
         self.config = config
         self.store = store or CheckpointStore()
         self._error_count = 0
+        self.daily_cost = 0.0
+
+    def _detect_triggers(self, goal: "DailyGoal") -> list[CheckpointTrigger]:
+        """Detect which checkpoint triggers apply to a goal.
+
+        Checks the goal's properties against trigger conditions:
+        - UX_CHANGE: tags contain ui, ux, frontend (case-insensitive)
+        - COST_SINGLE: estimated_cost_usd > config.checkpoint_cost_single
+        - COST_CUMULATIVE: daily_cost > config.checkpoint_cost_daily
+        - ARCHITECTURE: tags contain architecture, refactor, core (case-insensitive)
+        - SCOPE_CHANGE: is_unplanned == True
+        - HICCUP: error_count > 0 or is_hiccup == True
+
+        Args:
+            goal: The DailyGoal to check for triggers.
+
+        Returns:
+            List of CheckpointTrigger enums that apply to this goal.
+        """
+        triggers: list[CheckpointTrigger] = []
+
+        # Get tags as lowercase set for case-insensitive comparison
+        goal_tags_lower = {tag.lower() for tag in goal.tags} if goal.tags else set()
+
+        # UX_CHANGE: tags contain ui, ux, frontend
+        if goal_tags_lower & UX_CHANGE_TAGS:
+            triggers.append(CheckpointTrigger.UX_CHANGE)
+
+        # COST_SINGLE: estimated_cost_usd > config.checkpoint_cost_single
+        if goal.estimated_cost_usd is not None and self.config is not None:
+            cost_single_threshold = getattr(self.config, "checkpoint_cost_single", 5.0)
+            if goal.estimated_cost_usd > cost_single_threshold:
+                triggers.append(CheckpointTrigger.COST_SINGLE)
+
+        # COST_CUMULATIVE: daily_cost > config.checkpoint_cost_daily
+        if self.config is not None:
+            cost_daily_threshold = getattr(self.config, "checkpoint_cost_daily", 15.0)
+            if self.daily_cost > cost_daily_threshold:
+                triggers.append(CheckpointTrigger.COST_CUMULATIVE)
+
+        # ARCHITECTURE: tags contain architecture, refactor, core
+        if goal_tags_lower & ARCHITECTURE_TAGS:
+            triggers.append(CheckpointTrigger.ARCHITECTURE)
+
+        # SCOPE_CHANGE: is_unplanned == True
+        if goal.is_unplanned:
+            triggers.append(CheckpointTrigger.SCOPE_CHANGE)
+
+        # HICCUP: error_count > 0 or is_hiccup == True
+        if goal.error_count > 0 or goal.is_hiccup:
+            triggers.append(CheckpointTrigger.HICCUP)
+
+        return triggers
 
     def check_triggers(self, session: Any, action: str) -> Optional[TriggerCheckResult]:
         """Check if any checkpoint triggers are met.

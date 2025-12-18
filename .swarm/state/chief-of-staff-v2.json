@@ -11,30 +11,8 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": {
-        "files_created": [
-          "swarm_attack/chief_of_staff/goal_tracker.py",
-          "swarm_attack/chief_of_staff/autopilot_runner.py"
-        ],
-        "classes_defined": {
-          "swarm_attack/chief_of_staff/goal_tracker.py": [
-            "GoalStatus",
-            "GoalPriority",
-            "RecommendationPriority",
-            "DailyGoal",
-            "Recommendation",
-            "GoalTracker"
-          ],
-          "swarm_attack/chief_of_staff/autopilot_runner.py": [
-            "GoalExecutionResult",
-            "AutopilotRunResult",
-            "SessionContext",
-            "AutopilotRunner"
-          ]
-        },
-        "semantic_summary": null
-      },
-      "completion_summary": "Created 2 file(s): swarm_attack/chief_of_staff/goal_tracker.py, swarm_attack/chief_of_staff/autopilot_runner.py; Defined: GoalStatus, GoalPriority, RecommendationPriority, DailyGoal, Recommendation"
+      "outputs": null,
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 2,
@@ -48,11 +26,11 @@
       "technical_risk_score": 0.5,
       "blocked_reason": null,
       "outputs": null,
-      "completion_summary": null
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 3,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement bug execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -61,38 +39,12 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": {
-        "files_created": [
-          "tests/generated/chief-of-staff-v2/test_issue_3.py",
-          "swarm_attack/chief_of_staff/autopilot_runner.py"
-        ],
-        "classes_defined": {
-          "tests/generated/chief-of-staff-v2/test_issue_3.py": [
-            "TestDailyGoalLinkedBugField",
-            "TestExecuteGoalDetectsLinkedBug",
-            "TestExecuteGoalCallsBugOrchestrator",
-            "TestExecuteGoalReturnsGoalExecutionResultForBugs",
-            "TestExecuteGoalMapsStatusForBugs",
-            "TestExecuteGoalExceptionHandlingForBugs",
-            "TestExecuteGoalNoBugOrchestrator",
-            "TestExecuteBugGoalMethod",
-            "TestIntegrationBugOrchestratorCalled",
-            "TestExecuteGoalRoutesToCorrectMethod"
-          ],
-          "swarm_attack/chief_of_staff/autopilot_runner.py": [
-            "GoalExecutionResult",
-            "AutopilotRunResult",
-            "SessionContext",
-            "AutopilotRunner"
-          ]
-        },
-        "semantic_summary": null
-      },
-      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v2/test_issue_3.py, swarm_attack/chief_of_staff/autopilot_runner.py; Defined: TestDailyGoalLinkedBugField, TestExecuteGoalDetectsLinkedBug, TestExecuteGoalCallsBugOrchestrator, TestExecuteGoalReturnsGoalExecutionResultForBugs, TestExecuteGoalMapsStatusForBugs"
+      "outputs": null,
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 4,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement spec pipeline execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -102,7 +54,7 @@
       "technical_risk_score": 0.5,
       "blocked_reason": null,
       "outputs": null,
-      "completion_summary": null
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 5,
@@ -114,40 +66,9 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": "Max retries exceeded: Regression detected: 35 tests failed in full suite",
-      "outputs": {
-        "files_created": [
-          "swarm_attack/chief_of_staff/budget.py",
-          "swarm_attack/chief_of_staff/goal_tracker.py",
-          "swarm_attack/chief_of_staff/config.py",
-          "swarm_attack/chief_of_staff/autopilot_runner.py"
-        ],
-        "classes_defined": {
-          "swarm_attack/chief_of_staff/goal_tracker.py": [
-            "GoalStatus",
-            "GoalPriority",
-            "RecommendationPriority",
-            "DailyGoal",
-            "Recommendation",
-            "GoalTracker"
-          ],
-          "swarm_attack/chief_of_staff/config.py": [
-            "CheckpointConfig",
-            "PriorityConfig",
-            "StandupConfig",
-            "AutopilotConfig",
-            "ChiefOfStaffConfig"
-          ],
-          "swarm_attack/chief_of_staff/autopilot_runner.py": [
-            "GoalExecutionResult",
-            "AutopilotRunResult",
-            "SessionContext",
-            "AutopilotRunner"
-          ]
-        },
-        "semantic_summary": null
-      },
-      "completion_summary": "Created 4 file(s): swarm_attack/chief_of_staff/budget.py, swarm_attack/chief_of_staff/goal_tracker.py, swarm_attack/chief_of_staff/config.py (+1 more); Defined: GoalStatus, GoalPriority, RecommendationPriority, DailyGoal, Recommendation"
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 6,
@@ -158,28 +79,13 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": {
-        "files_created": [
-          "swarm_attack/chief_of_staff/checkpoints.py"
-        ],
-        "classes_defined": {
-          "swarm_attack/chief_of_staff/checkpoints.py": [
-            "CheckpointTrigger",
-            "CheckpointOption",
-            "Checkpoint",
-            "CheckpointResult",
-            "CheckpointStore",
-            "CheckpointSystem"
-          ]
-        },
-        "semantic_summary": "Checkpoint dataclasses and store for human-in-the-loop checkpoints"
-      },
-      "completion_summary": "Checkpoint and CheckpointStore dataclasses implemented with all triggers, options, and persistence methods. 53 tests passing."
+      "outputs": null,
+      "completion_summary": "Completed"
     },
     {
       "issue_number": 7,
       "stage": "READY",
-      "title": "Implement CheckpointSystem with trigger detection",
+      "title": "Implement trigger detection for CheckpointSystem",
       "dependencies": [
         6
       ],
@@ -187,15 +93,52 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v2/test_issue_7.py",
+          "swarm_attack/chief_of_staff/config.py",
+          "swarm_attack/chief_of_staff/checkpoints.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v2/test_issue_7.py": [
+            "TestCheckpointSystemInit",
+            "TestDetectTriggers",
+            "TestUXChangeTrigger",
+            "TestCostSingleTrigger",
+            "TestCostCumulativeTrigger",
+            "TestArchitectureTrigger",
+            "TestScopeChangeTrigger",
+            "TestHiccupTrigger",
+            "TestMultipleTriggers",
+            "TestConfigCostThresholds",
+            "TestDailyCostTracking"
+          ],
+          "swarm_attack/chief_of_staff/config.py": [
+            "CheckpointConfig",
+            "PriorityConfig",
+            "StandupConfig",
+            "AutopilotConfig",
+            "ChiefOfStaffConfig"
+          ],
+          "swarm_attack/chief_of_staff/checkpoints.py": [
+            "CheckpointTrigger",
+            "TriggerCheckResult",
+            "CheckpointOption",
+            "Checkpoint",
+            "CheckpointResult",
+            "CheckpointStore",
+            "CheckpointSystem"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 3 file(s): tests/generated/chief-of-staff-v2/test_issue_7.py, swarm_attack/chief_of_staff/config.py, swarm_attack/chief_of_staff/checkpoints.py; Defined: TestCheckpointSystemInit, TestDetectTriggers, TestUXChangeTrigger, TestCostSingleTrigger, TestCostCumulativeTrigger"
     },
     {
       "issue_number": 8,
       "stage": "BACKLOG",
-      "title": "Add checkpoint CLI commands",
+      "title": "Implement checkpoint creation methods",
       "dependencies": [
-        6,
         7
       ],
       "estimated_size": "medium",
@@ -208,12 +151,12 @@
     {
       "issue_number": 9,
       "stage": "BACKLOG",
-      "title": "Integrate CheckpointSystem with AutopilotRunner",
+      "title": "Implement check_before_execution for CheckpointSystem",
       "dependencies": [
-        1,
-        7
+        7,
+        8
       ],
-      "estimated_size": "medium",
+      "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
@@ -223,9 +166,9 @@
     {
       "issue_number": 10,
       "stage": "BACKLOG",
-      "title": "Create RecoveryManager with retry logic",
+      "title": "Implement resolve and cost tracking for CheckpointSystem",
       "dependencies": [
-        7
+        9
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -237,7 +180,37 @@
     {
       "issue_number": 11,
       "stage": "BACKLOG",
-      "title": "Add escalation to checkpoint with hiccup marking",
+      "title": "Add checkpoint CLI commands",
+      "dependencies": [
+        6,
+        10
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 12,
+      "stage": "BACKLOG",
+      "title": "Integrate CheckpointSystem with AutopilotRunner",
+      "dependencies": [
+        1,
+        10
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 13,
+      "stage": "BACKLOG",
+      "title": "Create RecoveryManager with retry logic",
       "dependencies": [
         10
       ],
@@ -249,11 +222,25 @@
       "completion_summary": null
     },
     {
-      "issue_number": 12,
+      "issue_number": 14,
+      "stage": "BACKLOG",
+      "title": "Add escalation to checkpoint with hiccup marking",
+      "dependencies": [
+        13
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null
+    },
+    {
+      "issue_number": 15,
       "stage": "BACKLOG",
       "title": "Implement Episode logging and PreferenceLearner",
       "dependencies": [
-        7
+        10
       ],
       "estimated_size": "medium",
       "business_value_score": 0.5,
@@ -263,12 +250,9 @@
       "completion_summary": null
     }
   ],
-  "current_session": "sess_20251218_222133_635512",
-  "created_at": "2025-12-18T17:26:54.317143Z",
-  "updated_at": "2025-12-18T22:08:38.077112Z",
-  "cost_total_usd": 9.4101524,
-  "cost_by_phase": {
-    "SPEC_IN_PROGRESS": 4.0447109999999995,
-    "IMPLEMENTATION": 5.3654414
-  }
+  "current_session": "sess_20251218_224235_219851",
+  "created_at": "2025-12-18T17:26:54Z",
+  "updated_at": "2025-12-18T23:00:00Z",
+  "cost_total_usd": 11.96,
+  "cost_by_phase": {}
 }

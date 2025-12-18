@@ -1,185 +1,138 @@
 {
   "feature_id": "chief-of-staff-v2",
-  "generated_at": "2025-12-18T12:00:00Z",
+  "generated_at": "2025-12-18T14:50:00Z",
+  "split_log": [
+    {
+      "original_issue": 7,
+      "split_into": ["7a", "7b", "7c"],
+      "reason": "13 acceptance criteria, 10+ methods - exceeds limits"
+    },
+    {
+      "original_issue": "7c (now 9)",
+      "split_into": ["9a", "9b"],
+      "reason": "11 acceptance criteria - exceeds 8 max"
+    }
+  ],
   "issues": [
     {
       "title": "Add orchestrator dependency and tags field to DailyGoal",
-      "body": "## Description\n\nAdd orchestrator dependencies to AutopilotRunner and extend DailyGoal with the `tags` field needed for checkpoint trigger detection.\n\nThis is the foundation for real execution - AutopilotRunner needs access to Orchestrator and BugOrchestrator to actually execute goals.\n\n## Acceptance Criteria\n\n- [ ] AutopilotRunner `__init__` accepts `orchestrator: Orchestrator` parameter\n- [ ] AutopilotRunner `__init__` accepts `bug_orchestrator: BugOrchestrator` parameter\n- [ ] DailyGoal dataclass has new `tags: list[str]` field with `field(default_factory=list)`\n- [ ] DailyGoal `to_dict()` and `from_dict()` handle the tags field\n- [ ] Tags are populated from GitHub issue labels when creating goals from linked issues\n- [ ] Unit tests for DailyGoal serialization with tags\n- [ ] Unit tests for AutopilotRunner initialization with orchestrators\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/models/daily_goal.py` for existing DailyGoal pattern.\n\n**Required DailyGoal Changes:**\n- Add `tags: list[str] = field(default_factory=list)` field\n- Update `to_dict(self) -> dict` to include tags\n- Update `from_dict(cls, data: dict) -> DailyGoal` to handle tags\n\n**AutopilotRunner Signature:**\n```python\ndef __init__(\n    self,\n    orchestrator: Orchestrator,\n    bug_orchestrator: BugOrchestrator,\n    checkpoint_system: CheckpointSystem,\n    config: ChiefOfStaffConfig,\n):\n```\n\n## Technical Notes\n\n- Import Orchestrator from `swarm_attack/orchestrator.py`\n- Import BugOrchestrator from `swarm_attack/bug_orchestrator.py`\n- Tags will be used by CheckpointSystem to detect UX/architecture triggers",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nAdd orchestrator dependencies to AutopilotRunner and extend DailyGoal with the `tags` field.\n\n## Acceptance Criteria\n\n- [ ] AutopilotRunner `__init__` accepts `orchestrator: Orchestrator` parameter\n- [ ] AutopilotRunner `__init__` accepts `bug_orchestrator: BugOrchestrator` parameter\n- [ ] DailyGoal dataclass has new `tags: list[str]` field\n- [ ] DailyGoal `to_dict()` and `from_dict()` handle the tags field\n- [ ] Unit tests for DailyGoal serialization with tags\n- [ ] Unit tests for AutopilotRunner initialization\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/goal_tracker.py`\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "small",
       "dependencies": [],
-      "order": 1,
-      "automation_type": "automated"
+      "order": 1
     },
     {
       "title": "Implement feature execution path in AutopilotRunner",
-      "body": "## Description\n\nImplement the feature execution path in `AutopilotRunner._execute_goal()` that calls the orchestrator for goals with `linked_feature` and `linked_issue`.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_feature` set\n- [ ] Calls `self.orchestrator.run_issue(feature_id, issue_number)` for feature goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds, output\n- [ ] Maps orchestrator result status to GoalExecutionResult success boolean\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests with mocked orchestrator\n- [ ] Integration test verifying orchestrator is called with correct parameters\n\n## Technical Notes\n\n- Orchestrator.run_issue returns a result with `status`, `cost_usd`, `duration_seconds`, `summary`\n- Success when `result.status == \"success\"`\n- Copy output from `result.summary`\n\n## Code Location\n\n`swarm_attack/chief_of_staff/autopilot_runner.py`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement the feature execution path that calls orchestrator.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_feature` set\n- [ ] Calls `self.orchestrator.run_issue_session(feature_id=, issue_number=)` for feature goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds, output\n- [ ] Maps orchestrator result status to success boolean\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests with mocked orchestrator\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        1
-      ],
-      "order": 2,
-      "automation_type": "automated"
+      "dependencies": [1],
+      "order": 2
     },
     {
       "title": "Implement bug execution path in AutopilotRunner",
-      "body": "## Description\n\nImplement the bug execution path in `AutopilotRunner._execute_goal()` that calls the bug orchestrator for goals with `linked_bug`.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_bug` set\n- [ ] Calls `self.bug_orchestrator.fix(bug_id)` for bug goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds, output\n- [ ] Maps bug orchestrator result status to GoalExecutionResult success boolean\n- [ ] Success when `result.status == \"fixed\"`\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests with mocked bug orchestrator\n- [ ] Integration test verifying bug_orchestrator is called with correct parameters\n\n## Technical Notes\n\n- BugOrchestrator.fix returns a result with `status`, `cost_usd`, `duration_seconds`, `summary`\n- Success when `result.status == \"fixed\"`\n\n## Code Location\n\n`swarm_attack/chief_of_staff/autopilot_runner.py`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement bug execution path via BugOrchestrator.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_bug` set\n- [ ] Calls `self.bug_orchestrator.fix(bug_id)` for bug goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds, output\n- [ ] Maps bug orchestrator result.success to success boolean\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests with mocked bug orchestrator\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        1
-      ],
-      "order": 3,
-      "automation_type": "automated"
+      "dependencies": [1],
+      "order": 3
     },
     {
       "title": "Implement spec pipeline execution path in AutopilotRunner",
-      "body": "## Description\n\nImplement the spec pipeline execution path in `AutopilotRunner._execute_goal()` that runs spec generation for goals with `linked_spec`.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_spec` set\n- [ ] Calls `self.orchestrator.run_spec_pipeline(spec_id)` for spec goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds\n- [ ] Success when `result.status == \"approved\"`\n- [ ] Handles generic goals (no linked artifact) by returning success with manual note\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests for spec execution path\n- [ ] Unit tests for generic goal handling\n\n## Technical Notes\n\n- Generic goals without any linked artifact should return:\n  ```python\n  GoalExecutionResult(\n      success=True,\n      cost_usd=0,\n      output=\"Manual goal - no automated execution\",\n  )\n  ```\n\n## Code Location\n\n`swarm_attack/chief_of_staff/autopilot_runner.py`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement spec pipeline execution path.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goal()` detects goals with `linked_spec` set\n- [ ] Calls `self.orchestrator.run_spec_pipeline(spec_id)` for spec goals\n- [ ] Returns `GoalExecutionResult` with success, cost_usd, duration_seconds\n- [ ] Handles generic goals (no linked artifact) with stub execution\n- [ ] Handles exceptions and sets error_count on goal\n- [ ] Unit tests for spec and generic execution paths\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        1
-      ],
-      "order": 4,
-      "automation_type": "automated"
+      "dependencies": [1],
+      "order": 4
     },
     {
       "title": "Add pre-execution budget checks and estimated_cost_usd field",
-      "body": "## Description\n\nAdd budget validation before goal execution and extend DailyGoal with estimated cost tracking.\n\n## Acceptance Criteria\n\n- [ ] DailyGoal has `estimated_cost_usd: Optional[float] = None` field\n- [ ] DailyGoal has `is_unplanned: bool = False` field\n- [ ] DailyGoal has `error_count: int = 0` field\n- [ ] DailyGoal has `is_hiccup: bool = False` field\n- [ ] DailyGoal `to_dict()` and `from_dict()` handle all new fields\n- [ ] Default estimated_cost_usd values: feature=$3, bug=$2, spec=$1\n- [ ] `_execute_goal()` checks remaining budget before execution\n- [ ] Returns failure result if `remaining_budget < config.min_execution_budget`\n- [ ] ChiefOfStaffConfig has `min_execution_budget: float` field (default 0.50)\n- [ ] Unit tests for budget check logic\n- [ ] Unit tests for default cost estimation by goal type\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for config pattern.\n\n**Required DailyGoal Changes:**\n```python\nestimated_cost_usd: Optional[float] = None\nis_unplanned: bool = False\nerror_count: int = 0\nis_hiccup: bool = False\n```\n\n**ChiefOfStaffConfig Changes:**\n```python\nmin_execution_budget: float = 0.50\n```\n\n## Technical Notes\n\n- Budget check happens BEFORE any orchestrator call (David Dohan's requirement)\n- Remaining budget = `session.budget_usd - session.cost_spent_usd`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nAdd budget validation before goal execution.\n\n## Acceptance Criteria\n\n- [ ] DailyGoal has `estimated_cost_usd: Optional[float] = None` field\n- [ ] DailyGoal has `is_unplanned: bool = False` field\n- [ ] DailyGoal has `error_count: int = 0` field\n- [ ] DailyGoal has `is_hiccup: bool = False` field\n- [ ] ChiefOfStaffConfig has `min_execution_budget: float` (default 0.50)\n- [ ] `_execute_goal_with_budget_check()` checks budget before execution\n- [ ] Returns failure if `remaining_budget < min_execution_budget`\n- [ ] Unit tests for budget check logic\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/goal_tracker.py`\n- `swarm_attack/chief_of_staff/config.py`\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "small",
-      "dependencies": [
-        1
-      ],
-      "order": 5,
-      "automation_type": "automated"
+      "dependencies": [1],
+      "order": 5
     },
     {
       "title": "Create Checkpoint and CheckpointStore dataclasses",
-      "body": "## Description\n\nCreate the Checkpoint data model and CheckpointStore for persistent storage of human-in-the-loop checkpoints.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointTrigger` enum with: UX_CHANGE, COST_SINGLE, COST_CUMULATIVE, ARCHITECTURE, SCOPE_CHANGE, HICCUP\n- [ ] `CheckpointOption` dataclass with label, description, is_recommended fields\n- [ ] `CheckpointOption.to_dict()` and `from_dict()` methods\n- [ ] `Checkpoint` dataclass with all fields from spec (checkpoint_id, trigger, context, options, recommendation, created_at, goal_id, status, chosen_option, human_notes, resolved_at)\n- [ ] `Checkpoint.to_dict()` and `from_dict()` methods\n- [ ] `CheckpointResult` dataclass with requires_approval, approved, checkpoint fields\n- [ ] `CheckpointStore` class with base_path in `.swarm/chief-of-staff/checkpoints/`\n- [ ] `CheckpointStore.save(checkpoint)` saves to JSON file\n- [ ] `CheckpointStore.get(checkpoint_id)` loads checkpoint by ID\n- [ ] `CheckpointStore.get_pending_for_goal(goal_id)` finds pending checkpoint for goal\n- [ ] `CheckpointStore.list_pending()` returns all pending checkpoints\n- [ ] Unit tests for all dataclass serialization\n- [ ] Unit tests for CheckpointStore CRUD operations\n\n## Interface Contract (REQUIRED)\n\n**File Location:** `swarm_attack/chief_of_staff/checkpoints.py`\n\n**Required Methods:**\n- `Checkpoint.to_dict(self) -> dict`\n- `Checkpoint.from_dict(cls, data: dict) -> Checkpoint`\n- `CheckpointOption.to_dict(self) -> dict`\n- `CheckpointOption.from_dict(cls, data: dict) -> CheckpointOption`\n- `CheckpointStore.save(checkpoint: Checkpoint) -> None` (async)\n- `CheckpointStore.get(checkpoint_id: str) -> Optional[Checkpoint]` (async)\n- `CheckpointStore.get_pending_for_goal(goal_id: str) -> Optional[Checkpoint]` (async)\n- `CheckpointStore.list_pending() -> list[Checkpoint]` (async)\n\n## Technical Notes\n\n- Store checkpoints as individual JSON files: `{checkpoint_id}.json`\n- Default status is \"pending\"\n- Status values: pending, approved, rejected, expired",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nCreate Checkpoint data model and CheckpointStore for persistence.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointTrigger` enum with: UX_CHANGE, COST_SINGLE, COST_CUMULATIVE, ARCHITECTURE, SCOPE_CHANGE, HICCUP\n- [ ] `CheckpointOption` dataclass with label, description, is_recommended\n- [ ] `Checkpoint` dataclass with all fields (checkpoint_id, trigger, context, options, etc.)\n- [ ] `CheckpointResult` dataclass with requires_approval, approved, checkpoint\n- [ ] `CheckpointStore.save(checkpoint)` saves to JSON file\n- [ ] `CheckpointStore.get(checkpoint_id)` loads by ID\n- [ ] `CheckpointStore.list_pending()` returns pending checkpoints\n- [ ] Unit tests for all serialization and CRUD\n\n## File Operations\n\n**CREATE:**\n- `swarm_attack/chief_of_staff/checkpoints.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
       "dependencies": [],
-      "order": 6,
-      "automation_type": "automated"
+      "order": 6
     },
     {
-      "title": "Implement CheckpointSystem with trigger detection",
-      "body": "## Description\n\nImplement the CheckpointSystem that detects when goals require human approval and manages the checkpoint lifecycle.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointSystem` class with store, config, preference_learner dependencies\n- [ ] `check_before_execution(goal)` returns CheckpointResult\n- [ ] `_detect_triggers(goal)` detects all 6 trigger types:\n  - UX_CHANGE: tags contain ui, ux, frontend, user-facing, screen, flow\n  - COST_SINGLE: estimated_cost_usd > config.checkpoint_cost_single ($5)\n  - COST_CUMULATIVE: daily_cost > config.checkpoint_cost_daily ($15)\n  - ARCHITECTURE: tags contain architecture, refactor, core, infrastructure, breaking\n  - SCOPE_CHANGE: is_unplanned == True\n  - HICCUP: error_count > 0 or is_hiccup == True\n- [ ] `_create_checkpoint(goal, trigger)` creates checkpoint with context, options, recommendation\n- [ ] `_build_context(goal, trigger)` generates appropriate context string per trigger type\n- [ ] `_build_options(goal, trigger)` returns Proceed, Skip, Modify, Pause options\n- [ ] `_build_recommendation(goal, trigger)` generates recommendation string\n- [ ] `resolve_checkpoint(checkpoint_id, chosen_option, notes)` updates checkpoint status\n- [ ] `update_daily_cost(cost)` increments daily cost tracking\n- [ ] `reset_daily_cost()` resets daily cost to 0\n- [ ] ChiefOfStaffConfig has `checkpoint_cost_single: float = 5.0` and `checkpoint_cost_daily: float = 15.0`\n- [ ] Unit tests for each trigger detection\n- [ ] Unit tests for checkpoint creation and resolution\n\n## Interface Contract (REQUIRED)\n\n**File Location:** `swarm_attack/chief_of_staff/checkpoints.py`\n\n**ChiefOfStaffConfig Changes:**\n```python\ncheckpoint_cost_single: float = 5.0\ncheckpoint_cost_daily: float = 15.0\n```\n\n**Required Methods:**\n- `check_before_execution(goal: DailyGoal) -> CheckpointResult` (async)\n- `resolve_checkpoint(checkpoint_id: str, chosen_option: str, notes: Optional[str]) -> Checkpoint` (async)\n- `update_daily_cost(cost: float) -> None`\n- `reset_daily_cost() -> None`\n\n## Technical Notes\n\n- Tag matching is case-insensitive\n- Hiccup detection takes priority (check first)\n- Returns existing pending checkpoint if one exists for the goal",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "title": "Implement trigger detection for CheckpointSystem",
+      "body": "## Description\n\nImplement CheckpointSystem class with trigger detection.\n\n## Acceptance Criteria\n\n- [ ] `CheckpointSystem` class with store, config dependencies\n- [ ] `_detect_triggers(goal)` method returns list of CheckpointTrigger\n- [ ] UX_CHANGE: tags contain ui, ux, frontend (case-insensitive)\n- [ ] COST_SINGLE: estimated_cost_usd > config.checkpoint_cost_single\n- [ ] COST_CUMULATIVE: daily_cost > config.checkpoint_cost_daily\n- [ ] ARCHITECTURE: tags contain architecture, refactor, core\n- [ ] SCOPE_CHANGE: is_unplanned == True\n- [ ] HICCUP: error_count > 0 or is_hiccup == True\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/checkpoints.py` (preserve: CheckpointTrigger, Checkpoint, CheckpointStore)\n- `swarm_attack/chief_of_staff/config.py` (add checkpoint_cost_single=5.0, checkpoint_cost_daily=15.0)",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        6
-      ],
-      "order": 7,
-      "automation_type": "automated"
+      "dependencies": [6],
+      "order": 7
+    },
+    {
+      "title": "Implement checkpoint creation methods",
+      "body": "## Description\n\nImplement checkpoint creation methods for CheckpointSystem.\n\n## Acceptance Criteria\n\n- [ ] `_create_checkpoint(goal, trigger)` creates Checkpoint with context, options, recommendation\n- [ ] `_build_context(goal, trigger)` generates context string per trigger type\n- [ ] `_build_options(goal, trigger)` returns list: Proceed, Skip, Modify, Pause\n- [ ] `_build_recommendation(goal, trigger)` generates recommendation string\n- [ ] Proceed option marked as is_recommended for most triggers\n- [ ] Unit tests for checkpoint creation\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/checkpoints.py` (preserve: _detect_triggers)",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
+      "estimated_size": "medium",
+      "dependencies": [7],
+      "order": 8
+    },
+    {
+      "title": "Implement check_before_execution for CheckpointSystem",
+      "body": "## Description\n\nImplement the check_before_execution public API method.\n\n## Acceptance Criteria\n\n- [ ] `check_before_execution(goal)` returns CheckpointResult\n- [ ] Returns existing pending checkpoint if one exists for the goal\n- [ ] Creates new checkpoint if triggers detected and no pending exists\n- [ ] Returns CheckpointResult(requires_approval=False) if no triggers\n- [ ] Uses _detect_triggers and _create_checkpoint internally\n- [ ] Unit tests for check_before_execution\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/checkpoints.py` (preserve: _detect_triggers, _create_checkpoint, _build_*)",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
+      "estimated_size": "small",
+      "dependencies": [7, 8],
+      "order": 9
+    },
+    {
+      "title": "Implement resolve and cost tracking for CheckpointSystem",
+      "body": "## Description\n\nImplement resolve_checkpoint and daily cost tracking.\n\n## Acceptance Criteria\n\n- [ ] `resolve_checkpoint(checkpoint_id, chosen_option, notes)` updates checkpoint status\n- [ ] Sets status to 'approved' if chosen_option is 'Proceed'\n- [ ] Sets status to 'rejected' for Skip/Modify/Pause\n- [ ] Stores chosen_option and human_notes on checkpoint\n- [ ] `update_daily_cost(cost)` increments daily cost tracking\n- [ ] `reset_daily_cost()` resets daily cost to 0\n- [ ] Unit tests for resolve and cost methods\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/checkpoints.py` (preserve: check_before_execution)",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
+      "estimated_size": "small",
+      "dependencies": [9],
+      "order": 10
     },
     {
       "title": "Add checkpoint CLI commands",
-      "body": "## Description\n\nAdd CLI commands for viewing and resolving checkpoints: `checkpoints`, `approve`, `reject`, `modify`.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos checkpoints` lists all pending checkpoints\n- [ ] Shows trigger type, checkpoint ID, context, options with recommendations\n- [ ] Uses emoji markers: \ud83d\udd14 for checkpoint header, \ud83d\udca1 for recommended option\n- [ ] `swarm-attack cos approve <checkpoint-id>` approves checkpoint\n- [ ] `swarm-attack cos approve <checkpoint-id> --notes \"message\"` approves with notes\n- [ ] `swarm-attack cos reject <checkpoint-id>` rejects/skips checkpoint\n- [ ] `swarm-attack cos reject <checkpoint-id> --notes \"reason\"` rejects with notes\n- [ ] `swarm-attack cos modify <checkpoint-id> --instructions \"new instructions\"` for modify option\n- [ ] All commands print confirmation message on success\n- [ ] Error handling for invalid checkpoint IDs\n- [ ] Unit tests for CLI command parsing\n- [ ] Integration tests for checkpoint workflow\n\n## Technical Notes\n\n- Add commands to existing `cos_group` in CLI\n- Use `asyncio.run()` to call async checkpoint methods\n- Output format:\n  ```\n  \ud83d\udd14 CHECKPOINT: UX_CHANGE\n     ID: cp-abc12345\n     Context: About to make user-facing changes: Add login button\n     Options:\n       \ud83d\udca1 Proceed: Approve this action and continue\n          Skip: Skip this goal and move to the next one\n          Modify: I'll provide adjusted instructions\n          Pause: Pause the session for manual review\n     Recommendation: Proceed - aligns with current plan\n  ```\n\n## Code Location\n\n`swarm_attack/cli.py` - add to cos_group",
-      "labels": [
-        "enhancement",
-        "backend",
-        "cli",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nAdd CLI commands for viewing and resolving checkpoints.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos checkpoints` lists all pending checkpoints\n- [ ] Shows trigger type, checkpoint ID, context, options with recommendations\n- [ ] `swarm-attack cos approve <checkpoint-id>` approves checkpoint\n- [ ] `swarm-attack cos approve <checkpoint-id> --notes \"message\"` approves with notes\n- [ ] `swarm-attack cos reject <checkpoint-id>` rejects checkpoint\n- [ ] `swarm-attack cos reject <checkpoint-id> --notes \"reason\"` rejects with notes\n- [ ] Error handling for invalid checkpoint IDs\n- [ ] Unit tests for CLI command parsing\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/cli.py` (add to cos_group)",
+      "labels": ["enhancement", "backend", "cli", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        6,
-        7
-      ],
-      "order": 8,
-      "automation_type": "automated"
+      "dependencies": [6, 10],
+      "order": 11
     },
     {
       "title": "Integrate CheckpointSystem with AutopilotRunner",
-      "body": "## Description\n\nIntegrate the CheckpointSystem into AutopilotRunner's execution flow, including cost tracking and is_unplanned detection.\n\n## Acceptance Criteria\n\n- [ ] AutopilotRunner `__init__` accepts `checkpoint_system: CheckpointSystem`\n- [ ] `start()` calls `checkpoint_system.reset_daily_cost()` at session start\n- [ ] `_execute_goal()` calls `checkpoint_system.check_before_execution(goal)` before execution\n- [ ] If checkpoint requires approval and not approved, returns with `checkpoint_pending=True`\n- [ ] After each goal execution, calls `checkpoint_system.update_daily_cost(result.cost_usd)`\n- [ ] Session cost_spent_usd is updated after each goal\n- [ ] Goals added mid-session (not in original goals list) get `is_unplanned=True`\n- [ ] AutopilotSession tracks `original_goal_ids` for unplanned detection\n- [ ] Execution loop breaks when checkpoint_pending to allow human resolution\n- [ ] Unit tests for checkpoint integration flow\n- [ ] Integration tests for checkpoint-triggered pause\n- [ ] Integration tests for daily cost tracking across goals\n\n## Technical Notes\n\n- Checkpoint check happens AFTER budget check, BEFORE orchestrator call\n- When checkpoint_pending, the goal stays in current state for retry after approval\n- AutopilotSession needs new field: `original_goal_ids: set[str]`\n\n## Code Location\n\n`swarm_attack/chief_of_staff/autopilot_runner.py`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nIntegrate CheckpointSystem into AutopilotRunner's execution flow.\n\n## Acceptance Criteria\n\n- [ ] AutopilotRunner `__init__` accepts `checkpoint_system: CheckpointSystem`\n- [ ] `start()` calls `checkpoint_system.reset_daily_cost()` at session start\n- [ ] `_execute_goal()` calls `checkpoint_system.check_before_execution(goal)` before execution\n- [ ] If checkpoint requires approval and not approved, returns with `checkpoint_pending=True`\n- [ ] After each goal, calls `checkpoint_system.update_daily_cost(result.cost_usd)`\n- [ ] Execution loop breaks when checkpoint_pending\n- [ ] Unit tests for checkpoint integration\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        1,
-        7
-      ],
-      "order": 9,
-      "automation_type": "automated"
+      "dependencies": [1, 10],
+      "order": 12
     },
     {
       "title": "Create RecoveryManager with retry logic",
-      "body": "## Description\n\nImplement the RecoveryManager class with 2-level recovery: retry with backoff, then escalate to human.\n\n## Acceptance Criteria\n\n- [ ] `RecoveryLevel` enum with RETRY_SAME and ESCALATE values\n- [ ] `RecoveryManager` class with checkpoint_system dependency\n- [ ] `MAX_RETRIES = 3` class constant\n- [ ] `BACKOFF_SECONDS = 5` class constant for base backoff\n- [ ] `execute_with_recovery(goal, action)` async method\n- [ ] Retries action up to MAX_RETRIES times with exponential backoff\n- [ ] Backoff: 5s, 10s, 20s (5 * 2^attempt)\n- [ ] Increments `goal.error_count` on each failure\n- [ ] Returns immediately on success\n- [ ] Calls `_escalate_to_human()` after all retries exhausted\n- [ ] Unit tests for retry logic with mock action\n- [ ] Unit tests for backoff timing\n- [ ] Unit tests for error_count increment\n\n## Interface Contract (REQUIRED)\n\n**File Location:** `swarm_attack/chief_of_staff/recovery.py`\n\n**Required Methods:**\n```python\nasync def execute_with_recovery(\n    self,\n    goal: DailyGoal,\n    action: Callable[[], GoalExecutionResult],\n) -> GoalExecutionResult\n```\n\n## Technical Notes\n\n- Use `asyncio.sleep()` for backoff delay\n- Action is a callable that returns GoalExecutionResult\n- Track last_result to pass to escalation on final failure",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement RecoveryManager with retry and backoff logic.\n\n## Acceptance Criteria\n\n- [ ] `RecoveryLevel` enum with RETRY_SAME and ESCALATE values\n- [ ] `RecoveryManager` class with checkpoint_system dependency\n- [ ] `MAX_RETRIES = 3` and `BACKOFF_SECONDS = 5` constants\n- [ ] `execute_with_recovery(goal, action)` async method\n- [ ] Retries action up to MAX_RETRIES with exponential backoff (5s, 10s, 20s)\n- [ ] Increments `goal.error_count` on each failure\n- [ ] Returns immediately on success\n- [ ] Unit tests for retry logic and backoff\n\n## File Operations\n\n**CREATE:**\n- `swarm_attack/chief_of_staff/recovery.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "small",
-      "dependencies": [
-        7
-      ],
-      "order": 10,
-      "automation_type": "automated"
+      "dependencies": [10],
+      "order": 13
     },
     {
       "title": "Add escalation to checkpoint with hiccup marking",
-      "body": "## Description\n\nImplement the escalation path in RecoveryManager that creates a HICCUP checkpoint and marks the goal for human intervention.\n\n## Acceptance Criteria\n\n- [ ] `_escalate_to_human(goal, failure)` creates HICCUP checkpoint\n- [ ] Sets `goal.is_hiccup = True` before escalation\n- [ ] Checkpoint context includes: retry count, goal content, error message\n- [ ] Checkpoint options: Retry, Skip, Manual\n- [ ] Recommendation is \"Skip - automatic retries exhausted\"\n- [ ] Saves checkpoint via `checkpoint_system.store.save()`\n- [ ] Returns GoalExecutionResult with `checkpoint_pending=True`\n- [ ] Returns failure error as \"Escalated to human: {original_error}\"\n- [ ] Integrate RecoveryManager into AutopilotRunner._execute_goal()\n- [ ] Unit tests for escalation checkpoint creation\n- [ ] Integration tests for full retry->escalate flow\n\n## Technical Notes\n\n- Escalation checkpoint options differ from standard (no Modify/Pause):\n  ```python\n  options=[\n      CheckpointOption(label=\"Retry\", description=\"Try again with fresh context\"),\n      CheckpointOption(label=\"Skip\", description=\"Skip this goal\"),\n      CheckpointOption(label=\"Manual\", description=\"I'll handle this manually\"),\n  ]\n  ```\n\n## Code Location\n\n`swarm_attack/chief_of_staff/recovery.py`",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement escalation path that creates HICCUP checkpoints.\n\n## Acceptance Criteria\n\n- [ ] `_escalate_to_human(goal, failure)` creates HICCUP checkpoint\n- [ ] Sets `goal.is_hiccup = True` before escalation\n- [ ] Checkpoint context includes retry count, goal content, error\n- [ ] Checkpoint options: Retry, Skip, Manual\n- [ ] Returns GoalExecutionResult with `checkpoint_pending=True`\n- [ ] Integrate RecoveryManager into AutopilotRunner._execute_goal()\n- [ ] Unit tests for escalation\n\n## File Operations\n\n**UPDATE:**\n- `swarm_attack/chief_of_staff/recovery.py`\n- `swarm_attack/chief_of_staff/autopilot_runner.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "small",
-      "dependencies": [
-        10
-      ],
-      "order": 11,
-      "automation_type": "automated"
+      "dependencies": [13],
+      "order": 14
     },
     {
       "title": "Implement Episode logging and PreferenceLearner",
-      "body": "## Description\n\nImplement basic episode logging for execution history and preference learning from checkpoint decisions.\n\n## Acceptance Criteria\n\n- [ ] `Episode` dataclass with: episode_id, timestamp, goal_id, goal_content, success, error, cost_usd, duration_seconds, retry_count\n- [ ] `Episode.to_dict()` and `from_dict()` methods\n- [ ] `EpisodeStore` class with JSONL storage at `.swarm/chief-of-staff/episodes/episodes.jsonl`\n- [ ] `EpisodeStore.save(episode)` appends to JSONL\n- [ ] `EpisodeStore.load_recent(limit=100)` loads most recent episodes\n- [ ] `PreferenceWeight` dataclass with: key, value (0-1), sample_count, last_updated\n- [ ] `PreferenceWeight.to_dict()` and `from_dict()` methods\n- [ ] `PreferenceLearner` class with preference store dependency\n- [ ] `PreferenceLearner.load()` loads weights from storage\n- [ ] `PreferenceLearner.record_decision(checkpoint)` extracts signals and updates weights\n- [ ] Signal extraction for: cost_tolerance, daily_cost_tolerance, risk_tolerance, retry_preference, skip_preference\n- [ ] `MAX_WEIGHT_CHANGE = 0.1` bounds per-update change\n- [ ] Weight values clamped to [0.0, 1.0]\n- [ ] `PreferenceLearner.get_weight(key, default=0.5)` returns current weight\n- [ ] `PreferenceStore` saves weights to `.swarm/chief-of-staff/preferences.json`\n- [ ] Integrate PreferenceLearner with CheckpointSystem.resolve_checkpoint()\n- [ ] AutopilotRunner logs Episode after each goal execution\n- [ ] Unit tests for Episode serialization\n- [ ] Unit tests for preference signal extraction\n- [ ] Unit tests for bounded weight updates\n- [ ] Integration tests for preference learning from checkpoint decisions\n\n## Interface Contract (REQUIRED)\n\n**File Locations:**\n- `swarm_attack/chief_of_staff/episodes.py`\n- `swarm_attack/chief_of_staff/preferences.py`\n\n**Required Methods:**\n- `Episode.to_dict(self) -> dict`\n- `Episode.from_dict(cls, data: dict) -> Episode`\n- `EpisodeStore.save(episode: Episode) -> None`\n- `EpisodeStore.load_recent(limit: int) -> list[Episode]`\n- `PreferenceLearner.load() -> None` (async)\n- `PreferenceLearner.record_decision(checkpoint: Checkpoint) -> None` (async)\n- `PreferenceLearner.get_weight(key: str, default: float) -> float`\n\n## Technical Notes\n\n- Signal extraction rules from spec:\n  - COST_SINGLE + Proceed \u2192 cost_tolerance +0.1\n  - COST_SINGLE + Skip/Reject \u2192 cost_tolerance -0.1\n  - COST_CUMULATIVE + Proceed \u2192 daily_cost_tolerance +0.1\n  - ARCHITECTURE/UX_CHANGE + Proceed \u2192 risk_tolerance +0.05\n  - HICCUP + Retry \u2192 retry_preference +0.1\n  - HICCUP + Skip \u2192 skip_preference +0.1\n- Initial weight value is 0.5 (neutral)\n- JSONL format: one JSON object per line",
-      "labels": [
-        "enhancement",
-        "backend",
-        "chief-of-staff-v2"
-      ],
+      "body": "## Description\n\nImplement episode logging and basic preference learning.\n\n## Acceptance Criteria\n\n- [ ] `Episode` dataclass with episode_id, timestamp, goal_id, success, cost_usd, etc.\n- [ ] `Episode.to_dict()` and `from_dict()` methods\n- [ ] `EpisodeStore` with JSONL storage at `.swarm/chief-of-staff/episodes/episodes.jsonl`\n- [ ] `EpisodeStore.save(episode)` appends to JSONL\n- [ ] `EpisodeStore.load_recent(limit=100)` loads recent episodes\n- [ ] `PreferenceLearner.record_decision(checkpoint)` extracts signals\n- [ ] AutopilotRunner logs Episode after each goal execution\n- [ ] Unit tests for Episode serialization\n\n## File Operations\n\n**CREATE:**\n- `swarm_attack/chief_of_staff/episodes.py`",
+      "labels": ["enhancement", "backend", "chief-of-staff-v2"],
       "estimated_size": "medium",
-      "dependencies": [
-        7
-      ],
-      "order": 12,
-      "automation_type": "automated"
+      "dependencies": [10],
+      "order": 15
     }
   ]
 }

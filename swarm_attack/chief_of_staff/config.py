@@ -61,6 +61,8 @@ class ChiefOfStaffConfig:
     duration_minutes: int | None = None
     error_streak: int | None = None
     min_execution_budget: float = 0.50
+    checkpoint_cost_single: float = 5.0
+    checkpoint_cost_daily: float = 15.0
 
     def __post_init__(self) -> None:
         """Set budget/duration/error_streak from checkpoints if not explicitly set."""
@@ -115,6 +117,8 @@ class ChiefOfStaffConfig:
             duration_minutes=data.get("duration_minutes"),
             error_streak=data.get("error_streak"),
             min_execution_budget=data.get("min_execution_budget", 0.50),
+            checkpoint_cost_single=data.get("checkpoint_cost_single", 5.0),
+            checkpoint_cost_daily=data.get("checkpoint_cost_daily", 15.0),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,4 +156,6 @@ class ChiefOfStaffConfig:
             "duration_minutes": self.duration_minutes,
             "error_streak": self.error_streak,
             "min_execution_budget": self.min_execution_budget,
+            "checkpoint_cost_single": self.checkpoint_cost_single,
+            "checkpoint_cost_daily": self.checkpoint_cost_daily,
         }

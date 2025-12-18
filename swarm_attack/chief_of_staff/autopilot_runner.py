@@ -137,13 +137,13 @@ class AutopilotRunner:
         self.on_checkpoint = on_checkpoint
 
     def _execute_feature_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a feature goal by calling the orchestrator.
+        """Execute a feature goal via Orchestrator.
 
         Args:
-            goal: DailyGoal with linked_feature set
+            goal: DailyGoal with linked_feature and linked_issue set
 
         Returns:
-            GoalExecutionResult with success status, cost, duration, and output
+            GoalExecutionResult with success, cost_usd, duration_seconds
         """
         start_time = time.time()
 
@@ -154,113 +154,42 @@ class AutopilotRunner:
                 success=False,
                 cost_usd=0.0,
                 duration_seconds=0,
-                error="Orchestrator not configured - cannot execute feature goals",
+                error="No orchestrator configured for feature execution",
                 output="",
             )
 
         try:
-            # Call orchestrator with feature_id and issue_number
+            # Call orchestrator.run_issue_session(feature_id, issue_number)
             result = self.orchestrator.run_issue_session(
                 feature_id=goal.linked_feature,
                 issue_number=goal.linked_issue,
             )
 
-            # Calculate duration
-            duration_seconds = int(time.time() - start_time)
+            duration = int(time.time() - start_time)
 
-            # Map status to success boolean
+            # Map result status to success boolean
             success = result.status == "success"
-
-            # Get cost from result
             cost_usd = getattr(result, "cost_usd", 0.0)
-
-            # Get error if present
             error = getattr(result, "error", None) if not success else None
-
-            # Get summary/output if present (ensure it's a string)
-            summary = getattr(result, "summary", "")
-            output = summary if isinstance(summary, str) else ""
+            # Ensure output is a string (mock objects may return MagicMock)
+            msg = getattr(result, "message", "")
+            output = msg if isinstance(msg, str) else ""
 
             return GoalExecutionResult(
                 success=success,
                 cost_usd=cost_usd,
-                duration_seconds=duration_seconds,
-                error=error,
-                output=output,
-            )
-
-        except Exception as e:
-            # Handle exceptions - increment error count and return failure
-            goal.error_count += 1
-            duration_seconds = int(time.time() - start_time)
-
-            return GoalExecutionResult(
-                success=False,
-                cost_usd=0.0,
-                duration_seconds=duration_seconds,
-                error=str(e),
-                output="",
-            )
-
-    def _execute_bug_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a bug goal by calling the bug orchestrator.
-
-        Args:
-            goal: DailyGoal with linked_bug set
-
-        Returns:
-            GoalExecutionResult with success status, cost, duration, and output
-        """
-        start_time = time.time()
-
-        # Check if bug_orchestrator is available
-        if self.bug_orchestrator is None:
-            goal.error_count += 1
-            return GoalExecutionResult(
-                success=False,
-                cost_usd=0.0,
-                duration_seconds=0,
-                error="Bug orchestrator not configured - cannot execute bug goals",
-                output="",
-            )
-
-        try:
-            # Call bug orchestrator with bug_id
-            result = self.bug_orchestrator.fix(goal.linked_bug)
-
-            # Calculate duration
-            duration_seconds = int(time.time() - start_time)
-
-            # Map success using result.success boolean attribute
-            # BugPipelineResult has success: bool directly
-            success = getattr(result, "success", False)
-
-            # Get cost from result
-            cost_usd = getattr(result, "cost_usd", 0.0)
-
-            # Get error if present
-            error = getattr(result, "error", None) if not success else None
-
-            # Get message/output if present (ensure it's a string)
-            message = getattr(result, "message", "")
-            output = message if isinstance(message, str) else ""
-
-            return GoalExecutionResult(
-                success=success,
-                cost_usd=cost_usd,
-                duration_seconds=duration_seconds,
+                duration_seconds=duration,
                 error=error,
                 output=output,
             )
 
         except Exception as e:
             goal.error_count += 1
-            duration_seconds = int(time.time() - start_time)
-
+            duration = int(time.time() - start_time)
             return GoalExecutionResult(
                 success=False,
                 cost_usd=0.0,
-                duration_seconds=duration_seconds,
+                duration_seconds=duration,
                 error=str(e),
                 output="",
             )
@@ -272,32 +201,168 @@ class AutopilotRunner:
     ) -> GoalExecutionResult:
         """Execute a goal with pre-execution budget check.
 
-        Checks budget BEFORE calling orchestrator (David Dohan requirement).
-
         Args:
             goal: DailyGoal to execute
             remaining_budget: Available budget in USD
 
         Returns:
-            GoalExecutionResult with failure if budget insufficient, otherwise execution result
+            GoalExecutionResult - failure if budget insufficient
         """
-        # Check budget BEFORE any orchestrator call
         if remaining_budget < self.config.min_execution_budget:
             return GoalExecutionResult(
                 success=False,
                 cost_usd=0.0,
                 duration_seconds=0,
-                error=f"Insufficient budget: ${remaining_budget:.2f} < min ${self.config.min_execution_budget:.2f}",
+                error=f"Insufficient budget: ${remaining_budget:.2f} remaining",
+                output="",
+            )
+        return self._execute_goal(goal)
+
+    def _execute_bug_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a bug goal via BugOrchestrator.
+
+        Args:
+            goal: DailyGoal with linked_bug set
+
+        Returns:
+            GoalExecutionResult with success, cost_usd, duration_seconds
+        """
+        start_time = time.time()
+
+        # Check if bug_orchestrator is available
+        if self.bug_orchestrator is None:
+            goal.error_count += 1
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=0,
+                error="No bug_orchestrator configured for bug execution",
                 output="",
             )
 
-        # Budget is sufficient - proceed with execution
-        return self._execute_goal(goal)
+        try:
+            # Call bug_orchestrator.fix(bug_id)
+            result = self.bug_orchestrator.fix(goal.linked_bug)
+
+            duration = int(time.time() - start_time)
+
+            # Map result to success boolean
+            # Success if result.success is True or phase.value == "fixed"
+            success = False
+            if hasattr(result, "success"):
+                success = result.success
+            if hasattr(result, "phase") and hasattr(result.phase, "value"):
+                if result.phase.value == "fixed":
+                    success = True
+
+            cost_usd = getattr(result, "cost_usd", 0.0)
+            error = getattr(result, "error", None) if not success else None
+            # Ensure output is a string (mock objects may return MagicMock)
+            msg = getattr(result, "message", "")
+            output = msg if isinstance(msg, str) else ""
+
+            return GoalExecutionResult(
+                success=success,
+                cost_usd=cost_usd,
+                duration_seconds=duration,
+                error=error,
+                output=output,
+            )
+
+        except Exception as e:
+            goal.error_count += 1
+            duration = int(time.time() - start_time)
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=duration,
+                error=str(e),
+                output="",
+            )
+
+    def _execute_spec_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a spec goal via Orchestrator.run_spec_pipeline.
+
+        Args:
+            goal: DailyGoal with linked_spec set
+
+        Returns:
+            GoalExecutionResult with success, cost_usd, duration_seconds
+        """
+        start_time = time.time()
+
+        # Check if orchestrator is available
+        if self.orchestrator is None:
+            goal.error_count += 1
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=0,
+                error="No orchestrator configured for spec execution",
+                output="",
+            )
+
+        try:
+            # Call orchestrator.run_spec_pipeline(spec_id)
+            result = self.orchestrator.run_spec_pipeline(goal.linked_spec)
+
+            duration = int(time.time() - start_time)
+
+            # Map result status to success boolean
+            # Only "success" status means true success
+            success = result.status == "success"
+            cost_usd = getattr(result, "total_cost_usd", 0.0)
+            error = getattr(result, "error", None) if not success else None
+            # Ensure output is a string (mock objects may return MagicMock)
+            msg = getattr(result, "message", "")
+            output = msg if isinstance(msg, str) else ""
+
+            return GoalExecutionResult(
+                success=success,
+                cost_usd=cost_usd,
+                duration_seconds=duration,
+                error=error,
+                output=output,
+            )
+
+        except Exception as e:
+            goal.error_count += 1
+            duration = int(time.time() - start_time)
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=duration,
+                error=str(e),
+                output="",
+            )
+
+    def _execute_generic_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a generic goal (no linked artifact).
+
+        Generic goals have no automated execution - they are stub/manual tasks.
+
+        Args:
+            goal: DailyGoal without linked_feature, linked_bug, or linked_spec
+
+        Returns:
+            GoalExecutionResult with success=True and stub note
+        """
+        return GoalExecutionResult(
+            success=True,
+            cost_usd=0.0,
+            duration_seconds=0,
+            error=None,
+            output="Stub execution - manual goal with no linked artifact",
+        )
 
     def _execute_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a goal based on its type.
+        """Execute a single goal based on its linked artifact type.
 
-        Routes to _execute_feature_goal or _execute_bug_goal based on linked fields.
+        Routing priority:
+        1. linked_feature (with linked_issue) -> _execute_feature_goal
+        2. linked_bug -> _execute_bug_goal
+        3. linked_spec -> _execute_spec_goal
+        4. No linked artifact -> _execute_generic_goal
 
         Args:
             goal: DailyGoal to execute
@@ -305,19 +370,16 @@ class AutopilotRunner:
         Returns:
             GoalExecutionResult with execution outcome
         """
-        if goal.linked_feature:
+        # Route based on linked artifact type
+        # Priority: feature > bug > spec > generic
+        if goal.linked_feature and goal.linked_issue:
             return self._execute_feature_goal(goal)
         elif goal.linked_bug:
             return self._execute_bug_goal(goal)
+        elif goal.linked_spec:
+            return self._execute_spec_goal(goal)
         else:
-            # Stub execution for goals without linked items
-            return GoalExecutionResult(
-                success=True,
-                cost_usd=0.0,
-                duration_seconds=0,
-                error=None,
-                output="Goal executed (stub - no linked feature or bug)",
-            )
+            return self._execute_generic_goal(goal)
 
     def start(
         self,
@@ -329,148 +391,82 @@ class AutopilotRunner:
 
         Args:
             goals: List of DailyGoal to execute
-            budget_usd: Optional budget limit (uses config default if not specified)
-            duration_minutes: Optional duration limit (uses config default if not specified)
+            budget_usd: Budget limit in USD (defaults to config)
+            duration_minutes: Time limit in minutes (defaults to config)
 
         Returns:
-            AutopilotRunResult with session info and execution results
+            AutopilotRunResult with session state and execution summary
         """
-        # Use defaults from config if not specified
+        start_time = time.time()
+
+        # Use config defaults if not specified
         if budget_usd is None:
-            budget_usd = self.config.autopilot.default_budget
+            budget_usd = self.config.budget_usd
         if duration_minutes is None:
-            # Parse duration string like "2h" to minutes
-            duration_str = self.config.autopilot.default_duration
-            if duration_str.endswith("h"):
-                duration_minutes = int(duration_str[:-1]) * 60
-            elif duration_str.endswith("m"):
-                duration_minutes = int(duration_str[:-1])
-            else:
-                duration_minutes = 120
+            duration_minutes = self.config.duration_minutes
 
         # Create new session
-        session_id = str(uuid.uuid4())
+        session_id = str(uuid.uuid4())[:8]
         session = AutopilotSession(
             session_id=session_id,
             state=AutopilotState.RUNNING,
             goals=[g.to_dict() for g in goals],
+            current_goal_index=0,
+            total_cost_usd=0.0,
+            started_at=datetime.now(timezone.utc).isoformat(),
             budget_usd=budget_usd,
             duration_minutes=duration_minutes,
-            started_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        # Save initial session
-        self.session_store.save(session)
-
         # Execute goals
-        return self._run_session(session, goals)
-
-    def resume(self, session_id: str) -> AutopilotRunResult:
-        """Resume a paused autopilot session.
-
-        Args:
-            session_id: ID of the session to resume
-
-        Returns:
-            AutopilotRunResult with session info and execution results
-        """
-        session = self.session_store.load(session_id)
-        if session is None:
-            raise ValueError(f"Session not found: {session_id}")
-
-        # Reconstruct goals from session
-        goals = [DailyGoal.from_dict(g) for g in session.goals]
-
-        # Update session state
-        session.state = AutopilotState.RUNNING
-
-        return self._run_session(session, goals)
-
-    def _run_session(
-        self,
-        session: AutopilotSession,
-        goals: list[DailyGoal],
-    ) -> AutopilotRunResult:
-        """Run the autopilot session executing goals.
-
-        Args:
-            session: The autopilot session
-            goals: List of goals to execute
-
-        Returns:
-            AutopilotRunResult with execution results
-        """
-        start_time = time.time()
-        total_cost = 0.0
         goals_completed = 0
-        trigger = None
-        error = None
+        total_cost = 0.0
 
-        # Create session context for checkpoint checking
-        context = SessionContext()
-
-        for goal in goals:
-            # Skip already completed goals
-            if goal.status == GoalStatus.COMPLETE:
-                goals_completed += 1
-                continue
+        for i, goal in enumerate(goals):
+            session.current_goal_index = i
 
             # Check budget before execution
-            if not check_budget(
-                estimated_cost=goal.estimated_cost_usd or 0.0,
-                current_spent=total_cost,
-                budget_limit=session.budget_usd,
+            estimated_cost = goal.estimated_cost_usd or 0.0
+            budget_check = check_budget(
+                estimated_cost=estimated_cost,
+                current_spend=total_cost,
+                budget_limit=budget_usd,
                 min_execution_budget=self.config.min_execution_budget,
-            ):
-                trigger = CheckpointTrigger.COST_CUMULATIVE
+            )
+
+            if not budget_check.can_execute:
+                session.state = AutopilotState.PAUSED
                 break
 
-            # Check time limit
-            elapsed_minutes = (time.time() - start_time) / 60
-            if elapsed_minutes >= session.duration_minutes:
-                trigger = CheckpointTrigger.COST_CUMULATIVE  # Reusing for time
-                break
-
-            # Notify goal start
+            # Callback before execution
             if self.on_goal_start:
                 self.on_goal_start(goal)
 
             # Execute goal
-            goal.status = GoalStatus.IN_PROGRESS
             result = self._execute_goal(goal)
 
-            # Update goal status
+            # Update totals
+            total_cost += result.cost_usd
+            session.total_cost_usd = total_cost
+
             if result.success:
                 goal.status = GoalStatus.COMPLETE
                 goals_completed += 1
             else:
                 goal.status = GoalStatus.BLOCKED
-                if result.error:
-                    goal.notes = result.error
 
-            # Track costs
-            total_cost += result.cost_usd
-
-            # Notify goal complete
+            # Callback after execution
             if self.on_goal_complete:
                 self.on_goal_complete(goal, result)
 
-            # Update session goals
-            session.goals = [g.to_dict() for g in goals]
-            self.session_store.save(session)
+        # Finalize session
+        duration = int(time.time() - start_time)
+        if session.state != AutopilotState.PAUSED:
+            session.state = AutopilotState.COMPLETED
 
-        # Calculate total duration
-        duration_seconds = int(time.time() - start_time)
+        session.completed_at = datetime.now(timezone.utc).isoformat()
 
-        # Update session state
-        if trigger:
-            session.state = AutopilotState.PAUSED
-        elif goals_completed == len(goals):
-            session.state = AutopilotState.COMPLETE
-        else:
-            session.state = AutopilotState.RUNNING
-
-        session.cost_usd = total_cost
+        # Save session
         self.session_store.save(session)
 
         return AutopilotRunResult(
@@ -478,7 +474,47 @@ class AutopilotRunner:
             goals_completed=goals_completed,
             goals_total=len(goals),
             total_cost_usd=total_cost,
-            duration_seconds=duration_seconds,
-            trigger=trigger,
-            error=error,
+            duration_seconds=duration,
+        )
+
+    def resume(self, session_id: str) -> AutopilotRunResult:
+        """Resume a paused autopilot session.
+
+        Args:
+            session_id: ID of session to resume
+
+        Returns:
+            AutopilotRunResult with updated session state
+        """
+        # Load session
+        session = self.session_store.load(session_id)
+        if session is None:
+            return AutopilotRunResult(
+                session=AutopilotSession(
+                    session_id=session_id,
+                    state=AutopilotState.FAILED,
+                    goals=[],
+                    current_goal_index=0,
+                    total_cost_usd=0.0,
+                    started_at=datetime.now(timezone.utc).isoformat(),
+                ),
+                goals_completed=0,
+                goals_total=0,
+                total_cost_usd=0.0,
+                duration_seconds=0,
+                error=f"Session {session_id} not found",
+            )
+
+        # Reconstruct goals from session
+        goals = [DailyGoal.from_dict(g) for g in session.goals]
+
+        # Resume from current index
+        start_index = session.current_goal_index
+        remaining_goals = goals[start_index:]
+
+        # Continue execution
+        return self.start(
+            remaining_goals,
+            budget_usd=session.budget_usd,
+            duration_minutes=session.duration_minutes,
         )
