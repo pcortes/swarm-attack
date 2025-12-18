@@ -66,8 +66,12 @@ from swarm_attack.chief_of_staff.goal_tracker import (
 
 # Checkpoints
 from swarm_attack.chief_of_staff.checkpoints import (
-    CheckpointSystem,
     CheckpointTrigger,
+    CheckpointOption,
+    Checkpoint,
+    CheckpointResult,
+    CheckpointStore,
+    CheckpointSystem,
 )
 
 # Autopilot
@@ -116,8 +120,12 @@ __all__ = [
     "Recommendation",
     "RecommendationPriority",
     # Checkpoints
-    "CheckpointSystem",
     "CheckpointTrigger",
+    "CheckpointOption",
+    "Checkpoint",
+    "CheckpointResult",
+    "CheckpointStore",
+    "CheckpointSystem",
     # Autopilot
     "AutopilotSession",
     "AutopilotState",

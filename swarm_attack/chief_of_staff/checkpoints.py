@@ -1,233 +1,243 @@
-"""CheckpointSystem for autopilot trigger detection.
+"""Checkpoint and CheckpointStore for human-in-the-loop checkpoints.
 
-Detects when autopilot should pause for human intervention based on:
-- Cost thresholds
-- Time/duration limits
-- Error streaks
-- Approval requirements
-- High-risk actions
+This module provides data models and persistent storage for checkpoints
+that require human approval before proceeding.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
+import json
+import aiofiles
+import aiofiles.os
 
-from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+
+class CheckpointTrigger(Enum):
+    """Triggers that cause a checkpoint to be created."""
+    
+    UX_CHANGE = "UX_CHANGE"
+    COST_SINGLE = "COST_SINGLE"
+    COST_CUMULATIVE = "COST_CUMULATIVE"
+    ARCHITECTURE = "ARCHITECTURE"
+    SCOPE_CHANGE = "SCOPE_CHANGE"
+    HICCUP = "HICCUP"
 
 
 @dataclass
-class CheckpointTrigger:
-    """Represents a trigger that caused autopilot to pause."""
-
-    trigger_type: str
-    reason: str
-    action: str
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CheckpointTrigger":
-        """Create CheckpointTrigger from dictionary."""
-        return cls(
-            trigger_type=data.get("trigger_type", ""),
-            reason=data.get("reason", ""),
-            action=data.get("action", ""),
-        )
+class CheckpointOption:
+    """An option presented to the human at a checkpoint."""
+    
+    label: str
+    description: str
+    is_recommended: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        """Convert CheckpointTrigger to dictionary."""
+        """Serialize to dictionary."""
         return {
-            "trigger_type": self.trigger_type,
-            "reason": self.reason,
-            "action": self.action,
+            "label": self.label,
+            "description": self.description,
+            "is_recommended": self.is_recommended,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CheckpointOption":
+        """Deserialize from dictionary."""
+        return cls(
+            label=data["label"],
+            description=data["description"],
+            is_recommended=data.get("is_recommended", False),
+        )
+
+
+@dataclass
+class Checkpoint:
+    """A human-in-the-loop checkpoint requiring approval.
+    
+    Checkpoints are created when the system encounters a situation
+    that requires human decision-making before proceeding.
+    """
+    
+    checkpoint_id: str
+    trigger: CheckpointTrigger
+    context: str
+    options: list[CheckpointOption]
+    recommendation: str
+    created_at: str
+    goal_id: str
+    status: str = "pending"
+    chosen_option: Optional[str] = None
+    human_notes: Optional[str] = None
+    resolved_at: Optional[str] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "checkpoint_id": self.checkpoint_id,
+            "trigger": self.trigger.value,
+            "context": self.context,
+            "options": [opt.to_dict() for opt in self.options],
+            "recommendation": self.recommendation,
+            "created_at": self.created_at,
+            "goal_id": self.goal_id,
+            "status": self.status,
+            "chosen_option": self.chosen_option,
+            "human_notes": self.human_notes,
+            "resolved_at": self.resolved_at,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Checkpoint":
+        """Deserialize from dictionary."""
+        return cls(
+            checkpoint_id=data["checkpoint_id"],
+            trigger=CheckpointTrigger(data["trigger"]),
+            context=data["context"],
+            options=[CheckpointOption.from_dict(opt) for opt in data.get("options", [])],
+            recommendation=data["recommendation"],
+            created_at=data["created_at"],
+            goal_id=data["goal_id"],
+            status=data.get("status", "pending"),
+            chosen_option=data.get("chosen_option"),
+            human_notes=data.get("human_notes"),
+            resolved_at=data.get("resolved_at"),
+        )
+
+
+@dataclass
+class CheckpointResult:
+    """Result of checking if a checkpoint is needed."""
+    
+    requires_approval: bool
+    approved: Optional[bool] = None
+    checkpoint: Optional[Checkpoint] = None
+
+
+class CheckpointStore:
+    """Persistent storage for checkpoints.
+    
+    Stores checkpoints as individual JSON files in the checkpoints directory.
+    """
+    
+    def __init__(self, base_path: Optional[Path] = None):
+        """Initialize the checkpoint store.
+        
+        Args:
+            base_path: Directory to store checkpoints. Defaults to
+                      .swarm/chief-of-staff/checkpoints/
+        """
+        if base_path is None:
+            base_path = Path.cwd() / ".swarm" / "chief-of-staff" / "checkpoints"
+        self.base_path = base_path
+
+    async def save(self, checkpoint: Checkpoint) -> None:
+        """Save a checkpoint to disk.
+        
+        Args:
+            checkpoint: The checkpoint to save.
+        """
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        
+        file_path = self.base_path / f"{checkpoint.checkpoint_id}.json"
+        content = json.dumps(checkpoint.to_dict(), indent=2)
+        
+        async with aiofiles.open(file_path, 'w') as f:
+            await f.write(content)
+
+    async def get(self, checkpoint_id: str) -> Optional[Checkpoint]:
+        """Load a checkpoint by ID.
+        
+        Args:
+            checkpoint_id: The ID of the checkpoint to load.
+            
+        Returns:
+            The checkpoint if found, None otherwise.
+        """
+        file_path = self.base_path / f"{checkpoint_id}.json"
+        
+        if not file_path.exists():
+            return None
+        
+        async with aiofiles.open(file_path, 'r') as f:
+            content = await f.read()
+        
+        data = json.loads(content)
+        return Checkpoint.from_dict(data)
+
+    async def get_pending_for_goal(self, goal_id: str) -> Optional[Checkpoint]:
+        """Find a pending checkpoint for a specific goal.
+        
+        Args:
+            goal_id: The goal ID to search for.
+            
+        Returns:
+            The pending checkpoint if found, None otherwise.
+        """
+        if not self.base_path.exists():
+            return None
+        
+        for file_path in self.base_path.glob("*.json"):
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+            
+            data = json.loads(content)
+            if data.get("goal_id") == goal_id and data.get("status") == "pending":
+                return Checkpoint.from_dict(data)
+        
+        return None
+
+    async def list_pending(self) -> list[Checkpoint]:
+        """List all pending checkpoints.
+        
+        Returns:
+            List of all checkpoints with status "pending".
+        """
+        pending = []
+        
+        if not self.base_path.exists():
+            return pending
+        
+        for file_path in self.base_path.glob("*.json"):
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+            
+            data = json.loads(content)
+            if data.get("status") == "pending":
+                pending.append(Checkpoint.from_dict(data))
+
+        return pending
 
 
 class CheckpointSystem:
-    """Detects when autopilot should pause for human intervention.
+    """System for detecting checkpoint triggers.
 
-    Checks triggers in order:
-    1. stop_trigger - User-specified --until trigger
-    2. cost - Budget exceeded
-    3. time - Duration exceeded
-    4. approval - Action needs human approval
-    5. high_risk - Risky operation detected
-    6. errors - Error streak exceeded
-    7. blocker - Session is blocked
+    Stub implementation - full implementation in Issue #7.
     """
 
-    # High-risk action patterns
-    HIGH_RISK_PATTERNS = [
-        "architect",
-        "main branch",
-        "master",
-        "merge to main",
-        "push to main",
-        "push to master",
-        "delete",
-        "drop",
-        "rm -rf",
-        "force push",
-        "destructive",
-    ]
-
-    # Approval-required patterns
-    APPROVAL_PATTERNS = [
-        "approve",
-        "approval",
-        "confirm",
-        "confirmation",
-        "review",
-    ]
-
-    def __init__(self, config: ChiefOfStaffConfig) -> None:
-        """Initialize CheckpointSystem with configuration.
+    def __init__(self, config: Any = None, store: Optional[CheckpointStore] = None):
+        """Initialize the checkpoint system.
 
         Args:
-            config: ChiefOfStaffConfig with threshold settings
+            config: Configuration (optional).
+            store: CheckpointStore for persistence (optional).
         """
         self.config = config
+        self.store = store or CheckpointStore()
         self._error_count = 0
 
-    def check_triggers(
-        self, session: Any, current_action: str
-    ) -> Optional[CheckpointTrigger]:
-        """Check all triggers and return first match.
+    def check_triggers(self, context: Any, action: str) -> Optional[CheckpointTrigger]:
+        """Check if any checkpoint triggers are met.
 
-        Triggers are checked in order: stop_trigger, cost, time,
-        approval, high_risk, errors, blocker.
-
-        Args:
-            session: Session object with cost, time, and state info
-            current_action: Current action being performed
-
-        Returns:
-            CheckpointTrigger if a trigger matched, None otherwise
+        Stub - always returns None (no trigger).
+        Full implementation in Issue #7.
         """
-        # 1. Check stop trigger (--until)
-        if self.matches_stop_trigger(session, current_action):
-            return CheckpointTrigger(
-                trigger_type="stop_trigger",
-                reason=f"Reached stop trigger: {session.stop_trigger}",
-                action="pause_for_user",
-            )
-
-        # 2. Check cost
-        if hasattr(session, "total_cost_usd") and self.config.budget_usd is not None:
-            if session.total_cost_usd > self.config.budget_usd:
-                return CheckpointTrigger(
-                    trigger_type="cost",
-                    reason=f"Cost ${session.total_cost_usd:.2f} exceeds budget ${self.config.budget_usd:.2f}",
-                    action="pause_for_user",
-                )
-
-        # 3. Check time/duration
-        if hasattr(session, "elapsed_minutes") and self.config.duration_minutes is not None:
-            if session.elapsed_minutes > self.config.duration_minutes:
-                return CheckpointTrigger(
-                    trigger_type="time",
-                    reason=f"Duration {session.elapsed_minutes}m exceeds limit {self.config.duration_minutes}m",
-                    action="pause_for_user",
-                )
-
-        # 4. Check approval requirement
-        if self.should_pause_for_approval(current_action):
-            return CheckpointTrigger(
-                trigger_type="approval",
-                reason=f"Action requires approval: {current_action}",
-                action="request_approval",
-            )
-
-        # 5. Check high-risk
-        if self.is_high_risk(current_action):
-            return CheckpointTrigger(
-                trigger_type="high_risk",
-                reason=f"High-risk action detected: {current_action}",
-                action="require_confirmation",
-            )
-
-        # 6. Check error streak
-        if self.config.error_streak is not None and self._error_count >= self.config.error_streak:
-            return CheckpointTrigger(
-                trigger_type="errors",
-                reason=f"Error streak {self._error_count} exceeds threshold {self.config.error_streak}",
-                action="pause_for_investigation",
-            )
-
-        # 7. Check blocker
-        if hasattr(session, "is_blocked") and session.is_blocked:
-            return CheckpointTrigger(
-                trigger_type="blocker",
-                reason="Session is blocked",
-                action="pause_for_resolution",
-            )
-
         return None
 
-    def matches_stop_trigger(self, session: Any, current_action: str) -> bool:
-        """Check if current action matches the session's stop trigger.
-
-        Args:
-            session: Session object with optional stop_trigger attribute
-            current_action: Current action being performed
-
-        Returns:
-            True if action matches stop trigger, False otherwise
-        """
-        if not hasattr(session, "stop_trigger") or session.stop_trigger is None:
-            return False
-
-        trigger = session.stop_trigger.lower()
-        action = current_action.lower()
-
-        return trigger in action
-
-    def is_high_risk(self, action: str) -> bool:
-        """Check if action is high-risk.
-
-        High-risk actions include:
-        - Architectural changes
-        - Main/master branch operations
-        - Destructive operations (delete, drop, rm -rf)
-        - Force push
-
-        Args:
-            action: Action string to check
-
-        Returns:
-            True if action is high-risk, False otherwise
-        """
-        action_lower = action.lower()
-
-        for pattern in self.HIGH_RISK_PATTERNS:
-            if pattern in action_lower:
-                return True
-
-        return False
-
-    def record_error(self) -> None:
-        """Record an error, incrementing the error count."""
-        self._error_count += 1
-
     def reset_error_count(self) -> None:
-        """Reset error count to zero after successful operation."""
+        """Reset the consecutive error counter."""
         self._error_count = 0
 
-    def should_pause_for_approval(self, action: str) -> bool:
-        """Check if action requires human approval.
-
-        Actions requiring approval include those with:
-        - approve/approval
-        - confirm/confirmation
-        - review
-
-        Args:
-            action: Action string to check
-
-        Returns:
-            True if action needs approval, False otherwise
-        """
-        action_lower = action.lower()
-
-        for pattern in self.APPROVAL_PATTERNS:
-            if pattern in action_lower:
-                return True
-
-        return False
+    def record_error(self) -> None:
+        """Record an error for tracking consecutive failures."""
+        self._error_count += 1

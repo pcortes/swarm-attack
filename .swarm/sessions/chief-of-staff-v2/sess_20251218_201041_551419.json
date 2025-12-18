@@ -1,0 +1,70 @@
+{
+  "session_id": "sess_20251218_201041_551419",
+  "feature_id": "chief-of-staff-v2",
+  "issue_number": 6,
+  "started_at": "2025-12-18T20:10:41.551440Z",
+  "status": "complete",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:11:49.895547Z",
+      "commit": null,
+      "cost_usd": 0.27858525
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:11:50.161010Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:10.342183Z",
+      "commit": null,
+      "cost_usd": 0.20604375
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:10.579007Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:30.801691Z",
+      "commit": null,
+      "cost_usd": 0.16065175
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:31.044917Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:51.638189Z",
+      "commit": null,
+      "cost_usd": 0.16086175000000003
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-18T20:12:51.879834Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": "2025-12-18T20:12:55.957210Z",
+  "end_status": "failed",
+  "cost_usd": 0.8061425,
+  "worktree_path": null,
+  "commits": []
+}

@@ -6,3 +6,10 @@
 {"ts": "2025-12-18T19:31:53.886266Z", "event": "retry_started", "issue": 1, "attempt": 3}
 {"ts": "2025-12-18T19:33:09.898457Z", "event": "issue_blocked", "issue": 1, "reason": "Max retries exceeded: Issue tests failed: 11 failed, 5 passed", "retries": 3}
 {"ts": "2025-12-18T20:03:19.203635Z", "event": "issue_started", "issue": 1, "session": "sess_20251218_200319_202900"}
+{"ts": "2025-12-18T20:06:33.746950Z", "event": "issue_done", "issue": 1, "commit": "db6caacdf2724005fb40f8f9a777cdc6208c7f1d", "cost_usd": 0.50236525}
+{"ts": "2025-12-18T20:06:45.589988Z", "event": "issue_started", "issue": 2, "session": "sess_20251218_200645_589238"}
+{"ts": "2025-12-18T20:10:41.552193Z", "event": "issue_started", "issue": 6, "session": "sess_20251218_201041_551419"}
+{"ts": "2025-12-18T20:11:50.161442Z", "event": "retry_started", "issue": 6, "attempt": 1}
+{"ts": "2025-12-18T20:12:10.579481Z", "event": "retry_started", "issue": 6, "attempt": 2}
+{"ts": "2025-12-18T20:12:31.045319Z", "event": "retry_started", "issue": 6, "attempt": 3}
+{"ts": "2025-12-18T20:12:52.373984Z", "event": "issue_blocked", "issue": 6, "reason": "Max retries exceeded: Issue tests failed: 0 failed, 0 passed", "retries": 3}

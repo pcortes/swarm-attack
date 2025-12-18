@@ -4,7 +4,7 @@
   "tasks": [
     {
       "issue_number": 1,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Add orchestrator dependency and tags field to DailyGoal",
       "dependencies": [],
       "estimated_size": "small",
@@ -38,7 +38,7 @@
     },
     {
       "issue_number": 2,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement feature execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -52,7 +52,7 @@
     },
     {
       "issue_number": 3,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement bug execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -66,7 +66,7 @@
     },
     {
       "issue_number": 4,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement spec pipeline execution path in AutopilotRunner",
       "dependencies": [
         1
@@ -80,7 +80,7 @@
     },
     {
       "issue_number": 5,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Add pre-execution budget checks and estimated_cost_usd field",
       "dependencies": [
         1
@@ -94,19 +94,34 @@
     },
     {
       "issue_number": 6,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Create Checkpoint and CheckpointStore dataclasses",
       "dependencies": [],
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/checkpoints.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/checkpoints.py": [
+            "CheckpointTrigger",
+            "CheckpointOption",
+            "Checkpoint",
+            "CheckpointResult",
+            "CheckpointStore",
+            "CheckpointSystem"
+          ]
+        },
+        "semantic_summary": "Checkpoint dataclasses and store for human-in-the-loop checkpoints"
+      },
+      "completion_summary": "Checkpoint and CheckpointStore dataclasses implemented with all triggers, options, and persistence methods. 53 tests passing."
     },
     {
       "issue_number": 7,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Implement CheckpointSystem with trigger detection",
       "dependencies": [
         6
@@ -191,12 +206,12 @@
       "completion_summary": null
     }
   ],
-  "current_session": "sess_20251218_200319_202900",
+  "current_session": null,
   "created_at": "2025-12-18T17:26:54.317143Z",
-  "updated_at": "2025-12-18T20:03:18.970619Z",
-  "cost_total_usd": 5.70535225,
+  "updated_at": "2025-12-18T20:12:55.953238Z",
+  "cost_total_usd": 7.013859999999999,
   "cost_by_phase": {
     "SPEC_IN_PROGRESS": 4.0447109999999995,
-    "IMPLEMENTATION": 1.66064125
+    "IMPLEMENTATION": 2.969149
   }
 }
