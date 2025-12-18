@@ -88,6 +88,11 @@ from swarm_attack.cli.admin import app as admin_app
 
 app.add_typer(admin_app, name="admin")
 
+# Import and register chief-of-staff commands
+from swarm_attack.cli.chief_of_staff import app as cos_app
+
+app.add_typer(cos_app, name="cos")
+
 
 # =========================================================================
 # Entry Point

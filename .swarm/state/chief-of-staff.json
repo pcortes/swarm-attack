@@ -153,7 +153,7 @@
     },
     {
       "issue_number": 6,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement GoalTracker for goal management",
       "dependencies": [
         1,
@@ -274,7 +274,7 @@
     },
     {
       "issue_number": 10,
-      "stage": "SKIPPED",
+      "stage": "READY",
       "title": "Implement AutopilotRunner for autonomous execution",
       "dependencies": [
         6,
@@ -290,7 +290,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "SKIPPED",
+      "stage": "DONE",
       "title": "Implement CLI: standup command",
       "dependencies": [
         3,
@@ -308,7 +308,7 @@
     },
     {
       "issue_number": 12,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement CLI: checkin command",
       "dependencies": [
         5
@@ -322,7 +322,7 @@
     },
     {
       "issue_number": 13,
-      "stage": "SKIPPED",
+      "stage": "DONE",
       "title": "Implement CLI: wrapup command",
       "dependencies": [
         4,
@@ -351,7 +351,7 @@
     },
     {
       "issue_number": 15,
-      "stage": "SKIPPED",
+      "stage": "DONE",
       "title": "Implement CLI: history command",
       "dependencies": [
         4
@@ -374,13 +374,13 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "CLI integration requires manual work",
       "outputs": null,
       "completion_summary": null
     },
     {
       "issue_number": 17,
-      "stage": "SKIPPED",
+      "stage": "DONE",
       "title": "Implement CLI: next --all command",
       "dependencies": [
         5,
@@ -411,7 +411,7 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Depends on blocked issues",
       "outputs": null,
       "completion_summary": null
     },
@@ -433,7 +433,7 @@
       "estimated_size": "large",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Depends on blocked issues",
       "outputs": null,
       "completion_summary": null
     },
@@ -449,7 +449,7 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Depends on blocked issues",
       "outputs": null,
       "completion_summary": null
     }

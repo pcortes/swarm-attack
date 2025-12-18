@@ -2041,3 +2041,69 @@ def estimate_task(self, task_type: str, complexity: str) -> tuple[float, int]:
 
     return avg_cost, avg_time
 ```
+
+---
+
+## 16. Implementation Notes (December 2025)
+
+### 16.1 Simplified CLI Approach
+
+The CLI commands (#12 checkin, #13 wrapup, #15 history, #17 next --all) were implemented
+manually instead of through the swarm automation because:
+
+**Problem**: The swarm test-writer generates tests expecting Click/Typer commands that
+don't exist yet, causing systematic failures. Tests mock paths like `swarm_attack.cli.StandupGenerator`
+which aren't real, and exit code assertions fail because commands aren't wired up.
+
+**Solution**: Implement CLI commands directly in `swarm_attack/cli/chief_of_staff.py` as
+a Typer sub-app registered under the `cos` command group:
+
+```
+swarm-attack cos checkin   # Quick mid-day status
+swarm-attack cos wrapup    # End-of-day summary
+swarm-attack cos history   # Review past logs
+swarm-attack cos next      # Show next actions (use --all for cross-feature)
+```
+
+**Implementation Location**: `swarm_attack/cli/chief_of_staff.py`
+
+### 16.2 DailyLog Goals Field Fix
+
+The `DailyLog` dataclass was missing the `goals` field that `GoalTracker` expected.
+This was masked in tests by MagicMock's dynamic attribute handling. Fixed by adding:
+
+```python
+@dataclass
+class DailyGoal:
+    """A daily goal tracked in the log."""
+    goal_id: str
+    description: str
+    priority: str
+    estimated_minutes: int
+    status: str = "pending"
+    # ... additional fields
+
+@dataclass
+class DailyLog:
+    date: date
+    standups: list[StandupSession]
+    work_entries: list[WorkLogEntry]
+    goals: list[DailyGoal]  # Added this field
+    summary: Optional[DailySummary]
+```
+
+### 16.3 FeatureSummary Attribute Fix
+
+The `GoalTracker.generate_recommendations()` method was using `feature.name` but
+`FeatureSummary` dataclass uses `feature_id`. Fixed by updating all references
+from `feature.name` to `feature.feature_id`.
+
+### 16.4 Files Modified
+
+| File | Change |
+|------|--------|
+| `swarm_attack/cli/chief_of_staff.py` | New file - CLI commands |
+| `swarm_attack/cli/app.py` | Register `cos` sub-app |
+| `swarm_attack/chief_of_staff/daily_log.py` | Add `DailyGoal` class and `goals` field to `DailyLog` |
+| `swarm_attack/chief_of_staff/goal_tracker.py` | Fix `feature.name` → `feature.feature_id` |
+| `tests/generated/chief-of-staff/test_issue_6.py` | Fix mock attributes to use `feature_id` |

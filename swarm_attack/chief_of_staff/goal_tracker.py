@@ -322,7 +322,7 @@ class GoalTracker:
         changes: list[dict[str, Any]] = []
 
         # Build lookup maps
-        feature_map = {f.name: f for f in snapshot.features}
+        feature_map = {f.feature_id: f for f in snapshot.features}
         bug_map = {b.bug_id: b for b in snapshot.bugs}
 
         for goal in log.goals:
@@ -377,23 +377,23 @@ class GoalTracker:
             if phase in P1_FEATURE_PHASES:
                 recommendations.append(Recommendation(
                     priority=RecommendationPriority.P1,
-                    action=f"Approve spec for {feature.name}",
+                    action=f"Approve spec for {feature.feature_id}",
                     reason="Blocking implementation progress",
-                    linked_item=feature.name,
+                    linked_item=feature.feature_id,
                 ))
             elif phase in P2_FEATURE_PHASES:
                 recommendations.append(Recommendation(
                     priority=RecommendationPriority.P2,
-                    action=f"Continue implementing {feature.name}",
+                    action=f"Continue implementing {feature.feature_id}",
                     reason="Work in progress",
-                    linked_item=feature.name,
+                    linked_item=feature.feature_id,
                 ))
             elif phase in P3_FEATURE_PHASES:
                 recommendations.append(Recommendation(
                     priority=RecommendationPriority.P3,
-                    action=f"Start implementing {feature.name}",
+                    action=f"Start implementing {feature.feature_id}",
                     reason="Ready for implementation",
-                    linked_item=feature.name,
+                    linked_item=feature.feature_id,
                 ))
 
         # Process bugs

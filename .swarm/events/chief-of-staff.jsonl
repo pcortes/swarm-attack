@@ -22,3 +22,24 @@
 {"ts": "2025-12-18T01:21:18.267760Z", "event": "issue_started", "issue": 4, "session": "sess_20251218_012118_266895"}
 {"ts": "2025-12-18T01:23:58.904510Z", "event": "issue_done", "issue": 4, "commit": "06ed21dd301a47d9536b6155b282595194c14ef8", "cost_usd": 0.41752449999999997}
 {"ts": "2025-12-18T01:24:28.676998Z", "event": "issue_started", "issue": 6, "session": "sess_20251218_012428_676167"}
+{"ts": "2025-12-18T01:27:15.820263Z", "event": "issue_done", "issue": 6, "commit": "6b4d31271d67796751cd63a87631092ebdf95073", "cost_usd": 0.45464175}
+{"ts": "2025-12-18T01:28:02.473882Z", "event": "issue_started", "issue": 10, "session": "sess_20251218_012802_472928"}
+{"ts": "2025-12-18T01:29:49.929112Z", "event": "retry_started", "issue": 10, "attempt": 1}
+{"ts": "2025-12-18T01:31:05.761756Z", "event": "retry_started", "issue": 10, "attempt": 2}
+{"ts": "2025-12-18T01:31:36.924173Z", "event": "retry_started", "issue": 10, "attempt": 3}
+{"ts": "2025-12-18T01:32:07.592414Z", "event": "issue_blocked", "issue": 10, "reason": "Max retries exceeded: Regression detected: 53 tests failed in full suite", "retries": 3}
+{"ts": "2025-12-18T01:32:36.586859Z", "event": "issue_started", "issue": 11, "session": "sess_20251218_013236_586052"}
+{"ts": "2025-12-18T01:35:46.577503Z", "event": "retry_started", "issue": 11, "attempt": 1}
+{"ts": "2025-12-18T01:38:00.064018Z", "event": "retry_started", "issue": 11, "attempt": 2}
+{"ts": "2025-12-18T01:38:46.594721Z", "event": "retry_started", "issue": 11, "attempt": 3}
+{"ts": "2025-12-18T01:39:32.517119Z", "event": "issue_blocked", "issue": 11, "reason": "Max retries exceeded: Issue tests failed: 15 failed, 9 passed", "retries": 3}
+{"ts": "2025-12-18T01:40:03.260740Z", "event": "issue_started", "issue": 12, "session": "sess_20251218_014003_259879"}
+{"ts": "2025-12-18T01:41:14.649638Z", "event": "retry_started", "issue": 12, "attempt": 1}
+{"ts": "2025-12-18T01:43:24.680080Z", "event": "retry_started", "issue": 12, "attempt": 2}
+{"ts": "2025-12-18T01:43:44.296941Z", "event": "retry_started", "issue": 12, "attempt": 3}
+{"ts": "2025-12-18T01:44:05.567240Z", "event": "issue_blocked", "issue": 12, "reason": "Max retries exceeded: Issue tests failed: 0 failed, 0 passed", "retries": 3}
+{"ts": "2025-12-18T01:44:14.411359Z", "event": "issue_started", "issue": 15, "session": "sess_20251218_014414_410448"}
+{"ts": "2025-12-18T01:45:31.967167Z", "event": "retry_started", "issue": 15, "attempt": 1}
+{"ts": "2025-12-18T01:46:31.323618Z", "event": "retry_started", "issue": 15, "attempt": 2}
+{"ts": "2025-12-18T01:46:54.691518Z", "event": "retry_started", "issue": 15, "attempt": 3}
+{"ts": "2025-12-18T01:47:18.853954Z", "event": "issue_blocked", "issue": 15, "reason": "Max retries exceeded: Issue tests failed: 0 failed, 0 passed", "retries": 3}

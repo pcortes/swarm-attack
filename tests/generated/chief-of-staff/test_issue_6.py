@@ -684,7 +684,7 @@ class TestReconcileWithState:
         mock_manager.get_today.return_value = mock_log
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-x"
+        feature.feature_id = "feature-x"
         feature.phase = "COMPLETE"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -713,7 +713,7 @@ class TestReconcileWithState:
         mock_manager.get_today.return_value = mock_log
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-x"
+        feature.feature_id = "feature-x"
         feature.phase = "IMPLEMENTING"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -779,7 +779,7 @@ class TestReconcileWithState:
         mock_manager.get_today.return_value = mock_log
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-x"
+        feature.feature_id = "feature-x"
         feature.phase = "COMPLETE"
         
         bug = Mock(spec=BugSummary)
@@ -810,7 +810,7 @@ class TestReconcileWithState:
         mock_manager.get_today.return_value = mock_log
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-needs-approval"
+        feature.feature_id = "feature-needs-approval"
         feature.phase = "SPEC_NEEDS_APPROVAL"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -843,7 +843,7 @@ class TestGenerateRecommendations:
         mock_manager = Mock(spec=DailyLogManager)
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-blocked"
+        feature.feature_id = "feature-blocked"
         feature.phase = "SPEC_NEEDS_APPROVAL"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -879,7 +879,7 @@ class TestGenerateRecommendations:
         mock_manager = Mock(spec=DailyLogManager)
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-implementing"
+        feature.feature_id = "feature-implementing"
         feature.phase = "IMPLEMENTING"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -896,7 +896,7 @@ class TestGenerateRecommendations:
         mock_manager = Mock(spec=DailyLogManager)
         
         feature = Mock(spec=FeatureSummary)
-        feature.name = "feature-ready"
+        feature.feature_id = "feature-ready"
         feature.phase = "READY_TO_IMPLEMENT"
         
         snapshot = Mock(spec=RepoStateSnapshot)
@@ -913,15 +913,15 @@ class TestGenerateRecommendations:
         mock_manager = Mock(spec=DailyLogManager)
         
         feature1 = Mock(spec=FeatureSummary)
-        feature1.name = "feature-ready"
+        feature1.feature_id = "feature-ready"
         feature1.phase = "READY_TO_IMPLEMENT"
         
         feature2 = Mock(spec=FeatureSummary)
-        feature2.name = "feature-blocked"
+        feature2.feature_id = "feature-blocked"
         feature2.phase = "SPEC_NEEDS_APPROVAL"
         
         feature3 = Mock(spec=FeatureSummary)
-        feature3.name = "feature-implementing"
+        feature3.feature_id = "feature-implementing"
         feature3.phase = "IMPLEMENTING"
         
         snapshot = Mock(spec=RepoStateSnapshot)

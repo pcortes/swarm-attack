@@ -150,14 +150,66 @@ class Decision:
 
 
 @dataclass
+class DailyGoal:
+    """A daily goal tracked in the log.
+
+    Note: This is a simplified version for DailyLog storage. The full DailyGoal
+    with all fields is in goal_tracker.py.
+    """
+
+    goal_id: str
+    description: str
+    priority: str  # "high", "medium", "low"
+    estimated_minutes: int
+    status: str = "pending"  # "pending", "in_progress", "complete", "blocked", "deferred"
+    actual_minutes: Optional[int] = None
+    notes: str = ""
+    linked_feature: Optional[str] = None
+    linked_bug: Optional[str] = None
+    linked_spec: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "DailyGoal":
+        """Create DailyGoal from dictionary."""
+        return cls(
+            goal_id=data.get("goal_id", ""),
+            description=data.get("description", ""),
+            priority=data.get("priority", "medium"),
+            estimated_minutes=data.get("estimated_minutes", 0),
+            status=data.get("status", "pending"),
+            actual_minutes=data.get("actual_minutes"),
+            notes=data.get("notes", ""),
+            linked_feature=data.get("linked_feature"),
+            linked_bug=data.get("linked_bug"),
+            linked_spec=data.get("linked_spec"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "goal_id": self.goal_id,
+            "description": self.description,
+            "priority": self.priority,
+            "estimated_minutes": self.estimated_minutes,
+            "status": self.status,
+            "actual_minutes": self.actual_minutes,
+            "notes": self.notes,
+            "linked_feature": self.linked_feature,
+            "linked_bug": self.linked_bug,
+            "linked_spec": self.linked_spec,
+        }
+
+
+@dataclass
 class DailyLog:
-    """A daily log entry containing standups, work entries, and summary."""
-    
+    """A daily log entry containing standups, work entries, goals, and summary."""
+
     date: date
     standups: list[StandupSession] = field(default_factory=list)
     work_entries: list[WorkLogEntry] = field(default_factory=list)
+    goals: list[DailyGoal] = field(default_factory=list)
     summary: Optional[DailySummary] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DailyLog":
         """Create DailyLog from dictionary."""
@@ -166,29 +218,34 @@ class DailyLog:
             log_date = date.fromisoformat(date_str)
         else:
             log_date = date_str
-        
+
         standups = [
             StandupSession.from_dict(s) for s in data.get("standups", [])
         ]
         work_entries = [
             WorkLogEntry.from_dict(w) for w in data.get("work_entries", [])
         ]
+        goals = [
+            DailyGoal.from_dict(g) for g in data.get("goals", [])
+        ]
         summary_data = data.get("summary")
         summary = DailySummary.from_dict(summary_data) if summary_data else None
-        
+
         return cls(
             date=log_date,
             standups=standups,
             work_entries=work_entries,
+            goals=goals,
             summary=summary,
         )
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "date": self.date.isoformat(),
             "standups": [s.to_dict() for s in self.standups],
             "work_entries": [w.to_dict() for w in self.work_entries],
+            "goals": [g.to_dict() for g in self.goals],
             "summary": self.summary.to_dict() if self.summary else None,
         }
 
@@ -275,7 +332,27 @@ class DailyLogManager:
                 duration = f"{entry.duration_minutes}min"
                 lines.append(f"- **{time_str}** [{entry.category}] ({duration}): {entry.description}")
             lines.append("")
-        
+
+        # Goals section
+        if log.goals:
+            lines.append("## Goals")
+            lines.append("")
+            for goal in log.goals:
+                status_emoji = {
+                    "complete": "[x]",
+                    "in_progress": "[-]",
+                    "pending": "[ ]",
+                    "blocked": "[!]",
+                    "deferred": "[~]",
+                }.get(goal.status, "[ ]")
+                time_info = f"~{goal.estimated_minutes}min"
+                if goal.actual_minutes is not None:
+                    time_info = f"{goal.actual_minutes}/{goal.estimated_minutes}min"
+                lines.append(f"- {status_emoji} **{goal.description}** ({time_info}) [{goal.priority}]")
+                if goal.notes:
+                    lines.append(f"  - {goal.notes}")
+            lines.append("")
+
         # Summary section
         if log.summary:
             lines.append("## End of Day Summary")
