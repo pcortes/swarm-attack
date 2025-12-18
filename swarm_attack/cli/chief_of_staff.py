@@ -591,3 +591,208 @@ def next_command(
     except Exception as e:
         console.print(f"[red]Error getting recommendations: {e}[/red]")
         raise typer.Exit(1)
+
+
+def _get_autopilot_runner():
+    """Get configured AutopilotRunner."""
+    from swarm_attack.chief_of_staff.autopilot_runner import AutopilotRunner
+    from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
+    from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem
+    from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+
+    config = ChiefOfStaffConfig()
+    checkpoint_system = CheckpointSystem(config)
+    session_store = AutopilotSessionStore(project_dir)
+
+    return AutopilotRunner(
+        config=config,
+        checkpoint_system=checkpoint_system,
+        session_store=session_store,
+    )
+
+
+@app.command("autopilot")
+def autopilot_command(
+    budget: float = typer.Option(10.0, "--budget", "-b", help="Budget limit in USD"),
+    duration: str = typer.Option("2h", "--duration", "-d", help="Duration limit (e.g., 2h, 90m)"),
+    until: Optional[str] = typer.Option(None, "--until", "-u", help="Stop trigger keyword"),
+    resume_id: Optional[str] = typer.Option(None, "--resume", "-r", help="Resume paused session by ID"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be executed without running"),
+    list_sessions: bool = typer.Option(False, "--list", "-l", help="List paused sessions"),
+    cancel_id: Optional[str] = typer.Option(None, "--cancel", help="Cancel a session by ID"),
+) -> None:
+    """Run autopilot to execute today's goals.
+
+    Autopilot executes goals with budget/time limits and checkpoint gates.
+    It pauses for approvals, high-risk actions, and budget/time limits.
+
+    Examples:
+        swarm-attack cos autopilot                    # Run with defaults
+        swarm-attack cos autopilot -b 5.0 -d 1h      # Custom budget/duration
+        swarm-attack cos autopilot --until approval   # Stop at first approval
+        swarm-attack cos autopilot --resume <id>      # Resume paused session
+        swarm-attack cos autopilot --list             # List paused sessions
+        swarm-attack cos autopilot --cancel <id>      # Cancel a session
+    """
+    console = get_console()
+
+    try:
+        runner = _get_autopilot_runner()
+        dlm = _get_daily_log_manager()
+        tracker = GoalTracker(dlm)
+
+        # Handle --list flag
+        if list_sessions:
+            console.print()
+            console.print(Panel("[bold]Paused Autopilot Sessions[/bold]", style="yellow"))
+
+            paused = runner.list_paused_sessions()
+            if not paused:
+                console.print("\n[dim]No paused sessions.[/dim]")
+            else:
+                table = Table()
+                table.add_column("Session ID", style="cyan")
+                table.add_column("Created", style="dim")
+                table.add_column("Progress", justify="center")
+                table.add_column("State")
+
+                for session in paused:
+                    created = session.created_at.strftime("%Y-%m-%d %H:%M") if session.created_at else "?"
+                    progress = f"{len(session.completed_issues)}/{session.current_issue or 0 + 1}"
+                    table.add_row(
+                        session.session_id,
+                        created,
+                        progress,
+                        f"[yellow]{session.state.value}[/yellow]",
+                    )
+
+                console.print()
+                console.print(table)
+
+            console.print()
+            return
+
+        # Handle --cancel flag
+        if cancel_id:
+            success = runner.cancel(cancel_id)
+            if success:
+                console.print(f"\n[green]✓ Cancelled session: {cancel_id}[/green]")
+            else:
+                console.print(f"\n[red]Session not found: {cancel_id}[/red]")
+                raise typer.Exit(1)
+            return
+
+        # Handle --resume flag
+        if resume_id:
+            console.print()
+            console.print(Panel(f"[bold]Resuming Session[/bold] {resume_id}", style="blue"))
+
+            try:
+                result = runner.resume(resume_id)
+            except ValueError as e:
+                console.print(f"\n[red]{e}[/red]")
+                raise typer.Exit(1)
+
+            _display_autopilot_result(console, result)
+            return
+
+        # Normal autopilot run
+        console.print()
+        console.print(Panel("[bold]Autopilot Mode[/bold]", style="green"))
+        console.print(f"\n[dim]Budget: ${budget:.2f} | Duration: {duration} | Stop trigger: {until or 'none'}[/dim]")
+
+        # Get today's goals
+        goals = tracker.get_today_goals()
+
+        if not goals:
+            console.print("\n[yellow]No goals set for today.[/yellow]")
+            console.print("Use 'swarm-attack cos standup' to set goals first.")
+            return
+
+        pending_goals = [g for g in goals if g.status in (GoalStatus.PENDING, GoalStatus.IN_PROGRESS)]
+
+        if not pending_goals:
+            console.print("\n[green]All goals already complete![/green]")
+            return
+
+        console.print(f"\n[bold]Goals to execute:[/bold] {len(pending_goals)}")
+        for i, g in enumerate(pending_goals, 1):
+            console.print(f"  {i}. {g.description} (~{g.estimated_minutes}min)")
+
+        if dry_run:
+            console.print("\n[yellow]Dry run - no execution[/yellow]")
+            return
+
+        # Parse duration to minutes
+        duration_minutes = runner._parse_duration(duration)
+
+        # Execute
+        console.print("\n[dim]Starting autopilot...[/dim]")
+
+        def on_goal_start(goal):
+            console.print(f"\n[blue]→ Starting:[/blue] {goal.description}")
+
+        def on_goal_complete(goal, result):
+            if result.success:
+                console.print(f"  [green]✓ Complete[/green] (${result.cost_usd:.2f})")
+            else:
+                console.print(f"  [red]✗ Failed:[/red] {result.error}")
+
+        def on_checkpoint(trigger):
+            console.print(f"\n[yellow]⚠ Checkpoint triggered:[/yellow] {trigger.trigger_type}")
+            console.print(f"  Reason: {trigger.reason}")
+            console.print(f"  Action: {trigger.action}")
+
+        # Temporarily set callbacks
+        runner.on_goal_start = on_goal_start
+        runner.on_goal_complete = on_goal_complete
+        runner.on_checkpoint = on_checkpoint
+
+        result = runner.start(
+            goals=pending_goals,
+            budget_usd=budget,
+            duration_minutes=duration_minutes,
+            stop_trigger=until,
+            dry_run=False,
+        )
+
+        _display_autopilot_result(console, result)
+
+    except Exception as e:
+        console.print(f"[red]Error during autopilot: {e}[/red]")
+        raise typer.Exit(1)
+
+
+def _display_autopilot_result(console: Console, result) -> None:
+    """Display autopilot run result."""
+    from swarm_attack.chief_of_staff.autopilot import AutopilotState
+
+    console.print()
+
+    if result.session.state == AutopilotState.COMPLETED:
+        console.print(Panel("[bold green]Autopilot Complete[/bold green]", style="green"))
+    elif result.session.state == AutopilotState.PAUSED:
+        console.print(Panel("[bold yellow]Autopilot Paused[/bold yellow]", style="yellow"))
+    elif result.session.state == AutopilotState.FAILED:
+        console.print(Panel("[bold red]Autopilot Failed[/bold red]", style="red"))
+    else:
+        console.print(Panel(f"[bold]Autopilot: {result.session.state.value}[/bold]"))
+
+    console.print(f"\n[bold]Summary:[/bold]")
+    console.print(f"  Session ID: {result.session.session_id}")
+    console.print(f"  Goals: {result.goals_completed}/{result.goals_total} completed")
+    console.print(f"  Cost: ${result.total_cost_usd:.2f}")
+    console.print(f"  Duration: {result.duration_seconds}s")
+
+    if result.trigger:
+        console.print(f"\n[yellow]Paused due to:[/yellow] {result.trigger.trigger_type}")
+        console.print(f"  {result.trigger.reason}")
+        console.print(f"\nTo resume: swarm-attack cos autopilot --resume {result.session.session_id}")
+
+    if result.error:
+        console.print(f"\n[red]Error:[/red] {result.error}")
+
+    console.print()
