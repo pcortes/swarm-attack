@@ -10,6 +10,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 import json
+import uuid
 import aiofiles
 import aiofiles.os
 
@@ -251,6 +252,69 @@ UX_CHANGE_TAGS = {"ui", "ux", "frontend"}
 ARCHITECTURE_TAGS = {"architecture", "refactor", "core"}
 
 
+# Context templates per trigger type
+CONTEXT_TEMPLATES = {
+    CheckpointTrigger.UX_CHANGE: (
+        "This goal involves UI/UX changes that may affect user experience. "
+        "Goal: {description}. Tags: {tags}. "
+        "Review recommended before proceeding with user-facing changes."
+    ),
+    CheckpointTrigger.COST_SINGLE: (
+        "This goal has a high estimated cost of ${cost:.2f} USD, which exceeds "
+        "the single-task cost threshold. Goal: {description}. "
+        "Consider whether the cost is justified for this task."
+    ),
+    CheckpointTrigger.COST_CUMULATIVE: (
+        "Daily cumulative cost budget has been exceeded. "
+        "Current daily spend: ${daily_cost:.2f} USD. Goal: {description}. "
+        "Consider pausing to review overall spending before continuing."
+    ),
+    CheckpointTrigger.ARCHITECTURE: (
+        "This goal involves architectural or structural changes to the codebase. "
+        "Goal: {description}. Tags: {tags}. "
+        "Architectural changes may have wide-reaching impacts and should be reviewed."
+    ),
+    CheckpointTrigger.SCOPE_CHANGE: (
+        "This is an unplanned goal that was not in the original scope. "
+        "Goal: {description}. "
+        "Review whether this unplanned work should take priority over planned work."
+    ),
+    CheckpointTrigger.HICCUP: (
+        "This goal has encountered issues or errors during execution. "
+        "Goal: {description}. Error count: {error_count}. "
+        "Review the errors before deciding how to proceed."
+    ),
+}
+
+# Recommendation templates per trigger type
+RECOMMENDATION_TEMPLATES = {
+    CheckpointTrigger.UX_CHANGE: (
+        "Recommend proceeding with caution. UI/UX changes should be validated "
+        "against design specifications and user expectations."
+    ),
+    CheckpointTrigger.COST_SINGLE: (
+        "Recommend proceeding if the task is critical. Consider breaking down "
+        "into smaller tasks if cost can be reduced."
+    ),
+    CheckpointTrigger.COST_CUMULATIVE: (
+        "Recommend reviewing daily progress before continuing. Consider whether "
+        "remaining budget should be preserved for higher-priority work."
+    ),
+    CheckpointTrigger.ARCHITECTURE: (
+        "Recommend careful review of architectural changes. Ensure changes align "
+        "with overall system design and don't introduce technical debt."
+    ),
+    CheckpointTrigger.SCOPE_CHANGE: (
+        "Recommend evaluating priority. Unplanned work may indicate emergent "
+        "requirements or scope creep. Assess impact on planned goals."
+    ),
+    CheckpointTrigger.HICCUP: (
+        "Recommend reviewing errors before proceeding. Determine if issues are "
+        "transient or indicate a deeper problem requiring investigation."
+    ),
+}
+
+
 class CheckpointSystem:
     """System for detecting checkpoint triggers.
 
@@ -338,6 +402,108 @@ class CheckpointSystem:
             triggers.append(CheckpointTrigger.HICCUP)
 
         return triggers
+
+    def _create_checkpoint(self, goal: "DailyGoal", trigger: CheckpointTrigger) -> Checkpoint:
+        """Create a checkpoint for a goal and trigger.
+
+        Args:
+            goal: The DailyGoal that triggered the checkpoint.
+            trigger: The trigger type that caused this checkpoint.
+
+        Returns:
+            A new Checkpoint instance with context, options, and recommendation.
+        """
+        checkpoint_id = f"chk-{uuid.uuid4().hex[:12]}"
+        context = self._build_context(goal, trigger)
+        options = self._build_options(goal, trigger)
+        recommendation = self._build_recommendation(goal, trigger)
+        created_at = datetime.now().isoformat()
+
+        return Checkpoint(
+            checkpoint_id=checkpoint_id,
+            trigger=trigger,
+            context=context,
+            options=options,
+            recommendation=recommendation,
+            created_at=created_at,
+            goal_id=goal.goal_id,
+            status="pending",
+        )
+
+    def _build_context(self, goal: "DailyGoal", trigger: CheckpointTrigger) -> str:
+        """Build context string for a checkpoint.
+
+        Args:
+            goal: The DailyGoal for context.
+            trigger: The trigger type.
+
+        Returns:
+            Context string describing the situation.
+        """
+        template = CONTEXT_TEMPLATES.get(trigger, "Goal: {description}")
+        
+        # Build format kwargs
+        tags_str = ", ".join(goal.tags) if goal.tags else "none"
+        cost = goal.estimated_cost_usd if goal.estimated_cost_usd is not None else 0.0
+        
+        return template.format(
+            description=goal.description,
+            tags=tags_str,
+            cost=cost,
+            daily_cost=self.daily_cost,
+            error_count=goal.error_count,
+        )
+
+    def _build_options(self, goal: "DailyGoal", trigger: CheckpointTrigger) -> list[CheckpointOption]:
+        """Build options for a checkpoint.
+
+        Returns the standard four options: Proceed, Skip, Modify, Pause.
+        Proceed is marked as is_recommended for most triggers.
+
+        Args:
+            goal: The DailyGoal (unused but kept for consistency).
+            trigger: The trigger type (unused but kept for consistency).
+
+        Returns:
+            List of four CheckpointOption instances.
+        """
+        return [
+            CheckpointOption(
+                label="Proceed",
+                description="Continue with the goal as planned.",
+                is_recommended=True,
+            ),
+            CheckpointOption(
+                label="Skip",
+                description="Skip this goal and move to the next one.",
+                is_recommended=False,
+            ),
+            CheckpointOption(
+                label="Modify",
+                description="Modify the goal before proceeding.",
+                is_recommended=False,
+            ),
+            CheckpointOption(
+                label="Pause",
+                description="Pause the session for manual review.",
+                is_recommended=False,
+            ),
+        ]
+
+    def _build_recommendation(self, goal: "DailyGoal", trigger: CheckpointTrigger) -> str:
+        """Build recommendation string for a checkpoint.
+
+        Args:
+            goal: The DailyGoal (unused but kept for consistency).
+            trigger: The trigger type.
+
+        Returns:
+            Recommendation string.
+        """
+        return RECOMMENDATION_TEMPLATES.get(
+            trigger,
+            "Recommend reviewing the situation before proceeding."
+        )
 
     def check_triggers(self, session: Any, action: str) -> Optional[TriggerCheckResult]:
         """Check if any checkpoint triggers are met.
