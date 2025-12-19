@@ -210,15 +210,21 @@ class EpisodeStore:
         return [episode for _, episode in scored_episodes[:k]]
 
 
+class DailyGoalProtocol:
+    """Protocol for DailyGoal to avoid circular imports."""
+    tags: list[str]
+
+
 @dataclass
 class PreferenceSignal:
     """Signal extracted from a checkpoint decision."""
 
-    signal_type: str  # e.g., "approved_cost", "rejected_risk"
-    trigger: str
-    chosen_option: str
-    context_summary: str
-    timestamp: str
+    signal_type: str = ""  # e.g., "approved_cost", "rejected_risk"
+    trigger: str = ""
+    chosen_option: str = ""
+    context_summary: str = ""
+    timestamp: Any = None  # Can be str or datetime
+    was_accepted: bool = False  # True if user approved/proceeded
 
 
 class PreferenceLearner:
@@ -245,12 +251,19 @@ class PreferenceLearner:
         if checkpoint.resolution is None:
             return None
 
+        # Determine if this was an acceptance (proceed, approve, etc)
+        resolution_lower = checkpoint.resolution.lower() if checkpoint.resolution else ""
+        was_accepted = any(
+            kw in resolution_lower
+            for kw in ["proceed", "approve", "accept", "continue", "yes"]
+        )
         signal = PreferenceSignal(
             signal_type=f"{checkpoint.resolution}_{checkpoint.trigger}",
             trigger=checkpoint.trigger,
             chosen_option=checkpoint.resolution,
             context_summary=checkpoint.context.get("summary", ""),
             timestamp=datetime.now().isoformat(),
+            was_accepted=was_accepted,
         )
         self.signals.append(signal)
         return signal
@@ -262,3 +275,67 @@ class PreferenceLearner:
             List of PreferenceSignal objects.
         """
         return self.signals.copy()
+
+    # Tag to trigger type mapping for find_similar_decisions
+    TAG_TO_TRIGGER_MAP = {
+        "ui": "UX_CHANGE",
+        "ux": "UX_CHANGE",
+        "architecture": "ARCHITECTURE",
+        "refactor": "ARCHITECTURE",
+    }
+
+    # Triggers that are always considered relevant
+    ALWAYS_RELEVANT_TRIGGERS = {"COST_SINGLE", "COST_CUMULATIVE"}
+
+    def find_similar_decisions(
+        self, goal: DailyGoalProtocol, k: int = 3
+    ) -> list[dict[str, Any]]:
+        """Find similar past checkpoint decisions for a goal.
+
+        Args:
+            goal: A DailyGoal object with tags attribute.
+            k: Maximum number of results to return (default: 3).
+
+        Returns:
+            List of dicts with keys: trigger, context_summary, was_accepted,
+            chosen_option, timestamp. Sorted by recency (most recent first).
+        """
+        if not self.signals:
+            return []
+
+        # Determine which triggers are relevant based on goal tags
+        relevant_triggers: set[str] = set(self.ALWAYS_RELEVANT_TRIGGERS)
+
+        for tag in goal.tags:
+            tag_lower = tag.lower()
+            if tag_lower in self.TAG_TO_TRIGGER_MAP:
+                relevant_triggers.add(self.TAG_TO_TRIGGER_MAP[tag_lower])
+
+        # Filter signals to those with relevant triggers
+        matching_signals: list[PreferenceSignal] = []
+        for signal in self.signals:
+            if signal.trigger in relevant_triggers:
+                matching_signals.append(signal)
+
+        # Sort by timestamp descending (most recent first)
+        # Handle both string and datetime timestamps
+        def get_timestamp_key(s: PreferenceSignal) -> str:
+            ts = s.timestamp
+            if hasattr(ts, 'isoformat'):
+                return ts.isoformat()
+            return str(ts) if ts else ""
+
+        matching_signals.sort(key=get_timestamp_key, reverse=True)
+
+        # Convert to output format and apply limit
+        result: list[dict[str, Any]] = []
+        for signal in matching_signals[:k]:
+            result.append({
+                "trigger": signal.trigger,
+                "context_summary": signal.context_summary,
+                "was_accepted": signal.was_accepted,
+                "chosen_option": signal.chosen_option,
+                "timestamp": signal.timestamp,
+            })
+
+        return result
