@@ -2,9 +2,11 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
+
+from swarm_attack.chief_of_staff.checkpoints import Checkpoint
 
 
 @dataclass
@@ -136,3 +138,169 @@ class FeedbackStore:
             data = json.load(f)
         
         self._feedback = [HumanFeedback.from_dict(item) for item in data]
+
+
+class FeedbackIncorporator:
+    """Records and classifies human feedback from checkpoints.
+    
+    The FeedbackIncorporator processes human feedback given at checkpoints,
+    classifying it as guidance, correction, or preference, and extracting
+    relevant tags for future reference.
+    
+    Attributes:
+        feedback_store: The FeedbackStore used for persistence.
+    """
+    
+    # Keywords for classification (case-insensitive)
+    GUIDANCE_KEYWORDS = ["suggest", "recommend", "consider", "try", "might", "could", "should"]
+    CORRECTION_KEYWORDS = ["wrong", "incorrect", "fix", "error", "bug", "mistake", "broken"]
+    PREFERENCE_KEYWORDS = ["prefer", "like", "always", "never", "want", "love", "hate"]
+    
+    # Tags to extract from notes (case-insensitive)
+    NOTE_TAGS = ["testing", "performance", "security", "ui", "ux", "api", "database", "cost"]
+    
+    # Expiry durations by feedback type
+    EXPIRY_DAYS = {
+        "guidance": 30,  # Guidance expires in 30 days
+        "correction": 7,  # Corrections expire in 7 days (more immediate)
+        "preference": None,  # Preferences never expire
+    }
+    
+    def __init__(self, feedback_store: FeedbackStore) -> None:
+        """Initialize FeedbackIncorporator.
+        
+        Args:
+            feedback_store: FeedbackStore instance for persisting feedback.
+        """
+        self.feedback_store = feedback_store
+    
+    def record_feedback(self, checkpoint: Checkpoint, notes: str) -> HumanFeedback:
+        """Record human feedback from a checkpoint with classification.
+        
+        Creates a HumanFeedback instance with automatic classification,
+        tag extraction, and expiry calculation based on the feedback type.
+        
+        Args:
+            checkpoint: The Checkpoint that was reviewed.
+            notes: Human notes/feedback about the checkpoint decision.
+            
+        Returns:
+            The created HumanFeedback instance.
+        """
+        # Classify the feedback type
+        feedback_type = self._classify_feedback(notes)
+        
+        # Extract relevant tags
+        tags = self._extract_tags(checkpoint, notes)
+        
+        # Calculate expiry based on feedback type
+        expiry_str = self._calculate_expiry(feedback_type)
+        expires_at = datetime.fromisoformat(expiry_str) if expiry_str else None
+        
+        # Create the feedback instance
+        feedback = HumanFeedback(
+            checkpoint_id=checkpoint.checkpoint_id,
+            timestamp=datetime.now(),
+            feedback_type=feedback_type,
+            content=notes,
+            applies_to=tags,
+            expires_at=expires_at,
+        )
+        
+        # Add to store
+        self.feedback_store.add_feedback(feedback)
+        
+        return feedback
+    
+    def _classify_feedback(self, notes: str) -> str:
+        """Classify feedback as guidance, correction, or preference.
+        
+        Uses simple keyword matching (case-insensitive) to determine
+        the feedback type. Priority: correction > preference > guidance.
+        
+        Args:
+            notes: The feedback notes to classify.
+            
+        Returns:
+            One of 'guidance', 'correction', or 'preference'.
+        """
+        notes_lower = notes.lower()
+        
+        # Check for correction keywords first (highest priority)
+        for keyword in self.CORRECTION_KEYWORDS:
+            if keyword in notes_lower:
+                return "correction"
+        
+        # Check for preference keywords
+        for keyword in self.PREFERENCE_KEYWORDS:
+            if keyword in notes_lower:
+                return "preference"
+        
+        # Check for guidance keywords
+        for keyword in self.GUIDANCE_KEYWORDS:
+            if keyword in notes_lower:
+                return "guidance"
+        
+        # Default to guidance
+        return "guidance"
+    
+    def _extract_tags(self, checkpoint: Checkpoint, notes: str) -> list[str]:
+        """Extract relevant tags from checkpoint and notes.
+        
+        Extracts tags based on:
+        1. The checkpoint trigger type
+        2. Keywords found in the notes
+        3. Goal ID prefix if available
+        
+        Args:
+            checkpoint: The Checkpoint being reviewed.
+            notes: The feedback notes.
+            
+        Returns:
+            List of extracted tags.
+        """
+        tags: list[str] = []
+        
+        # Add checkpoint trigger type as a tag
+        trigger_tag = checkpoint.trigger.value.lower()
+        tags.append(trigger_tag)
+        
+        # Extract tags from notes based on keywords
+        notes_lower = notes.lower()
+        for tag in self.NOTE_TAGS:
+            if tag in notes_lower:
+                tags.append(tag)
+        
+        # Extract goal type from goal_id if present
+        goal_id = checkpoint.goal_id
+        if goal_id:
+            # Common prefixes: feature_, bug_, spec_
+            if goal_id.startswith("feature"):
+                tags.append("feature")
+            elif goal_id.startswith("bug"):
+                tags.append("bug")
+            elif goal_id.startswith("spec"):
+                tags.append("spec")
+        
+        return tags
+    
+    def _calculate_expiry(self, feedback_type: str) -> Optional[str]:
+        """Calculate expiry datetime based on feedback type.
+        
+        - Preference feedback: Never expires (returns None)
+        - Guidance feedback: Expires in 30 days
+        - Correction feedback: Expires in 7 days
+        
+        Args:
+            feedback_type: The classified feedback type.
+            
+        Returns:
+            ISO format datetime string for expiry, or None if never expires.
+        """
+        expiry_days = self.EXPIRY_DAYS.get(feedback_type)
+        
+        if expiry_days is None:
+            return None
+        
+        expiry_dt = datetime.now() + timedelta(days=expiry_days)
+        return expiry_dt.isoformat()
