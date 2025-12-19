@@ -195,6 +195,12 @@ class SwarmConfig:
     bug_bash: BugBashConfig = field(default_factory=BugBashConfig)
     chief_of_staff: ChiefOfStaffConfig = field(default_factory=ChiefOfStaffConfig)
 
+    # Automatic issue splitting on timeout
+    auto_split_on_timeout: bool = True  # Auto-split when coder times out
+
+    # Automatic import error recovery
+    auto_fix_import_errors: bool = True  # Retry with correct import paths when coder has import errors
+
     def __post_init__(self) -> None:
         """Convert paths to absolute paths based on repo_root."""
         self.repo_root = str(Path(self.repo_root).absolute())

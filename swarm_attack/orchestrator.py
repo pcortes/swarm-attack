@@ -37,6 +37,7 @@ from swarm_attack.agents import (
     SpecModeratorAgent,
     VerifierAgent,
 )
+from swarm_attack.agents.recovery import RecoveryAgent
 from swarm_attack.agents.complexity_gate import ComplexityGateAgent
 from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.summarizer import SummarizerAgent
@@ -53,6 +54,44 @@ if TYPE_CHECKING:
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.session_manager import SessionManager
     from swarm_attack.state_store import StateStore
+
+
+# Known external library imports for import error recovery
+# Maps symbol name to correct import statement
+KNOWN_EXTERNAL_IMPORTS: dict[str, str] = {
+    # Testing libraries
+    "CliRunner": "from typer.testing import CliRunner",
+    "TestClient": "from fastapi.testclient import TestClient",
+    "Mock": "from unittest.mock import Mock",
+    "patch": "from unittest.mock import patch",
+    "MagicMock": "from unittest.mock import MagicMock",
+    "AsyncMock": "from unittest.mock import AsyncMock",
+    "pytest": "import pytest",
+    # Standard library
+    "Path": "from pathlib import Path",
+    "datetime": "from datetime import datetime",
+    "timedelta": "from datetime import timedelta",
+    "dataclass": "from dataclasses import dataclass",
+    "field": "from dataclasses import field",
+    "Optional": "from typing import Optional",
+    "List": "from typing import List",
+    "Dict": "from typing import Dict",
+    "Any": "from typing import Any",
+    "Callable": "from typing import Callable",
+    "Union": "from typing import Union",
+    # Rich library
+    "Console": "from rich.console import Console",
+    "Table": "from rich.table import Table",
+    "Panel": "from rich.panel import Panel",
+    # Typer
+    "typer": "import typer",
+    "Typer": "import typer",
+    # JSON
+    "json": "import json",
+    # OS
+    "os": "import os",
+    "subprocess": "import subprocess",
+}
 
 
 @dataclass
@@ -203,6 +242,9 @@ class Orchestrator:
         # Schema drift prevention components
         self._summarizer = SummarizerAgent(config, logger)
         self._issue_context = IssueContextManager(config, logger)
+
+        # Recovery agent for self-healing on coder failures
+        self._recovery_agent = RecoveryAgent(config, logger)
 
     @property
     def author(self) -> SpecAuthorAgent:
@@ -1805,6 +1847,507 @@ class Orchestrator:
                 "error": str(e),
             }, level="error")
 
+    def _should_auto_split_on_timeout(self, result: AgentResult) -> bool:
+        """
+        Check if a coder failure should trigger auto-split.
+
+        Returns True if:
+        - auto_split_on_timeout is enabled in config
+        - The error message indicates a timeout
+
+        Args:
+            result: The AgentResult from the coder.
+
+        Returns:
+            True if timeout auto-split should be triggered.
+        """
+        if not getattr(self.config, "auto_split_on_timeout", True):
+            return False
+
+        if result.error and "timed out" in result.error.lower():
+            return True
+
+        return False
+
+    def _classify_coder_error(self, error_msg: str) -> str:
+        """
+        Classify coder error type for routing to recovery.
+
+        Args:
+            error_msg: The error message from coder failure.
+
+        Returns:
+            Error type: "timeout", "import_error", "syntax_error", or "unknown".
+        """
+        error_lower = error_msg.lower()
+
+        if "timed out" in error_lower:
+            return "timeout"
+
+        if any(x in error_lower for x in ["undefined name", "importerror", "modulenotfounderror"]):
+            return "import_error"
+
+        if any(x in error_lower for x in ["syntaxerror", "indentationerror"]):
+            return "syntax_error"
+
+        if "typeerror" in error_lower:
+            return "type_error"
+
+        return "unknown"
+
+    def _extract_undefined_names(self, error_msg: str) -> list[str]:
+        """
+        Extract undefined names from import error message.
+
+        Parses error messages like:
+        "undefined name(s): __future__.py:annotations, typer/testing.py:CliRunner"
+
+        Args:
+            error_msg: The error message containing undefined names.
+
+        Returns:
+            List of undefined symbol names.
+        """
+        import re
+
+        # Look for "undefined name(s): path:name, path:name" pattern
+        match = re.search(r"undefined name\(s\):\s*(.+?)(?:\s*$|\s*\n)", error_msg, re.IGNORECASE)
+        if not match:
+            return []
+
+        # Parse "path:name, path:name" format
+        names = []
+        parts = match.group(1).split(",")
+        for part in parts:
+            part = part.strip()
+            if ":" in part:
+                # Extract name after the colon
+                name = part.split(":")[-1].strip()
+                if name:
+                    names.append(name)
+
+        return names
+
+    def _find_correct_import_paths(
+        self,
+        undefined_names: list[str],
+    ) -> dict[str, str]:
+        """
+        Search for correct import paths for undefined names.
+
+        First checks KNOWN_EXTERNAL_IMPORTS for common libraries,
+        then searches the codebase for internal definitions.
+
+        Args:
+            undefined_names: List of undefined symbol names.
+
+        Returns:
+            Dict mapping name to suggested import statement.
+        """
+        correct_paths: dict[str, str] = {}
+
+        for name in undefined_names:
+            # Strategy 1: Check known external imports
+            if name in KNOWN_EXTERNAL_IMPORTS:
+                correct_paths[name] = KNOWN_EXTERNAL_IMPORTS[name]
+                continue
+
+            # Strategy 2: Search codebase for definition
+            definition = self._search_codebase_for_definition(name)
+            if definition:
+                correct_paths[name] = definition
+                continue
+
+            # Strategy 3: Search for module with similar name
+            module = self._search_for_module(name)
+            if module:
+                correct_paths[name] = module
+
+        return correct_paths
+
+    def _search_codebase_for_definition(self, name: str) -> Optional[str]:
+        """
+        Search codebase for class or function definition.
+
+        Args:
+            name: The symbol name to search for.
+
+        Returns:
+            Import statement if found, None otherwise.
+        """
+        try:
+            # Search for class definition
+            patterns = [
+                f"^class {name}\\(",
+                f"^class {name}:",
+                f"^def {name}\\(",
+            ]
+
+            for pattern in patterns:
+                result = subprocess.run(
+                    ["rg", "-l", "-e", pattern, "--type", "py", "."],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.project_dir,
+                    timeout=5,
+                )
+
+                if result.returncode == 0 and result.stdout.strip():
+                    file_path = result.stdout.strip().split("\n")[0]
+                    # Convert file path to import
+                    module = self._file_path_to_module(file_path)
+                    if module:
+                        return f"from {module} import {name}"
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+
+        return None
+
+    def _search_for_module(self, name: str) -> Optional[str]:
+        """
+        Search for a module with a name similar to the undefined name.
+
+        Args:
+            name: The symbol name to search for.
+
+        Returns:
+            Import statement if found, None otherwise.
+        """
+        try:
+            # Convert CamelCase to snake_case for module search
+            import re
+            snake_name = re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+            # Search for .py files with this name
+            result = subprocess.run(
+                ["find", ".", "-name", f"{snake_name}.py", "-type", "f"],
+                capture_output=True,
+                text=True,
+                cwd=self.project_dir,
+                timeout=5,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                file_path = result.stdout.strip().split("\n")[0]
+                module = self._file_path_to_module(file_path)
+                if module:
+                    return f"from {module} import {name}"
+        except (subprocess.TimeoutExpired, Exception):
+            pass
+
+        return None
+
+    def _file_path_to_module(self, file_path: str) -> Optional[str]:
+        """
+        Convert a file path to a Python module path.
+
+        Args:
+            file_path: File path like './swarm_attack/cli/chief_of_staff.py'
+
+        Returns:
+            Module path like 'swarm_attack.cli.chief_of_staff'
+        """
+        # Remove ./ prefix and .py suffix
+        path = file_path.lstrip("./")
+        if path.endswith(".py"):
+            path = path[:-3]
+
+        # Convert path separators to dots
+        module = path.replace("/", ".").replace("\\", ".")
+
+        # Skip __init__ files
+        if module.endswith(".__init__"):
+            module = module[:-9]
+
+        return module if module else None
+
+    def _build_import_recovery_hint(
+        self,
+        undefined_names: list[str],
+        suggestions: dict[str, str],
+    ) -> str:
+        """
+        Build a recovery hint message for the coder.
+
+        Args:
+            undefined_names: List of undefined symbol names.
+            suggestions: Dict mapping names to suggested imports.
+
+        Returns:
+            Human-readable recovery hint string.
+        """
+        lines = [
+            "The previous attempt failed due to import errors.",
+            "Please use the following correct imports:",
+            "",
+        ]
+
+        for name in undefined_names:
+            if name in suggestions:
+                lines.append(f"  {suggestions[name]}")
+            else:
+                lines.append(f"  # Could not find import for: {name}")
+
+        lines.append("")
+        lines.append("Make sure to add these imports at the top of your files.")
+
+        return "\n".join(lines)
+
+    def _handle_import_error_recovery(
+        self,
+        error_msg: str,
+        issue: Any,
+        attempt: int,
+        max_retries: int,
+        session: Any,
+    ) -> Optional["IssueSessionResult"]:
+        """
+        Handle import errors by finding correct imports and retrying.
+
+        Args:
+            error_msg: The error message from coder failure.
+            issue: The issue being worked on.
+            attempt: Current retry attempt number.
+            max_retries: Maximum number of retries allowed.
+            session: The current session object.
+
+        Returns:
+            IssueSessionResult if terminal (blocked), None if should retry.
+        """
+        # Check if auto-fix is enabled
+        if not getattr(self.config, "auto_fix_import_errors", True):
+            return None
+
+        # 1. Extract undefined names
+        undefined_names = self._extract_undefined_names(error_msg)
+
+        if not undefined_names:
+            # Can't parse - fall through to normal failure
+            return None
+
+        # 2. Search for correct import paths
+        correct_paths = self._find_correct_import_paths(undefined_names)
+
+        # 3. Build recovery context
+        recovery_hint = self._build_import_recovery_hint(undefined_names, correct_paths)
+
+        # 4. Store recovery context in session for retry
+        session.recovery_context = {
+            "error_type": "import_error",
+            "undefined_names": undefined_names,
+            "suggested_imports": correct_paths,
+            "recovery_hint": recovery_hint,
+        }
+
+        # 5. Check if we should retry
+        if attempt < max_retries:
+            self._log(
+                "import_error_recovery",
+                {
+                    "issue": getattr(issue, "issue_number", issue),
+                    "undefined_names": undefined_names,
+                    "suggested_imports": correct_paths,
+                    "attempt": attempt,
+                },
+                level="warning",
+            )
+            return None  # Signal: retry with recovery context
+
+        # 6. Max retries exhausted - block with actionable message
+        return IssueSessionResult(
+            status="blocked",
+            issue_number=getattr(issue, "issue_number", 0),
+            session_id="",
+            tests_written=0,
+            tests_passed=0,
+            tests_failed=0,
+            commits=[],
+            cost_usd=0.0,
+            retries=attempt,
+            error=f"Import errors after {attempt} attempts. Missing: {', '.join(undefined_names)}. Recovery hint: {recovery_hint}",
+        )
+
+    def _attempt_recovery_with_agent(
+        self,
+        feature_id: str,
+        issue_number: int,
+        error_msg: str,
+        attempt: int,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Use RecoveryAgent to analyze coder failure and determine recovery strategy.
+
+        This is the general-purpose self-healing mechanism that uses LLM to analyze
+        ANY type of coder failure and generate a recovery plan.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number that failed.
+            error_msg: The error message from the coder failure.
+            attempt: Current retry attempt number.
+
+        Returns:
+            Dict with recovery analysis if agent succeeds:
+                - recoverable: bool - whether retry is possible
+                - recovery_plan: str - instructions for fixing the issue
+                - root_cause: str - analysis of what went wrong
+                - human_instructions: str - if not recoverable, what human should do
+                - cost_usd: float - cost of the analysis
+            None if RecoveryAgent itself fails.
+        """
+        try:
+            # Build context for RecoveryAgent
+            context = {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "failure_type": "coder_error",
+                "error_output": error_msg,
+                "retry_count": attempt,
+            }
+
+            self._log(
+                "recovery_agent_invoked",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "attempt": attempt,
+                },
+            )
+
+            # Invoke RecoveryAgent
+            result = self._recovery_agent.run(context)
+
+            if not result.success:
+                self._log(
+                    "recovery_agent_failed",
+                    {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "error": result.error,
+                    },
+                    level="warning",
+                )
+                return None
+
+            # Extract recovery analysis from result
+            output = result.output or {}
+            recovery_analysis = {
+                "recoverable": output.get("recoverable", False),
+                "recovery_plan": output.get("recovery_plan"),
+                "root_cause": output.get("root_cause", "Unknown"),
+                "human_instructions": output.get("human_instructions"),
+                "suggested_actions": output.get("suggested_actions", []),
+                "cost_usd": result.cost_usd,
+            }
+
+            self._log(
+                "recovery_agent_complete",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "recoverable": recovery_analysis["recoverable"],
+                    "root_cause": recovery_analysis["root_cause"][:100] if recovery_analysis["root_cause"] else None,
+                },
+            )
+
+            return recovery_analysis
+
+        except Exception as e:
+            self._log(
+                "recovery_agent_exception",
+                {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "error": str(e),
+                },
+                level="error",
+            )
+            return None
+
+    def _handle_timeout_auto_split(
+        self,
+        feature_id: str,
+        issue_number: int,
+        issue_data: dict[str, Any],
+    ) -> tuple[bool, Optional[str], AgentResult, float]:
+        """
+        Handle timeout by auto-splitting the issue.
+
+        When coder times out, it indicates the issue is more complex than estimated.
+        Trigger IssueSplitter to break it into smaller pieces.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number that timed out.
+            issue_data: The issue dict from issues.json.
+
+        Returns:
+            Tuple of (success, commit_sha, result, cost).
+        """
+        from swarm_attack.agents.complexity_gate import ComplexityEstimate
+
+        self._log("timeout_auto_split_started", {
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+        })
+
+        # Create synthetic gate estimate with needs_split=True
+        gate_estimate = ComplexityEstimate(
+            estimated_turns=30,  # Clearly over limit
+            complexity_score=0.9,
+            needs_split=True,
+            split_suggestions=[
+                "Issue timed out - actual complexity exceeds estimate",
+                "Split into smaller, focused sub-issues",
+            ],
+            confidence=0.95,
+            reasoning="Coder timeout triggered auto-split",
+        )
+
+        # Use existing _auto_split_issue method
+        split_result = self._auto_split_issue(
+            feature_id=feature_id,
+            issue_number=issue_number,
+            issue_data=issue_data,
+            gate_estimate=gate_estimate,
+        )
+
+        if split_result.success:
+            self._log("timeout_auto_split_success", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "sub_issues_count": split_result.output.get("count", 0),
+            })
+            return (
+                True,
+                None,
+                AgentResult.success_result(
+                    output={
+                        "action": "split",
+                        "reason": "timeout_auto_split",
+                        "sub_issues": split_result.output.get("sub_issues", []),
+                        "count": split_result.output.get("count", 0),
+                    },
+                    cost_usd=split_result.cost_usd,
+                ),
+                split_result.cost_usd,
+            )
+        else:
+            self._log("timeout_auto_split_failed", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "error": split_result.error,
+            }, level="error")
+            return (
+                False,
+                None,
+                AgentResult.failure_result(
+                    f"Issue timed out and auto-split failed: {split_result.error}. "
+                    "Manual intervention required."
+                ),
+                split_result.cost_usd,
+            )
+
     def _generate_completion_summary(
         self,
         feature_id: str,
@@ -2780,7 +3323,83 @@ class Orchestrator:
 
                 # Check if it was a coder failure (not verifier)
                 if verifier_result and not verifier_result.output:
-                    # Coder failed - no retry
+                    # Check if this is a timeout that should trigger auto-split
+                    error_msg = verifier_result.errors[0] if verifier_result.errors else "Unknown error"
+                    coder_fail_result = AgentResult.failure_result(f"Coder failed: {error_msg}")
+
+                    if self._should_auto_split_on_timeout(coder_fail_result):
+                        # Load issue data for splitting
+                        issue_data = self._load_issue_from_spec(feature_id, issue_number)
+                        if issue_data:
+                            self._log("timeout_auto_split_triggered", {
+                                "feature_id": feature_id,
+                                "issue_number": issue_number,
+                            })
+
+                            split_success, _, split_result, split_cost = self._handle_timeout_auto_split(
+                                feature_id=feature_id,
+                                issue_number=issue_number,
+                                issue_data=issue_data,
+                            )
+                            total_cost += split_cost
+
+                            if split_success:
+                                if self._session_manager:
+                                    self._session_manager.end_session(session_id, "split")
+                                    session_ended = True
+
+                                return IssueSessionResult(
+                                    status="split",
+                                    issue_number=issue_number,
+                                    session_id=session_id,
+                                    tests_written=0,
+                                    tests_passed=0,
+                                    tests_failed=0,
+                                    commits=[],
+                                    cost_usd=total_cost,
+                                    retries=attempt,
+                                    error=None,
+                                )
+
+                    # Use RecoveryAgent to analyze ANY coder failure and determine recovery
+                    if attempt < max_retries:
+                        recovery_result = self._attempt_recovery_with_agent(
+                            feature_id=feature_id,
+                            issue_number=issue_number,
+                            error_msg=error_msg,
+                            attempt=attempt,
+                        )
+
+                        if recovery_result and recovery_result.get("recoverable"):
+                            # RecoveryAgent says we can retry
+                            recovery_plan = recovery_result.get("recovery_plan", "")
+                            total_cost += recovery_result.get("cost_usd", 0.0)
+
+                            # Store recovery plan for next coder attempt
+                            previous_failures = previous_failures or []
+                            if recovery_plan:
+                                previous_failures.append({
+                                    "type": "recovery_agent_plan",
+                                    "message": recovery_plan,
+                                    "root_cause": recovery_result.get("root_cause", ""),
+                                })
+
+                            # Continue to retry loop
+                            attempt += 1
+                            self._log("recovery_agent_retry", {
+                                "feature_id": feature_id,
+                                "issue_number": issue_number,
+                                "retry": attempt,
+                                "recovery_plan": recovery_plan[:200] if recovery_plan else None,
+                                "root_cause": recovery_result.get("root_cause"),
+                            }, level="warning")
+                            continue  # Go to next iteration of while loop
+
+                        # RecoveryAgent says not recoverable - fall through to failure
+                        if recovery_result:
+                            total_cost += recovery_result.get("cost_usd", 0.0)
+
+                    # Coder failed - no retry (or recovery not possible)
                     self._log("coder_failure", {
                         "feature_id": feature_id,
                         "issue_number": issue_number,
@@ -2802,7 +3421,7 @@ class Orchestrator:
                         commits=[],
                         cost_usd=total_cost,
                         retries=attempt,
-                        error=f"Coder failed: {verifier_result.errors[0] if verifier_result.errors else 'Unknown error'}",
+                        error=f"Coder failed: {error_msg}",
                     )
 
                 # Extract failures from verifier result for next retry

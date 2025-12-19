@@ -470,6 +470,75 @@
       "order": 31,
       "automation_type": "automated",
       "parent_issue": 22
+    },
+    {
+      "title": "Add `cos progress` CLI command for progress snapshot",
+      "body": "## Description\n\nAdd the `swarm-attack cos progress` CLI command that displays the current progress snapshot for Chief of Staff operations.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos progress` command shows current progress snapshot\n- [ ] Display includes: goals completed/total with percentage, cost spent, duration\n- [ ] Display includes: current goal (if any) and blockers (if any)\n- [ ] Proper error handling when no progress data exists\n\n## Technical Notes\n\n- File: `swarm_attack/cli/chief_of_staff.py`\n- Uses ProgressTracker (9.5.3)\n- Pattern Reference: See existing CLI commands in chief_of_staff.py",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4,
+        21
+      ],
+      "order": 32,
+      "automation_type": "automated",
+      "parent_issue": 24
+    },
+    {
+      "title": "Add `cos progress --history` flag for progress history",
+      "body": "## Description\n\nExtend the `cos progress` command with a `--history` flag to show progress history over time.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos progress --history` shows progress history entries\n- [ ] History displays timestamped progress snapshots\n- [ ] Proper error handling when no history exists\n\n## Technical Notes\n\n- File: `swarm_attack/cli/chief_of_staff.py`\n- Builds on the `cos progress` command from the previous issue\n- Uses ProgressTracker (9.5.3)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        32
+      ],
+      "order": 33,
+      "automation_type": "automated",
+      "parent_issue": 24
+    },
+    {
+      "title": "Add `cos feedback list` and `cos feedback add` CLI commands",
+      "body": "## Description\n\nAdd CLI commands for listing active feedback and adding new feedback entries.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos feedback list` shows active feedback entries\n- [ ] `swarm-attack cos feedback add \"content\" --type guidance|correction|preference --tags tag1,tag2` adds feedback\n- [ ] Type flag validates against allowed values (guidance, correction, preference)\n- [ ] Tags flag is optional and accepts comma-separated values\n- [ ] Proper error handling for invalid inputs\n\n## Technical Notes\n\n- File: `swarm_attack/cli/chief_of_staff.py`\n- Uses FeedbackIncorporator (12.5)\n- Pattern Reference: See existing CLI command patterns",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        33
+      ],
+      "order": 34,
+      "automation_type": "automated",
+      "parent_issue": 24
+    },
+    {
+      "title": "Add `cos feedback clear` command and integration tests",
+      "body": "## Description\n\nAdd the feedback clear command and integration tests for all progress and feedback CLI commands.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos feedback clear --expired` clears expired feedback entries\n- [ ] Clear command confirms action or has --force flag\n- [ ] Integration tests cover progress commands (basic and --history)\n- [ ] Integration tests cover feedback commands (list, add, clear)\n\n## Technical Notes\n\n- File: `swarm_attack/cli/chief_of_staff.py` for command, `tests/` for integration tests\n- Uses FeedbackIncorporator (12.5)\n- Pattern Reference: See existing test patterns in the codebase",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        34
+      ],
+      "order": 35,
+      "automation_type": "automated",
+      "parent_issue": 24
     }
   ]
 }
