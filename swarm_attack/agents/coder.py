@@ -58,15 +58,26 @@ class CoderAgent(BaseAgent):
         "cos-phase8-recovery",
     ])
 
-    # Standard library modules that should be skipped during import validation
-    # These are not project dependencies and don't need to be generated
+    # Modules that should be skipped during import validation
+    # These are either stdlib or external packages that are NOT project code
     STDLIB_MODULES = frozenset([
-        'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',
+        # Python standard library
+        '__future__', 'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',
         'enum', 'functools', 'io', 'itertools', 'json', 'logging', 'math',
         'os', 'pathlib', 'pickle', 'random', 're', 'shutil', 'string', 'sys',
-        'tempfile', 'time', 'typing', 'unittest', 'uuid', 'warnings',
-        # Test frameworks
-        'pytest', 'mock', 'unittest.mock',
+        'tempfile', 'time', 'typing', 'unittest', 'uuid', 'warnings', 'contextlib',
+        'threading', 'multiprocessing', 'subprocess', 'socket', 'struct', 'textwrap',
+        # Test frameworks and testing utilities
+        'pytest', 'mock', 'unittest.mock', 'pytest_mock', 'pytest_asyncio',
+        'faker', 'factory_boy', 'hypothesis',
+        # CLI and UI frameworks commonly used in tests
+        'typer', 'click', 'rich', 'textual',
+        # API testing
+        'httpx', 'requests', 'aiohttp', 'fastapi', 'starlette',
+        # Database testing
+        'sqlalchemy', 'alembic', 'databases',
+        # Common utilities
+        'pydantic', 'attrs', 'cattrs',
     ])
 
     def __init__(

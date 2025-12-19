@@ -5,6 +5,7 @@ Provides CLI commands for the Chief of Staff agent:
 - wrapup: End-of-day summary
 - history: Review past daily logs
 - next --all: Cross-feature recommendations
+- progress: Show current progress snapshot
 """
 
 from __future__ import annotations
@@ -53,6 +54,38 @@ def _get_state_gatherer() -> StateGatherer:
     class MinimalConfig:
         pass
     return StateGatherer(MinimalConfig())
+
+
+def _get_progress_tracker():
+    """Get configured ProgressTracker."""
+    from swarm_attack.chief_of_staff.progress import ProgressTracker
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+    base_path = project_dir / ".swarm" / "chief-of-staff" / "progress"
+    return ProgressTracker(base_path)
+
+
+def _format_duration(seconds: int) -> str:
+    """Format duration in seconds to human-readable string.
+
+    Args:
+        seconds: Duration in seconds.
+
+    Returns:
+        Human-readable duration string (e.g., "1h 30min" or "45min").
+    """
+    if seconds == 0:
+        return "0min"
+
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+
+    if hours > 0:
+        if minutes > 0:
+            return f"{hours}h {minutes}min"
+        return f"{hours}h"
+    return f"{minutes}min"
 
 
 @app.command("standup")
@@ -590,6 +623,72 @@ def next_command(
 
     except Exception as e:
         console.print(f"[red]Error getting recommendations: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("progress")
+def progress_command() -> None:
+    """Show current progress snapshot.
+
+    Displays the current Chief of Staff execution progress including:
+    - Goals completed/total with percentage
+    - Cost spent
+    - Duration
+    - Current goal (if any)
+    - Blockers (if any)
+    """
+    console = get_console()
+
+    try:
+        tracker = _get_progress_tracker()
+
+        # Try to load progress from disk
+        tracker.load()
+
+        current = tracker.get_current()
+
+        console.print()
+        console.print(Panel(
+            f"[bold]Progress Snapshot[/bold] - {date.today().isoformat()}",
+            style="cyan",
+        ))
+
+        if current is None:
+            console.print("\n[dim]No progress data available.[/dim]")
+            console.print("[dim]Run 'swarm-attack cos autopilot' to start execution.[/dim]")
+            console.print()
+            return
+
+        # Goals progress
+        pct = current.completion_percent
+        pct_color = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
+        console.print(f"\n[bold]Goals:[/bold] {current.goals_completed}/{current.goals_total} [{pct_color}]({pct:.0f}%)[/{pct_color}]")
+
+        # Cost spent
+        console.print(f"[bold]Cost Spent:[/bold] ${current.cost_usd:.2f}")
+
+        # Duration
+        duration_str = _format_duration(current.duration_seconds)
+        console.print(f"[bold]Duration:[/bold] {duration_str}")
+
+        # Current goal
+        if current.current_goal:
+            console.print(f"\n[bold]Current Goal:[/bold]")
+            console.print(f"  [blue]{current.current_goal}[/blue]")
+
+        # Blockers
+        if current.blockers:
+            console.print(f"\n[bold red]Blockers ({len(current.blockers)}):[/bold red]")
+            for blocker in current.blockers:
+                console.print(f"  [red]![/red] {blocker}")
+
+        # Timestamp
+        console.print(f"\n[dim]Last updated: {current.timestamp}[/dim]")
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error showing progress: {e}[/red]")
         raise typer.Exit(1)
 
 

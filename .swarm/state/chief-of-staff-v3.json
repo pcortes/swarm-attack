@@ -239,7 +239,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Add campaign progress to standup command",
       "dependencies": [
         6
@@ -362,7 +362,7 @@
     },
     {
       "issue_number": 15,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Implement CodeCritic variants",
       "dependencies": [
         13
@@ -568,7 +568,7 @@
     },
     {
       "issue_number": 24,
-      "stage": "READY",
+      "stage": "SPLIT",
       "title": "Add progress and feedback CLI commands",
       "dependencies": [
         4,
@@ -577,11 +577,16 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Split into 4 sub-issues: [32, 33, 34, 35]",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
-      "child_issues": []
+      "child_issues": [
+        32,
+        33,
+        34,
+        35
+      ]
     },
     {
       "issue_number": 25,
@@ -764,14 +769,97 @@
       "completion_summary": null,
       "parent_issue": 22,
       "child_issues": []
+    },
+    {
+      "issue_number": 32,
+      "stage": "READY",
+      "title": "Add `cos progress` CLI command for progress snapshot",
+      "dependencies": [
+        4,
+        27
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_32.py",
+          "swarm_attack/cli/chief_of_staff.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_32.py": [
+            "TestProgressCommandExists",
+            "TestProgressCommandDisplay",
+            "TestProgressCommandNoData",
+            "TestProgressTrackerCLIHelper",
+            "TestProgressCommandFormatting",
+            "TestProgressCommandIntegration",
+            "TestProgressModuleExists",
+            "TestProgressCommandPercentageCalculation"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_32.py, swarm_attack/cli/chief_of_staff.py; Defined: TestProgressCommandExists, TestProgressCommandDisplay, TestProgressCommandNoData, TestProgressTrackerCLIHelper, TestProgressCommandFormatting",
+      "parent_issue": 24,
+      "child_issues": []
+    },
+    {
+      "issue_number": 33,
+      "stage": "BACKLOG",
+      "title": "Add `cos progress --history` flag for progress history",
+      "dependencies": [
+        32
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 24,
+      "child_issues": []
+    },
+    {
+      "issue_number": 34,
+      "stage": "BACKLOG",
+      "title": "Add `cos feedback list` and `cos feedback add` CLI commands",
+      "dependencies": [
+        33
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 24,
+      "child_issues": []
+    },
+    {
+      "issue_number": 35,
+      "stage": "BACKLOG",
+      "title": "Add `cos feedback clear` command and integration tests",
+      "dependencies": [
+        34
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 24,
+      "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_174134_019393",
+  "current_session": "sess_20251219_192212_167369",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T17:21:59.541179Z",
-  "cost_total_usd": 8.2566782,
+  "updated_at": "2025-12-19T17:43:56.028302Z",
+  "cost_total_usd": 8.93659245,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 7.7432139499999995
+    "IMPLEMENTATION": 8.423128199999999
   }
 }

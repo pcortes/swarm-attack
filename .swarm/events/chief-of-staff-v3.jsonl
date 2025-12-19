@@ -73,3 +73,15 @@
 {"ts": "2025-12-19T17:28:32.500327Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_172832_499322"}
 {"ts": "2025-12-19T17:35:23.162602Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_173523_161591"}
 {"ts": "2025-12-19T17:41:34.020739Z", "event": "issue_started", "issue": 11, "session": "sess_20251219_174134_019393"}
+{"ts": "2025-12-19T17:43:51.944515Z", "event": "issue_done", "issue": 11, "commit": "082de2128a80a86fb56ec1360673a96b91818016", "cost_usd": 0.6799142499999999}
+{"ts": "2025-12-19T17:45:04.700285Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_174504_699264"}
+{"ts": "2025-12-19T17:55:05.833881Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_175505_832839"}
+{"ts": "2025-12-19T18:01:34.873122Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_180134_872088"}
+{"ts": "2025-12-19T18:05:39.052654Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_180539_051535"}
+{"ts": "2025-12-19T18:20:54.504493Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_182054_502894"}
+{"ts": "2025-12-19T18:25:09.177039Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_182509_175870"}
+{"ts": "2025-12-19T18:40:52.712329Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_184052_711047"}
+{"ts": "2025-12-19T19:04:11.087236Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_190411_086110"}
+{"ts": "2025-12-19T19:11:38.306565Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_191138_305157"}
+{"ts": "2025-12-19T19:17:03.601993Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_191703_600905"}
+{"ts": "2025-12-19T19:22:12.168415Z", "event": "issue_started", "issue": 32, "session": "sess_20251219_192212_167369"}

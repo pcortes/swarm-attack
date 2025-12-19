@@ -1,0 +1,21 @@
+{
+  "session_id": "sess_20251219_190411_086110",
+  "feature_id": "chief-of-staff-v3",
+  "issue_number": 32,
+  "started_at": "2025-12-19T19:04:11.086133Z",
+  "status": "complete",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-19T19:08:08.619772Z",
+      "commit": null,
+      "cost_usd": 0.6427103
+    }
+  ],
+  "ended_at": "2025-12-19T19:08:08.621500Z",
+  "end_status": "failed",
+  "cost_usd": 0.6427103,
+  "worktree_path": null,
+  "commits": []
+}
