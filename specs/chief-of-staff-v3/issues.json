@@ -539,6 +539,54 @@
       "order": 35,
       "automation_type": "automated",
       "parent_issue": 24
+    },
+    {
+      "title": "Implement core loop for _execute_goals_continue_on_block method",
+      "body": "## Description\n\nImplement the core execution loop that iterates through ready goals using a DependencyGraph. This handles the main loop structure that finds ready goals, executes them one at a time, and tracks completion.\n\n## Acceptance Criteria\n\n- [ ] `_execute_goals_continue_on_block` method signature: `(goals: list[DailyGoal], budget_usd: float, session: AutopilotSession) -> tuple[int, float, set[str]]`\n- [ ] Method builds `DependencyGraph.from_goals(goals)` at start\n- [ ] Method iteratively calls `graph.get_ready_goals(completed, blocked)` until no ready goals remain\n- [ ] Method executes first ready goal via `_execute_goal()` in each iteration\n- [ ] Method handles empty goals list by returning `(0, 0.0, set())`\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Use existing `DependencyGraph` class and its `get_ready_goals()` method\n- Pattern Reference: See existing `start()` method lines 744-887",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        28
+      ],
+      "order": 36,
+      "automation_type": "automated",
+      "parent_issue": 29
+    },
+    {
+      "title": "Implement goal state tracking and hiccup detection for continue-on-block",
+      "body": "## Description\n\nImplement the goal state tracking logic that marks goals as completed or blocked, tracks metrics (goals_completed, total_cost), and sets the is_hiccup flag on failed goals.\n\n## Acceptance Criteria\n\n- [ ] Track completed and blocked goal IDs in separate sets\n- [ ] On success: set `goal.status = GoalStatus.COMPLETE`, add to completed set, increment `goals_completed`\n- [ ] On failure: set `goal.status = GoalStatus.BLOCKED`, set `goal.is_hiccup = True`, add to blocked set\n- [ ] Accumulate `total_cost` from each `result.cost_usd`\n- [ ] Return `(goals_completed, total_cost, blocked)` tuple when done\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Uses `GoalStatus.COMPLETE` and `GoalStatus.BLOCKED` from `goal_tracker` module\n- Pattern Reference: See `start()` method lines 855-860 for status update pattern",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        36
+      ],
+      "order": 37,
+      "automation_type": "automated",
+      "parent_issue": 29
+    },
+    {
+      "title": "Implement budget checking and callbacks for continue-on-block",
+      "body": "## Description\n\nAdd budget checking before each goal execution and invoke the appropriate callbacks (on_goal_start, on_goal_complete) during the execution loop.\n\n## Acceptance Criteria\n\n- [ ] Check `remaining_budget = budget_usd - total_cost` before each goal execution\n- [ ] Break loop if `remaining_budget < self.config.min_execution_budget`\n- [ ] Call `self.on_goal_start(goal)` callback before execution if set\n- [ ] Call `self.on_goal_complete(goal, result)` callback after execution if set\n- [ ] Update `session.total_cost_usd` and `checkpoint_system.update_daily_cost()` after each goal\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Pattern Reference: See `start()` method lines 830-869 for callback and budget check pattern\n- Uses `self.config.min_execution_budget` for budget threshold",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        37
+      ],
+      "order": 38,
+      "automation_type": "automated",
+      "parent_issue": 29
     }
   ]
 }

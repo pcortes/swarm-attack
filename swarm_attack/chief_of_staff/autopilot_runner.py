@@ -646,6 +646,101 @@ class AutopilotRunner:
 
         return result
 
+    def _execute_goals_continue_on_block(
+        self,
+        goals: list[DailyGoal],
+        budget_usd: float,
+        session: AutopilotSession,
+    ) -> tuple[int, float, set[str]]:
+        """Execute goals using continue-on-block strategy.
+
+        This method executes goals iteratively, skipping blocked goals and
+        continuing with independent goals that are ready to execute.
+
+        The method:
+        1. Builds a DependencyGraph from the goals
+        2. Iteratively finds ready goals (not completed, not blocked, dependencies met)
+        3. Executes ready goals one at a time
+        4. Marks failed goals as blocked and sets is_hiccup=True
+        5. Continues until no ready goals remain (all completed or blocked)
+
+        Args:
+            goals: List of DailyGoal objects to execute.
+            budget_usd: Maximum budget for this execution run.
+            session: AutopilotSession for context and state tracking.
+
+        Returns:
+            Tuple of (goals_completed, total_cost, blocked_goal_ids):
+            - goals_completed: Number of goals that succeeded
+            - total_cost: Total cost in USD across all executed goals
+            - blocked_goal_ids: Set of goal IDs that failed/are blocked
+        """
+        # Handle empty goals list
+        if not goals:
+            return (0, 0.0, set())
+
+        # Build dependency graph from goals
+        graph = DependencyGraph.from_goals(goals)
+
+        # Track completed and blocked goal IDs
+        completed: set[str] = set()
+        blocked: set[str] = set()
+
+        # Track metrics
+        goals_completed = 0
+        total_cost = 0.0
+
+        # Iteratively execute ready goals
+        while True:
+            # Get goals that are ready to execute
+            ready_goals = graph.get_ready_goals(completed, blocked)
+
+            # If no ready goals, we're done
+            if not ready_goals:
+                break
+
+            # Execute the first ready goal
+            goal = ready_goals[0]
+
+            # Check budget before execution
+            remaining_budget = budget_usd - total_cost
+            if remaining_budget < self.config.min_execution_budget:
+                # Not enough budget to continue
+                break
+
+            # Callback before execution
+            if self.on_goal_start:
+                self.on_goal_start(goal)
+
+            # Execute the goal
+            result = self._execute_goal(goal)
+
+            # Update cost tracking
+            total_cost += result.cost_usd
+
+            # Update session cost
+            session.total_cost_usd = total_cost
+
+            # Update checkpoint system daily cost
+            self.checkpoint_system.update_daily_cost(result.cost_usd)
+
+            if result.success:
+                # Goal succeeded
+                goal.status = GoalStatus.COMPLETE
+                completed.add(goal.goal_id)
+                goals_completed += 1
+            else:
+                # Goal failed - mark as blocked and create hiccup
+                goal.status = GoalStatus.BLOCKED
+                goal.is_hiccup = True
+                blocked.add(goal.goal_id)
+
+            # Callback after execution
+            if self.on_goal_complete:
+                self.on_goal_complete(goal, result)
+
+        return (goals_completed, total_cost, blocked)
+
     def start(
         self,
         goals: list[DailyGoal],
