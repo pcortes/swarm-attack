@@ -21,24 +21,53 @@ class CampaignState(Enum):
 
 @dataclass
 class Milestone:
-    """A milestone within a campaign."""
-    milestone_id: str
-    name: str
-    description: str
-    target_day: int
-    success_criteria: list[str]
+    """A milestone within a campaign.
+    
+    Supports two interfaces:
+    - New (test-compatible): id, description, target_date, completed
+    - Old (production): milestone_id, name, description, target_day, success_criteria, status, completed_at
+    """
+    # New interface fields (test-compatible)
+    id: str = ""
+    description: str = ""
+    target_date: Optional[date] = None
+    completed: bool = False
+    
+    # Old interface fields (production)
+    milestone_id: str = ""
+    name: str = ""
+    target_day: int = 0
+    success_criteria: list[str] = field(default_factory=list)
     status: str = "pending"
     completed_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        """Sync old and new interface fields."""
+        # If id is set but milestone_id isn't, copy it
+        if self.id and not self.milestone_id:
+            self.milestone_id = self.id
+        # If milestone_id is set but id isn't, copy it
+        if self.milestone_id and not self.id:
+            self.id = self.milestone_id
+        
+        # Sync completed status
+        if self.completed and self.status == "pending":
+            self.status = "completed"
+        if self.status == "completed" and not self.completed:
+            self.completed = True
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize milestone to dictionary."""
         return {
-            "milestone_id": self.milestone_id,
+            "milestone_id": self.milestone_id or self.id,
+            "id": self.id or self.milestone_id,
             "name": self.name,
             "description": self.description,
             "target_day": self.target_day,
+            "target_date": self.target_date.isoformat() if self.target_date else None,
             "success_criteria": self.success_criteria,
             "status": self.status,
+            "completed": self.completed,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
         }
 
@@ -48,24 +77,40 @@ class Milestone:
         completed_at = None
         if data.get("completed_at"):
             completed_at = datetime.fromisoformat(data["completed_at"])
+        
+        target_date = None
+        if data.get("target_date"):
+            if isinstance(data["target_date"], str):
+                target_date = date.fromisoformat(data["target_date"])
+            else:
+                target_date = data["target_date"]
+        
         return cls(
-            milestone_id=data["milestone_id"],
-            name=data["name"],
-            description=data["description"],
-            target_day=data["target_day"],
-            success_criteria=data["success_criteria"],
+            id=data.get("id", data.get("milestone_id", "")),
+            milestone_id=data.get("milestone_id", data.get("id", "")),
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            target_day=data.get("target_day", 0),
+            target_date=target_date,
+            success_criteria=data.get("success_criteria", []),
             status=data.get("status", "pending"),
+            completed=data.get("completed", False),
             completed_at=completed_at,
         )
 
 
 @dataclass
 class DayPlan:
-    """A plan for a single day within a campaign."""
-    day_number: int
-    date: date
-    goals: list[str]
-    budget_usd: float
+    """A plan for a single day within a campaign.
+    
+    Supports two interfaces:
+    - New (test-compatible): date, goals
+    - Old (production): day_number, date, goals, budget_usd, status, actual_cost_usd, notes
+    """
+    date: date = field(default_factory=date.today)
+    goals: list[str] = field(default_factory=list)
+    day_number: int = 0
+    budget_usd: float = 0.0
     status: str = "pending"
     actual_cost_usd: float = 0.0
     notes: str = ""
@@ -85,14 +130,14 @@ class DayPlan:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DayPlan":
         """Deserialize day plan from dictionary."""
-        plan_date = data["date"]
+        plan_date = data.get("date", date.today())
         if isinstance(plan_date, str):
             plan_date = date.fromisoformat(plan_date)
         return cls(
-            day_number=data["day_number"],
+            day_number=data.get("day_number", 0),
             date=plan_date,
-            goals=data["goals"],
-            budget_usd=data["budget_usd"],
+            goals=data.get("goals", []),
+            budget_usd=data.get("budget_usd", 0.0),
             status=data.get("status", "pending"),
             actual_cost_usd=data.get("actual_cost_usd", 0.0),
             notes=data.get("notes", ""),
@@ -101,20 +146,38 @@ class DayPlan:
 
 @dataclass
 class Campaign:
-    """A multi-day campaign for feature development or bug fixing."""
-    campaign_id: str
-    name: str
-    description: str
-    start_date: date
-    planned_days: int
-    total_budget_usd: float
+    """A multi-day campaign for feature development or bug fixing.
+    
+    Supports two interfaces:
+    - New (test-compatible): id, name, state, milestones, day_plans, created_at
+    - Old (production): campaign_id, name, description, start_date, planned_days, etc.
+    """
+    # New interface fields (test-compatible)
+    id: str = ""
+    name: str = ""
     state: CampaignState = CampaignState.PLANNING
-    current_day: int = 0
     milestones: list[Milestone] = field(default_factory=list)
     day_plans: list[DayPlan] = field(default_factory=list)
-    spent_usd: float = 0.0
     created_at: datetime = field(default_factory=datetime.now)
+    
+    # Old interface fields (production)
+    campaign_id: str = ""
+    description: str = ""
+    start_date: date = field(default_factory=date.today)
+    planned_days: int = 0
+    total_budget_usd: float = 0.0
+    current_day: int = 0
+    spent_usd: float = 0.0
     updated_at: datetime = field(default_factory=datetime.now)
+
+    def __post_init__(self) -> None:
+        """Sync old and new interface fields."""
+        # If id is set but campaign_id isn't, copy it
+        if self.id and not self.campaign_id:
+            self.campaign_id = self.id
+        # If campaign_id is set but id isn't, copy it
+        if self.campaign_id and not self.id:
+            self.id = self.campaign_id
 
     def days_behind(self) -> int:
         """Calculate how many days behind schedule the campaign is.
@@ -162,7 +225,8 @@ class Campaign:
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign to dictionary."""
         return {
-            "campaign_id": self.campaign_id,
+            "id": self.id or self.campaign_id,
+            "campaign_id": self.campaign_id or self.id,
             "name": self.name,
             "description": self.description,
             "start_date": self.start_date.isoformat(),
@@ -180,7 +244,7 @@ class Campaign:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Campaign":
         """Deserialize campaign from dictionary."""
-        start_date = data["start_date"]
+        start_date = data.get("start_date", date.today())
         if isinstance(start_date, str):
             start_date = date.fromisoformat(start_date)
         
@@ -200,12 +264,13 @@ class Campaign:
         day_plans = [DayPlan.from_dict(d) for d in data.get("day_plans", [])]
         
         return cls(
-            campaign_id=data["campaign_id"],
-            name=data["name"],
-            description=data["description"],
+            id=data.get("id", data.get("campaign_id", "")),
+            campaign_id=data.get("campaign_id", data.get("id", "")),
+            name=data.get("name", ""),
+            description=data.get("description", ""),
             start_date=start_date,
-            planned_days=data["planned_days"],
-            total_budget_usd=data["total_budget_usd"],
+            planned_days=data.get("planned_days", 0),
+            total_budget_usd=data.get("total_budget_usd", 0.0),
             state=CampaignState(data.get("state", "planning")),
             current_day=data.get("current_day", 0),
             milestones=milestones,
@@ -248,7 +313,8 @@ class CampaignStore:
         Args:
             campaign: The campaign to save
         """
-        file_path = self._campaign_path(campaign.campaign_id)
+        campaign_id = campaign.campaign_id or campaign.id
+        file_path = self._campaign_path(campaign_id)
         campaign.updated_at = datetime.now()
         data = campaign.to_dict()
         content = json.dumps(data, indent=2)
@@ -293,5 +359,28 @@ class CampaignStore:
                 campaign = await self.load(campaign_id)
                 if campaign is not None:
                     campaigns.append(campaign)
+        
+        return campaigns
+    
+    def list_all_sync(self) -> list[Campaign]:
+        """Synchronous version of list_all for compatibility with WeeklyPlanner.
+        
+        Returns:
+            List of all stored campaigns
+        """
+        campaigns: list[Campaign] = []
+        
+        if not self._campaigns_dir.exists():
+            return campaigns
+        
+        for file_path in self._campaigns_dir.iterdir():
+            if file_path.suffix == ".json":
+                try:
+                    with open(file_path, "r") as f:
+                        content = f.read()
+                    data = json.loads(content)
+                    campaigns.append(Campaign.from_dict(data))
+                except (json.JSONDecodeError, IOError):
+                    continue
         
         return campaigns
