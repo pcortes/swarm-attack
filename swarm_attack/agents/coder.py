@@ -57,6 +57,17 @@ class CoderAgent(BaseAgent):
         "cos-phase8-recovery",
     ])
 
+    # Standard library modules that should be skipped during import validation
+    # These are not project dependencies and don't need to be generated
+    STDLIB_MODULES = frozenset([
+        'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',
+        'enum', 'functools', 'io', 'itertools', 'json', 'logging', 'math',
+        'os', 'pathlib', 'pickle', 'random', 're', 'shutil', 'string', 'sys',
+        'tempfile', 'time', 'typing', 'unittest', 'uuid', 'warnings',
+        # Test frameworks
+        'pytest', 'mock', 'unittest.mock',
+    ])
+
     def __init__(
         self,
         config: SwarmConfig,
@@ -754,7 +765,7 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
                 module = node.module
 
                 # Skip standard library and test framework imports
-                if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):
+                if module.split('.')[0] in self.STDLIB_MODULES:
                     continue
 
                 # Get imported names (handle aliases)
@@ -771,7 +782,7 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
                 for alias in node.names:
                     module = alias.name
                     # Skip standard library
-                    if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):
+                    if module.split('.')[0] in self.STDLIB_MODULES:
                         continue
                     file_path = module.replace(".", "/") + ".py"
                     # For bare imports, we import the module itself
@@ -793,7 +804,7 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
             module = match.group(1)
             names_block = match.group(2)
 
-            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):
+            if module.split('.')[0] in self.STDLIB_MODULES:
                 continue
 
             # Parse names from block (handles commas, newlines, trailing commas)
@@ -807,7 +818,7 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
             module = match.group(1)
             names_str = match.group(2)
 
-            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):
+            if module.split('.')[0] in self.STDLIB_MODULES:
                 continue
 
             # Check if this was already matched by multiline pattern

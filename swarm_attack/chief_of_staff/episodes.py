@@ -35,6 +35,8 @@ class Episode:
     checkpoints_triggered: list[str] = field(default_factory=list)
     error: Optional[str] = None
     notes: Optional[str] = None
+    retry_count: int = 0
+    recovery_level: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert Episode to dictionary for serialization."""
@@ -53,6 +55,8 @@ class Episode:
             checkpoints_triggered=data.get("checkpoints_triggered", []),
             error=data.get("error"),
             notes=data.get("notes"),
+            retry_count=data.get("retry_count", 0),
+            recovery_level=data.get("recovery_level"),
         )
 
 
