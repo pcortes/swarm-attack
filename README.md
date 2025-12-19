@@ -202,6 +202,8 @@ your-project/
 │       ├── coder/          # Implementation Agent (TDD)
 │       ├── verifier/
 │       ├── issue-creator/
+│       ├── issue-splitter/ # Auto-splits complex issues
+│       ├── complexity-gate/
 │       ├── feature-spec-author/
 │       ├── feature-spec-critic/
 │       ├── feature-spec-moderator/
@@ -348,14 +350,15 @@ swarm-attack bug status bug-id
 | **SpecCritic** | Reviews specs and scores them |
 | **SpecModerator** | Improves specs based on feedback |
 | **IssueCreator** | Creates GitHub issues with Interface Contracts and sizing guidelines |
-| **ComplexityGate** | Estimates issue complexity; rejects oversized issues with split suggestions |
+| **ComplexityGate** | Estimates issue complexity; triggers auto-split for oversized issues |
+| **IssueSplitter** | Automatically splits complex issues into 2-4 smaller sub-issues |
 | **Implementation Agent** | TDD in single context (tests + code + iteration) with dynamic max_turns |
 | **Verifier** | Validates implementations and creates commits |
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
 
-## Complexity Gate
+## Complexity Gate & Auto-Split
 
 The Complexity Gate prevents implementation timeouts by validating issue complexity before burning expensive tokens.
 
@@ -367,7 +370,49 @@ The Complexity Gate prevents implementation timeouts by validating issue complex
 | Large | 9-12 | 6-8 |
 | **Too Large** | >12 | >8 |
 
-Issues exceeding limits are rejected with actionable split suggestions (by layer, operation, trigger, or phase).
+### Auto-Split (NEW)
+
+When an issue exceeds complexity limits, the system **automatically splits it** into smaller sub-issues:
+
+```
+ComplexityGate detects: needs_split=True
+         ↓
+IssueSplitterAgent creates 2-4 sub-issues
+         ↓
+Parent issue marked as SPLIT
+         ↓
+Dependencies rewired to child issues
+         ↓
+Implementation continues with first sub-issue
+```
+
+**Split Strategies:**
+- **By Layer**: Separate model/API/UI components
+- **By Operation**: Separate CRUD operations
+- **By Criteria**: Group related acceptance criteria
+- **By Phase**: Separate setup/core/integration
+
+**Task States:**
+| State | Meaning |
+|-------|---------|
+| READY | Can be worked on |
+| IN_PROGRESS | Currently being implemented |
+| DONE | Successfully completed |
+| BLOCKED | Failed after retries |
+| SKIPPED | Dependency was blocked |
+| **SPLIT** | Too complex, split into child issues |
+
+**Parent-Child Relationship:**
+```
+Before split:
+  #3 → #5 → #8
+
+After split (#5 → #10, #11, #12):
+  #3 → #10 → #11 → #12 → #8
+```
+- First child inherits parent's dependencies
+- Children are chained sequentially
+- Dependents rewired to last child
 
 ## License
 

@@ -5,14 +5,16 @@ with checkpoint-based pause/resume capability. It integrates with:
 - CheckpointSystem for trigger detection (cost, time, errors, approvals)
 - AutopilotSessionStore for session persistence
 - GoalTracker for goal management
+- Orchestrator for feature/spec execution (Chief of Staff v3)
+- BugOrchestrator for bug execution (Chief of Staff v3)
 
-Current Implementation: Option B+ (Enhanced Stub)
+Implementation: Real Execution (v3)
 - Full checkpoint trigger validation with real logic
 - Goal progress tracking and persistence
 - Pause/resume functionality
-- Stub execution (marks goals complete without calling orchestrators)
-
-Future: Real execution via Orchestrator and BugOrchestrator integration.
+- Real execution via Orchestrator.run_issue_session() for features
+- Real execution via BugOrchestrator.fix() for bugs
+- Real execution via Orchestrator.run_spec_pipeline() for specs
 """
 
 from __future__ import annotations
@@ -82,12 +84,13 @@ class AutopilotRunner:
     3. Goal-by-goal execution with progress tracking
     4. Pause on checkpoint triggers, resume from stored state
 
-    Current Implementation (Option B+ Stub):
+    Implementation (v3 Real Execution):
     - Validates all checkpoint logic
     - Tracks goal progress correctly
     - Persists sessions for pause/resume
-    - Does NOT call Orchestrator/BugOrchestrator (stub execution)
-    - Logs what WOULD be executed for debugging
+    - Calls Orchestrator.run_issue_session() for feature goals
+    - Calls BugOrchestrator.fix() for bug goals
+    - Calls Orchestrator.run_spec_pipeline() for spec goals
 
     Usage:
         runner = AutopilotRunner(

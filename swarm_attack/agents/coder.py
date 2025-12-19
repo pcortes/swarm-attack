@@ -17,6 +17,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+import ast
+
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
 from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
 from swarm_attack.models import IssueOutput
@@ -52,6 +54,7 @@ class CoderAgent(BaseAgent):
     INTERNAL_FEATURES = frozenset([
         "chief-of-staff",
         "chief-of-staff-v2",
+        "cos-phase8-recovery",
     ])
 
     def __init__(
@@ -719,6 +722,225 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
         return "\n".join(lines)
 
+    def _extract_imports_from_tests_ast(self, test_content: str) -> list[tuple[str, str, list[str]]]:
+        """
+        Extract import statements from test file using AST parsing.
+
+        Uses Python's ast module for robust parsing that handles:
+        - Multi-line imports with parentheses
+        - Aliased imports (import X as Y)
+        - Regular imports (import module)
+        - From imports (from module import name)
+
+        Args:
+            test_content: Content of the test file.
+
+        Returns:
+            List of tuples: (module_path, file_path, imported_names)
+            e.g., [("swarm_attack.chief_of_staff.recovery", "swarm_attack/chief_of_staff/recovery.py", ["RetryStrategy", "ErrorCategory"])]
+        """
+        imports = []
+
+        try:
+            tree = ast.parse(test_content)
+        except SyntaxError:
+            # Fall back to regex if AST parsing fails
+            return self._extract_imports_from_tests_regex(test_content)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module is None:
+                    continue
+                module = node.module
+
+                # Skip standard library and test framework imports
+                if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):
+                    continue
+
+                # Get imported names (handle aliases)
+                imported_names = []
+                for alias in node.names:
+                    imported_names.append(alias.name)  # Use original name, not alias
+
+                # Convert module path to file path
+                file_path = module.replace(".", "/") + ".py"
+
+                imports.append((module, file_path, imported_names))
+
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    module = alias.name
+                    # Skip standard library
+                    if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):
+                        continue
+                    file_path = module.replace(".", "/") + ".py"
+                    # For bare imports, we import the module itself
+                    imports.append((module, file_path, [module.split('.')[-1]]))
+
+        return imports
+
+    def _extract_imports_from_tests_regex(self, test_content: str) -> list[tuple[str, str, list[str]]]:
+        """
+        Fallback regex-based import extraction for when AST parsing fails.
+
+        Handles common patterns including multi-line imports with parentheses.
+        """
+        imports = []
+
+        # Pattern for multi-line imports: from module import (\n    Name1,\n    Name2,\n)
+        multiline_pattern = r"from\s+([\w.]+)\s+import\s+\(([^)]+)\)"
+        for match in re.finditer(multiline_pattern, test_content, re.DOTALL):
+            module = match.group(1)
+            names_block = match.group(2)
+
+            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):
+                continue
+
+            # Parse names from block (handles commas, newlines, trailing commas)
+            imported_names = [n.strip().split(' as ')[0] for n in re.split(r'[,\n]', names_block) if n.strip() and not n.strip().startswith('#')]
+            file_path = module.replace(".", "/") + ".py"
+            imports.append((module, file_path, imported_names))
+
+        # Pattern for single-line imports: from module import X, Y, Z
+        singleline_pattern = r"from\s+([\w.]+)\s+import\s+([^(\n]+)"
+        for match in re.finditer(singleline_pattern, test_content):
+            module = match.group(1)
+            names_str = match.group(2)
+
+            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):
+                continue
+
+            # Check if this was already matched by multiline pattern
+            file_path = module.replace(".", "/") + ".py"
+            if any(fp == file_path for _, fp, _ in imports):
+                continue
+
+            imported_names = [n.strip().split(' as ')[0] for n in names_str.split(',') if n.strip()]
+            imports.append((module, file_path, imported_names))
+
+        return imports
+
+    def _validate_test_imports_satisfied(
+        self,
+        test_content: str,
+        generated_files: dict[str, str],
+    ) -> tuple[bool, list[str]]:
+        """
+        Validate that all imports in test content are satisfied by generated files.
+
+        This catches the case where tests are generated but implementation is incomplete,
+        which would cause ImportError at test collection time.
+
+        Args:
+            test_content: Content of the test file (can be newly generated or from disk).
+            generated_files: Files generated by this coder invocation.
+
+        Returns:
+            Tuple of (all_satisfied, missing_items) where missing_items is a list
+            of "module_path:ClassName" strings for imports that cannot be found.
+        """
+        missing = []
+        imports = self._extract_imports_from_tests_ast(test_content)
+
+        for module_name, file_path, imported_names in imports:
+            # Check if file exists in generated files
+            file_content = None
+
+            # Try exact path match first
+            if file_path in generated_files:
+                file_content = generated_files[file_path]
+
+            # Try path variations (with/without leading directories)
+            if not file_content:
+                for gen_path, gen_content in generated_files.items():
+                    if gen_path.endswith(file_path) or file_path.endswith(gen_path):
+                        file_content = gen_content
+                        break
+                    # Also try matching just the filename parts
+                    if gen_path.replace('/', '.').rstrip('.py') == module_name or \
+                       module_name.endswith(gen_path.replace('/', '.').rstrip('.py')):
+                        file_content = gen_content
+                        break
+
+            # Also try reading from disk if not in generated files
+            if not file_content:
+                disk_path = Path(self.config.repo_root) / file_path
+                if file_exists(disk_path):
+                    try:
+                        file_content = read_file(disk_path)
+                    except Exception:
+                        pass
+
+            if not file_content:
+                # Entire module file is missing
+                for name in imported_names:
+                    missing.append(f"{file_path}:{name}")
+                continue
+
+            # Check that each imported name exists in the file
+            for name in imported_names:
+                # Use AST to find definitions for accurate matching
+                name_found = False
+                try:
+                    impl_tree = ast.parse(file_content)
+                    for node in ast.walk(impl_tree):
+                        if isinstance(node, ast.ClassDef) and node.name == name:
+                            name_found = True
+                            break
+                        if isinstance(node, ast.FunctionDef) and node.name == name:
+                            name_found = True
+                            break
+                        if isinstance(node, ast.Assign):
+                            for target in node.targets:
+                                if isinstance(target, ast.Name) and target.id == name:
+                                    name_found = True
+                                    break
+                except SyntaxError:
+                    # Fall back to regex if AST fails
+                    class_pattern = rf"^class\s+{re.escape(name)}\b"
+                    func_pattern = rf"^def\s+{re.escape(name)}\b"
+                    var_pattern = rf"^{re.escape(name)}\s*="
+                    if (re.search(class_pattern, file_content, re.MULTILINE) or
+                        re.search(func_pattern, file_content, re.MULTILINE) or
+                        re.search(var_pattern, file_content, re.MULTILINE)):
+                        name_found = True
+
+                if not name_found:
+                    missing.append(f"{file_path}:{name}")
+
+        return (len(missing) == 0, missing)
+
+    def _extract_test_files_from_generated(self, files: dict[str, str]) -> dict[str, str]:
+        """
+        Extract test files from the generated files dict.
+
+        Identifies files that are test files by:
+        - Path contains 'test' or 'tests'
+        - Filename starts with 'test_' or ends with '_test.py'
+
+        Args:
+            files: Dictionary mapping file paths to contents.
+
+        Returns:
+            Dictionary of test file paths to contents.
+        """
+        test_files = {}
+        for path, content in files.items():
+            path_lower = path.lower()
+            filename = path.split('/')[-1].lower()
+
+            is_test = (
+                'test' in path_lower or
+                filename.startswith('test_') or
+                filename.endswith('_test.py') or
+                filename.endswith('_test.dart')
+            )
+
+            if is_test:
+                test_files[path] = content
+
+        return test_files
+
     def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:
         """
         Extract classes/functions from written files.
@@ -917,6 +1139,74 @@ DO NOT use code fences (```). DO NOT add explanatory text before the files.
 Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 """
 
+    def _extract_file_paths_from_issue_body(self, issue_body: str) -> tuple[list[str], list[str]]:
+        """
+        Extract file paths from the issue body's UPDATE and CREATE sections.
+
+        Parses the issue body for patterns like:
+        - **UPDATE:**
+          - `swarm_attack/chief_of_staff/checkpoints.py`
+          - `swarm_attack/cli.py` (preserve: existing code)
+        - **CREATE:**
+          - `swarm_attack/chief_of_staff/recovery.py`
+
+        Args:
+            issue_body: The issue body text.
+
+        Returns:
+            Tuple of (update_paths, create_paths).
+        """
+        update_paths: list[str] = []
+        create_paths: list[str] = []
+
+        if not issue_body:
+            return update_paths, create_paths
+
+        # Split by UPDATE: and CREATE: sections
+        lines = issue_body.split('\n')
+        current_section = None
+
+        for line in lines:
+            line_stripped = line.strip()
+
+            # Detect section headers
+            if "**UPDATE:**" in line or "UPDATE:" in line_stripped:
+                current_section = "update"
+                continue
+            elif "**CREATE:**" in line or "CREATE:" in line_stripped:
+                current_section = "create"
+                continue
+            elif line_stripped.startswith("##") or line_stripped.startswith("**") and ":" in line_stripped:
+                # New section header that's not UPDATE/CREATE
+                if current_section is not None and "UPDATE" not in line_stripped and "CREATE" not in line_stripped:
+                    current_section = None
+                continue
+
+            # Extract file paths from list items in current section
+            if current_section and line_stripped.startswith("- "):
+                # Extract path from patterns like:
+                # - `swarm_attack/foo.py`
+                # - `swarm_attack/foo.py` (preserve: bar)
+                # - swarm_attack/foo.py
+                path_match = re.search(r'`([^`]+\.\w+)`', line_stripped)
+                if path_match:
+                    file_path = path_match.group(1).strip()
+                    if current_section == "update":
+                        update_paths.append(file_path)
+                    else:
+                        create_paths.append(file_path)
+                else:
+                    # Try without backticks
+                    path_match = re.search(r'^-\s+(\S+\.\w+)', line_stripped)
+                    if path_match:
+                        file_path = path_match.group(1).strip()
+                        if current_section == "update":
+                            update_paths.append(file_path)
+                        else:
+                            create_paths.append(file_path)
+
+        return update_paths, create_paths
+
     def _extract_implementation_paths_from_tests(self, test_content: str) -> list[str]:
         """
         Extract expected file paths from test content.
@@ -950,14 +1240,22 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         return paths
 
     def _read_existing_implementation(
-        self, test_content: str, expected_modules: list[str]
+        self,
+        test_content: str,
+        expected_modules: list[str],
+        issue_body: str = "",
     ) -> dict[str, str]:
         """
         Read existing implementation files that the coder previously created.
 
+        CRITICAL: This method now also parses the issue body to find files marked
+        for UPDATE. This prevents destructive rewrites by ensuring the coder sees
+        existing code before generating new code.
+
         Args:
             test_content: Test file content to extract expected paths.
             expected_modules: Module paths from test imports.
+            issue_body: The issue body to parse for UPDATE file paths.
 
         Returns:
             Dictionary mapping file paths to their contents.
@@ -974,6 +1272,16 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # From test assertions (Path.cwd() / "lib" / ... patterns)
         for path in self._extract_implementation_paths_from_tests(test_content):
             paths_to_check.add(path)
+
+        # CRITICAL FIX: From issue body's UPDATE section
+        # This ensures files marked for UPDATE are read and included in the prompt
+        update_paths, _ = self._extract_file_paths_from_issue_body(issue_body)
+        for path in update_paths:
+            paths_to_check.add(path)
+            self._log("coder_update_path_detected", {
+                "path": path,
+                "source": "issue_body_update_section",
+            })
 
         # Read each file if it exists
         for rel_path in paths_to_check:
@@ -1144,9 +1452,11 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 
         # CRITICAL: Always read existing implementation to preserve working code
         # This prevents destructive rewrites on both first attempts AND retries
+        # Now also parses issue body for UPDATE file paths
         existing_implementation: dict[str, str] = {}
+        issue_body = issue.get("body", "")
         existing_implementation = self._read_existing_implementation(
-            test_content, expected_modules
+            test_content, expected_modules, issue_body
         )
         if existing_implementation:
             self._log("coder_existing_impl", {
@@ -1209,6 +1519,48 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         for dir_file, content in directory_files.items():
             if dir_file not in files:
                 files[dir_file] = content
+
+        # CRITICAL: Validate that test imports are satisfied by implementation
+        # This catches incomplete implementations before we write files and return success.
+        # KEY FIX: Check BOTH pre-existing test file (test_content) AND newly generated tests.
+        # The bug occurred because in TDD mode, tests are generated in the same LLM response
+        # and test_content (from disk) is empty - so we must check generated test files too.
+        generated_test_files = self._extract_test_files_from_generated(files)
+        all_test_content_to_validate = []
+
+        # Include pre-existing test file content if available
+        if test_content:
+            all_test_content_to_validate.append(("disk", str(test_path), test_content))
+
+        # Include any newly generated test files
+        for test_path_gen, test_content_gen in generated_test_files.items():
+            all_test_content_to_validate.append(("generated", test_path_gen, test_content_gen))
+
+        # Validate each test file's imports
+        all_missing = []
+        for source, path, content in all_test_content_to_validate:
+            imports_ok, missing = self._validate_test_imports_satisfied(content, files)
+            if not imports_ok:
+                self._log("coder_incomplete_implementation", {
+                    "warning": f"Test file imports classes not defined in implementation",
+                    "test_source": source,
+                    "test_path": path,
+                    "missing_imports": missing,
+                }, level="warning")
+                all_missing.extend(missing)
+
+        if all_missing:
+            self._log("coder_validation_failed", {
+                "error": "Generated tests import undefined names",
+                "missing_imports": all_missing,
+                "files_generated": list(files.keys()),
+            }, level="error")
+            return AgentResult.failure_result(
+                f"Incomplete implementation: test file(s) import {len(all_missing)} undefined name(s): "
+                f"{', '.join(all_missing[:5])}"
+                + (f" (+{len(all_missing)-5} more)" if len(all_missing) > 5 else ""),
+                cost_usd=cost,
+            )
 
         # Write implementation files
         files_created: list[str] = []

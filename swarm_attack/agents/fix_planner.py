@@ -262,6 +262,7 @@ Output ONLY valid JSON, no other text.
             result = self.llm.run(
                 prompt,
                 allowed_tools=["Read", "Glob", "Grep"],  # No Bash - read-only planning
+                max_turns=15,  # Planning needs exploration time
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:

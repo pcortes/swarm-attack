@@ -71,6 +71,7 @@ class TaskStage(Enum):
     BLOCKED = auto()                 # Needs human help
     SKIPPED = auto()                 # Skipped due to blocked dependency
     MANUAL_REQUIRED = auto()         # Requires manual human verification (not automatable)
+    SPLIT = auto()                   # Issue was too complex, split into child issues
 
 
 @dataclass
@@ -135,6 +136,8 @@ class TaskRef:
     blocked_reason: Optional[str] = None  # Why this task is blocked (error message)
     outputs: Optional[IssueOutput] = None  # Files/classes created (populated after DONE)
     completion_summary: Optional[str] = None  # Semantic summary after DONE
+    parent_issue: Optional[int] = None  # If this is a sub-issue from splitting
+    child_issues: list[int] = field(default_factory=list)  # Child issues if this was split
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

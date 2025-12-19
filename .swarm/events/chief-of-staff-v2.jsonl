@@ -38,3 +38,17 @@
 {"ts": "2025-12-18T22:42:35.220677Z", "event": "issue_started", "issue": 7, "session": "sess_20251218_224235_219851"}
 {"ts": "2025-12-18T22:45:27.969733Z", "event": "issue_done", "issue": 7, "commit": "3a3c0bf08ddac1ae1e3c77c214d1a0c8530d91a0", "cost_usd": 0.5833457}
 {"ts": "2025-12-18T22:45:45.049129Z", "event": "issue_started", "issue": 8, "session": "sess_20251218_224545_048260"}
+{"ts": "2025-12-18T22:48:46.457297Z", "event": "issue_done", "issue": 8, "commit": "53d04a216bcbfc5f493aee6a7f479acf3a4fc121", "cost_usd": 0.5210708000000001}
+{"ts": "2025-12-18T22:48:56.744251Z", "event": "issue_started", "issue": 9, "session": "sess_20251218_224856_742588"}
+{"ts": "2025-12-18T22:50:12.740759Z", "event": "retry_started", "issue": 9, "attempt": 1}
+{"ts": "2025-12-18T22:55:09.429589Z", "event": "issue_started", "issue": 9, "session": "sess_20251218_225509_428790"}
+{"ts": "2025-12-18T22:56:19.977152Z", "event": "retry_started", "issue": 9, "attempt": 1}
+{"ts": "2025-12-18T22:56:50.839636Z", "event": "retry_started", "issue": 9, "attempt": 2}
+{"ts": "2025-12-18T22:57:23.869095Z", "event": "retry_started", "issue": 9, "attempt": 3}
+{"ts": "2025-12-18T22:57:57.514381Z", "event": "issue_blocked", "issue": 9, "reason": "Max retries exceeded: Issue tests failed: 0 failed, 0 passed", "retries": 3}
+{"ts": "2025-12-18T23:04:25.954295Z", "event": "issue_started", "issue": 10, "session": "sess_20251218_230425_953490"}
+{"ts": "2025-12-18T23:05:44.731313Z", "event": "retry_started", "issue": 10, "attempt": 1}
+{"ts": "2025-12-18T23:06:25.335637Z", "event": "retry_started", "issue": 10, "attempt": 2}
+{"ts": "2025-12-18T23:07:05.812152Z", "event": "retry_started", "issue": 10, "attempt": 3}
+{"ts": "2025-12-18T23:07:45.852024Z", "event": "issue_blocked", "issue": 10, "reason": "Max retries exceeded: Issue tests failed: 1 failed, 22 passed", "retries": 3}
+{"ts": "2025-12-18T23:31:35.601208Z", "event": "issue_started", "issue": 14, "session": "sess_20251218_233135_599731"}

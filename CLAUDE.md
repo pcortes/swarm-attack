@@ -346,3 +346,78 @@ swarm-attack bug unblock bug-id
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
+
+## Chief of Staff (Autonomous Development Partner)
+
+An autonomous AI Tech Lead that manages your daily development workflow with minimal intervention.
+
+### Quick Start
+
+```bash
+# Morning briefing
+swarm-attack cos standup --github
+
+# Run autopilot with budget
+swarm-attack cos autopilot --budget 100
+
+# Check pending checkpoints
+swarm-attack cos checkpoints
+
+# Approve/reject checkpoints
+swarm-attack cos approve <checkpoint-id> --notes "reason"
+swarm-attack cos reject <checkpoint-id> --notes "reason"
+
+# Mid-day status
+swarm-attack cos checkin
+
+# End of day
+swarm-attack cos wrapup
+```
+
+### Checkpoint Triggers
+
+The Chief of Staff pauses for human approval when:
+
+| Trigger | Description |
+|---------|-------------|
+| COST_SINGLE | Single action exceeds cost threshold |
+| COST_CUMULATIVE | Cumulative spending exceeds daily budget |
+| UX_CHANGE | User-facing changes detected |
+| ARCHITECTURE | Structural/architectural changes |
+| SCOPE_CHANGE | Deviation from approved plan |
+| HICCUP | Unexpected errors or blockers |
+
+### Key Components
+
+| Component | Purpose |
+|-----------|---------|
+| **StateGatherer** | Collects repo state (features, bugs, git, GitHub) |
+| **DailyLogManager** | Manages daily logs, standups, decisions |
+| **GoalTracker** | Tracks goals, compares plan vs actual |
+| **AutopilotRunner** | Executes goals with checkpoint gates |
+| **CheckpointStore** | Persists checkpoint decisions |
+
+### Daily Workflow
+
+```
+Morning Standup → Goal Selection → Autopilot Execution
+                                        ↓
+                              Checkpoint triggered?
+                                   ↓        ↓
+                                  Yes       No
+                                   ↓        ↓
+                            Wait for    Continue
+                            approval    execution
+```
+
+### Bug Triage Protocol
+
+When running Chief of Staff and encountering bugs in the tooling itself:
+
+1. **STOP** - Pause Chief of Staff operations
+2. **Analyze** - Use expert agents to root cause the bug
+3. **Report** - Present triage report with fix plan
+4. **Wait** - Get approval before implementing fixes
+5. **Resume** - Continue Chief of Staff operations after fix
+
+See `prompts/CHIEF_OF_STAFF_PROMPT.md` for the full autonomous operation prompt.

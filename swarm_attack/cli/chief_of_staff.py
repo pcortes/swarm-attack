@@ -594,23 +594,39 @@ def next_command(
 
 
 def _get_autopilot_runner():
-    """Get configured AutopilotRunner."""
+    """Get configured AutopilotRunner with real orchestrators."""
     from swarm_attack.chief_of_staff.autopilot_runner import AutopilotRunner
     from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
     from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem
     from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+    from swarm_attack.cli.common import get_config_or_default, init_swarm_directory
+    from swarm_attack.state_store import get_store
+    from swarm_attack.orchestrator import Orchestrator
+    from swarm_attack.bug_orchestrator import BugOrchestrator
 
     project_dir_str = get_project_dir()
     project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
 
-    config = ChiefOfStaffConfig()
-    checkpoint_system = CheckpointSystem(config)
+    # Chief of Staff config for autopilot settings
+    cos_config = ChiefOfStaffConfig()
+    checkpoint_system = CheckpointSystem(cos_config)
     session_store = AutopilotSessionStore(project_dir)
 
+    # Swarm config for orchestrators
+    swarm_config = get_config_or_default()
+    init_swarm_directory(swarm_config)
+    store = get_store(swarm_config)
+
+    # Create orchestrators for real execution
+    orchestrator = Orchestrator(swarm_config, state_store=store)
+    bug_orchestrator = BugOrchestrator(swarm_config)
+
     return AutopilotRunner(
-        config=config,
+        config=cos_config,
         checkpoint_system=checkpoint_system,
         session_store=session_store,
+        orchestrator=orchestrator,
+        bug_orchestrator=bug_orchestrator,
     )
 
 
@@ -796,3 +812,164 @@ def _display_autopilot_result(console: Console, result) -> None:
         console.print(f"\n[red]Error:[/red] {result.error}")
 
     console.print()
+
+
+def _get_checkpoint_store():
+    """Get configured CheckpointStore."""
+    from swarm_attack.chief_of_staff.checkpoints import CheckpointStore
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+    base_path = project_dir / ".swarm" / "chief-of-staff" / "checkpoints"
+    return CheckpointStore(base_path)
+
+
+def _get_checkpoint_system():
+    """Get configured CheckpointSystem."""
+    from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointStore
+    from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+    base_path = project_dir / ".swarm" / "chief-of-staff" / "checkpoints"
+
+    config = ChiefOfStaffConfig()
+    store = CheckpointStore(base_path)
+    return CheckpointSystem(config=config, store=store)
+
+
+@app.command("checkpoints")
+def checkpoints_command() -> None:
+    """List all pending checkpoints.
+
+    Shows pending checkpoints that require human approval.
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        store = _get_checkpoint_store()
+
+        # Run async operation synchronously
+        pending = asyncio.run(store.list_pending())
+
+        console.print()
+        console.print(Panel("[bold]Pending Checkpoints[/bold]", style="yellow"))
+
+        if not pending:
+            console.print("\n[dim]No pending checkpoints.[/dim]")
+        else:
+            for checkpoint in pending:
+                # Display checkpoint info
+                console.print(f"\n[bold cyan]{checkpoint.checkpoint_id}[/bold cyan]")
+                console.print(f"  [bold]Trigger:[/bold] {checkpoint.trigger.value}")
+                console.print(f"  [bold]Goal ID:[/bold] {checkpoint.goal_id}")
+                console.print(f"  [bold]Created:[/bold] {checkpoint.created_at}")
+                console.print(f"  [bold]Context:[/bold] {checkpoint.context[:100]}{'...' if len(checkpoint.context) > 100 else ''}")
+
+                # Show options with recommendations
+                console.print(f"  [bold]Options:[/bold]")
+                for opt in checkpoint.options:
+                    rec_marker = " [green](recommended)[/green]" if opt.is_recommended else ""
+                    console.print(f"    - {opt.label}: {opt.description}{rec_marker}")
+
+                console.print(f"  [bold]Recommendation:[/bold] {checkpoint.recommendation}")
+
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error listing checkpoints: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("approve")
+def approve_command(
+    checkpoint_id: str = typer.Argument(..., help="The checkpoint ID to approve"),
+    notes: Optional[str] = typer.Option(None, "--notes", "-n", help="Approval notes"),
+) -> None:
+    """Approve a pending checkpoint.
+
+    Approves a checkpoint and allows execution to proceed.
+
+    Examples:
+        swarm-attack cos approve chk-abc123
+        swarm-attack cos approve chk-abc123 --notes "Reviewed and approved"
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        system = _get_checkpoint_system()
+
+        # Resolve the checkpoint with "Proceed" option
+        try:
+            checkpoint = asyncio.run(
+                system.resolve_checkpoint(
+                    checkpoint_id=checkpoint_id,
+                    chosen_option="Proceed",
+                    notes=notes or "",
+                )
+            )
+            console.print(f"\n[green]✓ Approved checkpoint: {checkpoint_id}[/green]")
+            console.print(f"  Status: {checkpoint.status}")
+            if notes:
+                console.print(f"  Notes: {notes}")
+            console.print()
+
+        except KeyError:
+            console.print(f"\n[red]Checkpoint not found: {checkpoint_id}[/red]")
+            raise typer.Exit(1)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error approving checkpoint: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("reject")
+def reject_command(
+    checkpoint_id: str = typer.Argument(..., help="The checkpoint ID to reject"),
+    notes: Optional[str] = typer.Option(None, "--notes", "-n", help="Rejection reason"),
+) -> None:
+    """Reject a pending checkpoint.
+
+    Rejects a checkpoint and prevents execution from proceeding.
+
+    Examples:
+        swarm-attack cos reject chk-abc123
+        swarm-attack cos reject chk-abc123 --notes "Too risky, need more review"
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        system = _get_checkpoint_system()
+
+        # Resolve the checkpoint with "Skip" option (rejection)
+        try:
+            checkpoint = asyncio.run(
+                system.resolve_checkpoint(
+                    checkpoint_id=checkpoint_id,
+                    chosen_option="Skip",
+                    notes=notes or "",
+                )
+            )
+            console.print(f"\n[yellow]✗ Rejected checkpoint: {checkpoint_id}[/yellow]")
+            console.print(f"  Status: {checkpoint.status}")
+            if notes:
+                console.print(f"  Notes: {notes}")
+            console.print()
+
+        except KeyError:
+            console.print(f"\n[red]Checkpoint not found: {checkpoint_id}[/red]")
+            raise typer.Exit(1)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error rejecting checkpoint: {e}[/red]")
+        raise typer.Exit(1)

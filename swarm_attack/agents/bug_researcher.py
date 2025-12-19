@@ -194,11 +194,11 @@ Remember: Output ONLY valid JSON, no other text.
         prompt = self._build_prompt(bug_id, report)
 
         try:
-            # Bug researcher needs more turns to run tests, read files, etc.
+            # Bug researcher needs many turns to run tests, read files, reproduce bugs
             result = self.llm.run(
                 prompt,
                 allowed_tools=["Read", "Glob", "Grep", "Bash"],
-                max_turns=15,
+                max_turns=100,  # Complex bugs need extensive exploration
             )
             cost = result.total_cost_usd
         except ClaudeTimeoutError as e:

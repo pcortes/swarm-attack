@@ -316,6 +316,8 @@ Tasks:
 | IN_PROGRESS | Currently being worked | Monitor output |
 | DONE | Successfully completed | Review commit |
 | BLOCKED | Failed after retries | Manual intervention needed |
+| SKIPPED | Dependency was blocked | Review blocked dependency |
+| **SPLIT** | Too complex, auto-split into children | Work on child issues instead |
 
 ---
 
@@ -334,6 +336,8 @@ ls .claude/skills/
 # - coder/SKILL.md (Implementation Agent with TDD)
 # - verifier/SKILL.md
 # - recovery/SKILL.md
+# - complexity-gate/SKILL.md
+# - issue-splitter/SKILL.md (auto-splits complex issues)
 ```
 
 ### Issue: "Empty spec generated"
@@ -369,6 +373,72 @@ swarm-attack unblock my-feature --phase SPEC_NEEDS_APPROVAL
 ```
 
 The `unblock` command analyzes the spec files on disk. If `spec-rubric.json` shows `ready_for_approval: true` and all scores meet thresholds, it automatically transitions to `SPEC_NEEDS_APPROVAL`.
+
+### Issue: "Task marked as SPLIT"
+**Cause:** The issue was too complex (>12 acceptance criteria or >8 methods) and was automatically split into smaller sub-issues.
+
+**What Happens:**
+1. ComplexityGateAgent detects the issue is too large
+2. IssueSplitterAgent creates 2-4 smaller sub-issues
+3. Parent issue is marked as SPLIT
+4. Child issues are added to the task list
+5. Dependencies are rewired automatically
+
+**What to Do:**
+- Check the status to see the child issues
+- Implementation will continue with the child issues
+- No manual intervention needed
+
+```bash
+# Check status to see child issues
+swarm-attack status my-feature
+
+# Example output:
+# #5  [SPLIT]    Create user auth system      → #10, #11, #12
+# #10 [READY]    └─ Create User model
+# #11 [BACKLOG]  └─ Create Auth service        (deps: #10)
+# #12 [BACKLOG]  └─ Create login endpoint      (deps: #11)
+```
+
+---
+
+## Auto-Split Feature
+
+When an issue exceeds complexity limits, the system automatically splits it:
+
+```
+ComplexityGate: "Issue too complex (estimated 35 turns)"
+         ↓
+IssueSplitterAgent analyzes and creates sub-issues
+         ↓
+State updated:
+  - Parent: SPLIT stage
+  - Children: READY/BACKLOG stage
+  - Dependencies: Rewired
+         ↓
+Implementation continues with first child issue
+```
+
+### How Dependencies Are Rewired
+
+```
+Before split (issue #5 depends on #3, issue #8 depends on #5):
+  #3 → #5 → #8
+
+After split (#5 → #10, #11, #12):
+  #3 → #10 → #11 → #12 → #8
+       ↑                   ↑
+  First child inherits    Last child becomes
+  parent's deps           new dependency
+```
+
+### Split Strategies
+
+The splitter uses these strategies based on issue content:
+- **By Layer**: Separate model, API, UI components
+- **By Operation**: Separate CRUD operations
+- **By Criteria**: Group related acceptance criteria
+- **By Phase**: Separate setup, core, integration work
 
 ---
 

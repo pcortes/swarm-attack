@@ -1,0 +1,43 @@
+{
+  "spec_path": "/Users/philipjcortes/Desktop/swarm-attack/specs/cos-phase8-recovery/spec-draft.md",
+  "prd_path": "/Users/philipjcortes/Desktop/swarm-attack/.claude/prds/cos-phase8-recovery.md",
+  "reviewed_at": "2025-12-19T00:41:46.543522Z",
+  "scores": {
+    "clarity": 0.72,
+    "coverage": 0.35,
+    "architecture": 0.4,
+    "risk": 0.45
+  },
+  "issues": [
+    {
+      "severity": "critical",
+      "dimension": "coverage",
+      "location": "specs/cos-phase8-recovery/spec-draft.md:94",
+      "description": "Level 2 is intentionally left as an \u201cextension point\u201d that immediately falls through to Level 4 (specs/cos-phase8-recovery/spec-draft.md:94) even though the PRD requires two alternative attempts before escalation (.claude/prds/cos-phase8-recovery.md:41) and lists that as Success Criteria #2-3 (.claude/prds/cos-phase8-recovery.md:58). This omits a core behavior and leaves systematic failures with no automatic recovery.",
+      "suggestion": "Define a concrete alternative strategy that actually runs twice\u2014e.g., rerun the action with a fresh orchestrator instance or modified prompt/config\u2014and only escalate after those attempts succeed or fail. Treat fancy future alternative engines as follow-ups, not as a blocker for satisfying the current requirement."
+    },
+    {
+      "severity": "critical",
+      "dimension": "coverage",
+      "location": "specs/cos-phase8-recovery/spec-draft.md:98",
+      "description": "The spec explicitly states that Level 3 clarifications are manual, triggered only when a human reviews the checkpoint (specs/cos-phase8-recovery/spec-draft.md:98), but the PRD requires RecoveryManager itself to ask a clarifying question when ambiguity is detected (.claude/prds/cos-phase8-recovery.md:45 and .claude/prds/cos-phase8-recovery.md:50). Without an automated clarify step the system still stalls on ambiguous failures, failing the stated goal of \u201cwithout human intervention.\u201d",
+      "suggestion": "Design an automated clarifying action: classify AmbiguityError, create a checkpoint with a templated clarifying prompt, and resume execution once the answer arrives. Even a simple text question to the goal creator meets the requirement better than deferring the entire level to manual review."
+    },
+    {
+      "severity": "moderate",
+      "dimension": "coverage",
+      "location": "specs/cos-phase8-recovery/spec-draft.md:73",
+      "description": "ErrorCategory intentionally omits ambiguity handling (specs/cos-phase8-recovery/spec-draft.md:73) despite the PRD spelling out AmbiguityError routing to Level 3 (.claude/prds/cos-phase8-recovery.md:50). Without that classification, RecoveryManager cannot ever enter the clarifying strategy path or meet the Retry Strategies table (.claude/prds/cos-phase8-recovery.md:45).",
+      "suggestion": "Add an `AMBIGUITY` classification that maps the relevant exceptions to Level 3 and drive the clarifying workflow off of it so that the execution pathway matches the PRD\u2019s table."
+    }
+  ],
+  "disputed_issues": [],
+  "strengths": [
+    "Good inventory of existing systems (RecoveryManager, checkpoints, EpisodeStore) that can be reused instead of introducing new infrastructure.",
+    "Provides a concrete automated test list that mirrors the desired behaviors, helping keep implementation focused.",
+    "Defines specific LLM error mappings for transient/systematic/fatal cases, which will speed up initial classification logic."
+  ],
+  "summary": "Reuses current infrastructure and proposes pragmatic data logging, but it explicitly punts on the PRD\u2019s Level 2 alternative attempts and Level 3 clarifying flow, so the core \u201cautomatic recovery\u201d capability never materializes. Implement concrete Level 2/3 behaviors and ambiguity classification to meet the requirements before proceeding.",
+  "recommendation": "REVISE",
+  "pass_threshold_met": false
+}

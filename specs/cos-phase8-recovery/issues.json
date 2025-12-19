@@ -1,0 +1,125 @@
+{
+  "feature_id": "cos-phase8-recovery",
+  "generated_at": "2025-12-18T23:45:00Z",
+  "issues": [
+    {
+      "title": "Add RetryStrategy and ErrorCategory enums to recovery.py",
+      "body": "## Description\n\nAdd the foundational enum classes needed for the hierarchical recovery system. These enums define the available retry strategies and error categories that drive recovery behavior.\n\n## Acceptance Criteria\n\n- [ ] `RetryStrategy` enum with values: SAME, ALTERNATIVE, CLARIFY, ESCALATE\n- [ ] `ErrorCategory` enum with values: TRANSIENT, SYSTEMATIC, FATAL\n- [ ] Both enums use string values for serialization compatibility\n- [ ] Docstrings explain each enum value's purpose\n- [ ] Unit tests verify enum values and membership\n\n## Technical Notes\n\n- Add to existing `swarm_attack/chief_of_staff/recovery.py` after imports\n- Follow existing enum patterns in the codebase (see `swarm_attack/errors.py:LLMErrorType`)\n- String values enable JSON serialization for episode logging\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/errors.py:LLMErrorType` for the expected enum pattern.\n\n**Required:**\n- Enums must be importable: `from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory`\n- Values must be strings for JSON serialization",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement classify_error() function using LLMErrorType patterns",
+      "body": "## Description\n\nCreate a function that classifies exceptions into error categories (TRANSIENT, SYSTEMATIC, FATAL) based on the existing `LLMErrorType` patterns from `errors.py`. This classification determines which recovery level to apply.\n\n## Acceptance Criteria\n\n- [ ] `classify_error(error: Exception) -> ErrorCategory` function implemented\n- [ ] Correctly maps RATE_LIMIT, RATE_LIMIT_TIMED, SERVER_OVERLOADED, SERVER_ERROR, TIMEOUT to TRANSIENT\n- [ ] Correctly maps CLI_CRASH, JSON_PARSE_ERROR to SYSTEMATIC\n- [ ] Correctly maps AUTH_REQUIRED, AUTH_EXPIRED, CLI_NOT_FOUND to FATAL\n- [ ] Unknown errors default to FATAL (fail-safe)\n- [ ] Handles both `LLMError` instances and generic exceptions\n- [ ] Unit tests cover all error type mappings\n- [ ] Unit tests verify unknown errors default to FATAL\n\n## Technical Notes\n\n- Import `LLMErrorType` from `swarm_attack/errors.py`\n- Check if exception has `error_type` attribute (from `LLMError` class)\n- For generic exceptions, examine message patterns or default to FATAL\n\n## Interface Contract (REQUIRED)\n\n**Called By:**\n- `RecoveryManager.execute_with_recovery()` in recovery.py (Issue #3)\n\n**Required Signature:**\n```python\ndef classify_error(error: Exception) -> ErrorCategory:\n    \"\"\"Classify an error to determine recovery strategy.\"\"\"\n```",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        1
+      ],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add retry_count and recovery_level fields to Episode dataclass",
+      "body": "## Description\n\nExtend the `Episode` dataclass in `episodes.py` to track retry attempts and recovery levels. This enables learning from recovery patterns and debugging failed executions.\n\n## Acceptance Criteria\n\n- [ ] `retry_count: int = 0` field added to Episode dataclass\n- [ ] `recovery_level: Optional[str] = None` field added to Episode dataclass\n- [ ] Fields serialize correctly to JSONL via existing `to_dict()` method\n- [ ] Fields deserialize correctly via existing `from_dict()` method\n- [ ] Default values don't break existing Episode creation\n- [ ] Unit tests verify serialization roundtrip with new fields\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/episodes.py:22`\n- Follow existing field patterns in the dataclass\n- `recovery_level` uses Optional[str] to store RetryStrategy.value\n- Ensure backward compatibility - existing JSONL logs without these fields should still load\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See existing fields in `Episode` dataclass at `episodes.py:22`\n\n**Called By:**\n- `RecoveryManager` when logging retry attempts (Issue #5)\n- `EpisodeStore.log_episode()` for persistence\n\n**Required Fields:**\n```python\nretry_count: int = 0\nrecovery_level: Optional[str] = None\n```",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Refactor execute_with_recovery() to support 4-level hierarchy",
+      "body": "## Description\n\nRefactor the existing `RecoveryManager.execute_with_recovery()` method to implement the 4-level hierarchical recovery system. This is the core implementation that routes errors through appropriate recovery levels.\n\n## Acceptance Criteria\n\n- [ ] Level 1 (SAME): Transient errors retry up to 3 times with exponential backoff (5s, 10s, 20s)\n- [ ] Level 2 (ALTERNATIVE): Systematic errors log fallthrough message and proceed to Level 4\n- [ ] Level 3 (CLARIFY): Not auto-triggered - this is an extension point for human-triggered retries\n- [ ] Level 4 (ESCALATE): Fatal errors + fallthrough create HICCUP checkpoint immediately\n- [ ] Method returns `GoalExecutionResult` with appropriate success/failure state\n- [ ] Backoff delays are configurable (default: 5s base, 2x multiplier)\n- [ ] Total retry count tracked across all attempts\n- [ ] Unit tests verify each recovery level behavior\n- [ ] Unit tests verify backoff timing (mocked)\n- [ ] Unit tests verify fallthrough from Level 2 to Level 4\n\n## Technical Notes\n\n- Extend existing method at `recovery.py:~60`\n- Use `classify_error()` from Issue #2 to determine error category\n- Import `CheckpointTrigger.HICCUP` from `checkpoints.py:30`\n- Use `time.sleep()` for backoff (will be mocked in tests)\n- Log each retry attempt for debugging\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See current `execute_with_recovery()` implementation in `recovery.py`\n\n**Called By:**\n- `AutopilotRunner._execute_goal()` (Issue #7)\n\n**Required Signature:**\n```python\ndef execute_with_recovery(\n    self,\n    goal: DailyGoal,\n    execute_fn: Callable[[], GoalExecutionResult],\n    episode_store: Optional[EpisodeStore] = None\n) -> GoalExecutionResult:\n    \"\"\"Execute goal with hierarchical recovery.\"\"\"\n```",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        2
+      ],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Log Level 2 fallthrough explicitly for future extension",
+      "body": "## Description\n\nAdd explicit logging when Level 2 (ALTERNATIVE) recovery is triggered but falls through to Level 4 (ESCALATE). This creates an audit trail and makes the extension point visible for future implementation.\n\n## Acceptance Criteria\n\n- [ ] Log message when SYSTEMATIC error triggers Level 2\n- [ ] Log message includes: error type, goal ID, \"Level 2 ALTERNATIVE not implemented, falling through to ESCALATE\"\n- [ ] Log level is WARNING (not ERROR) since this is expected behavior\n- [ ] Log message includes timestamp for correlation\n- [ ] Unit test verifies log message is emitted for SYSTEMATIC errors\n\n## Technical Notes\n\n- Add logging within the Level 2 handling in `execute_with_recovery()`\n- Use standard Python logging: `logger.warning(...)`\n- This is a small addition to Issue #4 but explicitly called out per spec Task #4\n\n## Interface Contract (REQUIRED)\n\nNo public interface - internal logging only. Called from within `execute_with_recovery()` flow.",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4
+      ],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Log retry attempts in RecoveryManager via EpisodeStore",
+      "body": "## Description\n\nIntegrate episode logging into `RecoveryManager` so that retry attempts are recorded for debugging and future learning. Each execution (success or failure) should log an episode with retry metadata.\n\n## Acceptance Criteria\n\n- [ ] Episodes logged after each retry attempt (not just final result)\n- [ ] Episode includes `retry_count` field with current attempt number\n- [ ] Episode includes `recovery_level` field with current strategy (\"same\", \"alternative\", \"escalate\")\n- [ ] Final episode includes total retry count and final recovery level\n- [ ] Logging is optional - method works without EpisodeStore\n- [ ] Unit tests verify episodes are logged with correct retry metadata\n- [ ] Unit tests verify no error when EpisodeStore is None\n\n## Technical Notes\n\n- Use `EpisodeStore.log_episode()` from `episodes.py`\n- Pass `episode_store` parameter through `execute_with_recovery()`\n- Log episode with `episode_type=\"recovery_attempt\"` or similar\n- Include goal_id, error type, retry count, recovery level in episode data\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `EpisodeStore.log_episode()` in `episodes.py`\n\n**Called By:**\n- Internal to `RecoveryManager.execute_with_recovery()`\n\n**Episode Fields Required:**\n```python\nEpisode(\n    episode_type=\"recovery\",\n    goal_id=goal.id,\n    retry_count=attempt_number,\n    recovery_level=strategy.value,\n    ...\n)\n```",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3,
+        4
+      ],
+      "order": 6,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Integrate RecoveryManager into AutopilotRunner._execute_goal()",
+      "body": "## Description\n\nWire up the enhanced `RecoveryManager` into `AutopilotRunner._execute_goal()` so that goal execution automatically uses hierarchical recovery. This is the integration point that makes recovery active in production.\n\n## Acceptance Criteria\n\n- [ ] `AutopilotRunner` instantiates or receives `RecoveryManager`\n- [ ] `_execute_goal()` wraps orchestrator calls with `execute_with_recovery()`\n- [ ] Recovery applies to both feature and bug goal types\n- [ ] EpisodeStore passed to RecoveryManager for logging\n- [ ] Existing behavior preserved when recovery succeeds on first try\n- [ ] HICCUP checkpoints created via existing checkpoint system\n- [ ] Integration tests verify recovery triggers during goal execution\n- [ ] Integration tests verify checkpoint creation on escalation\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- `_execute_goal()` currently at line ~100 (approximate)\n- Wrap the orchestrator.run() call with recovery manager\n- Pass `CheckpointStore` to RecoveryManager for escalation checkpoints\n- Preserve existing `GoalExecutionResult` return type\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See current `_execute_goal()` implementation in `autopilot_runner.py`\n\n**Called By:**\n- `AutopilotRunner.run()` during autopilot execution\n\n**Integration Points:**\n- `RecoveryManager` from `recovery.py`\n- `EpisodeStore` from `episodes.py`\n- `CheckpointStore` from `checkpoints.py`\n- Existing `FeatureOrchestrator` and `BugOrchestrator`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        4,
+        5,
+        6
+      ],
+      "order": 7,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create comprehensive tests for all 4 recovery levels",
+      "body": "## Description\n\nCreate a test file that thoroughly tests the hierarchical recovery system, covering all 4 levels, error classification, episode logging, and integration with AutopilotRunner.\n\n## Acceptance Criteria\n\n- [ ] Test file created at `tests/generated/cos-phase8-recovery/test_recovery.py`\n- [ ] `test_classify_transient_error()` - Rate limit errors classify as TRANSIENT\n- [ ] `test_classify_systematic_error()` - CLI crash errors classify as SYSTEMATIC\n- [ ] `test_classify_fatal_error()` - Auth errors classify as FATAL\n- [ ] `test_classify_unknown_error()` - Unknown errors default to FATAL\n- [ ] `test_level1_retries_three_times()` - Transient errors retry 3x with backoff\n- [ ] `test_level1_succeeds_on_retry()` - Recovery succeeds when transient error clears\n- [ ] `test_level2_falls_through_to_escalate()` - Systematic errors log and escalate\n- [ ] `test_level3_triggered_by_human_choice()` - Verify Level 3 is extension point\n- [ ] `test_level4_escalates_immediately()` - Fatal errors create checkpoint without retry\n- [ ] `test_episode_logs_retry_count()` - Episodes record retry attempts\n- [ ] `test_episode_logs_recovery_level()` - Episodes record recovery level\n- [ ] `test_integration_with_autopilot_runner()` - Full integration test\n- [ ] `test_backoff_timing()` - Verify exponential backoff delays (mocked)\n- [ ] All tests pass with `pytest tests/generated/cos-phase8-recovery/ -v`\n\n## Technical Notes\n\n- Use pytest fixtures for common setup\n- Mock `time.sleep()` to avoid actual delays\n- Mock orchestrator to simulate failures\n- Use `LLMError` with appropriate `error_type` for controlled failures\n- Create test fixtures for `DailyGoal`, `EpisodeStore`, `CheckpointStore`\n\n## Interface Contract (REQUIRED)\n\n**Test File Location:** `tests/generated/cos-phase8-recovery/test_recovery.py`\n\n**Required Imports:**\n```python\nfrom swarm_attack.chief_of_staff.recovery import (\n    RecoveryManager,\n    RetryStrategy,\n    ErrorCategory,\n    classify_error\n)\nfrom swarm_attack.chief_of_staff.episodes import Episode, EpisodeStore\nfrom swarm_attack.errors import LLMError, LLMErrorType\n```",
+      "labels": [
+        "enhancement",
+        "backend",
+        "tests"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "order": 8,
+      "automation_type": "automated"
+    }
+  ]
+}

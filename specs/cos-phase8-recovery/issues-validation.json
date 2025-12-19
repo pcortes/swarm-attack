@@ -1,0 +1,17 @@
+{
+  "feature_id": "cos-phase8-recovery",
+  "validated_at": "2025-12-19T00:44:46.472484Z",
+  "valid": false,
+  "summary": "Found 1 errors and 0 warnings across 8 issues",
+  "problems": [
+    {
+      "issue_order": 8,
+      "severity": "error",
+      "type": "ambiguous_requirements",
+      "description": "Acceptance criteria require `test_level3_triggered_by_human_choice()` but give no behavior to assert; Level 3 is explicitly not auto-triggered, so it is unclear what the test should verify or how to exercise the path."
+    }
+  ],
+  "issues_checked": 8,
+  "passed": 7,
+  "failed": 1
+}

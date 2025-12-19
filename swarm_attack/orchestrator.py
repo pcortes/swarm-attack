@@ -1570,6 +1570,152 @@ class Orchestrator:
             pass
         return None
 
+    def _auto_split_issue(
+        self,
+        feature_id: str,
+        issue_number: int,
+        issue_data: dict[str, Any],
+        gate_estimate: Any,  # ComplexityEstimate
+    ) -> AgentResult:
+        """
+        Automatically split a complex issue into smaller sub-issues.
+
+        Called when ComplexityGateAgent determines an issue needs splitting.
+        Creates 2-4 smaller sub-issues and updates the state.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue order number being split.
+            issue_data: The issue dict from issues.json.
+            gate_estimate: ComplexityEstimate from the gate.
+
+        Returns:
+            AgentResult with sub_issues if successful.
+        """
+        from swarm_attack.agents.issue_splitter import IssueSplitterAgent
+
+        # Initialize splitter agent
+        splitter = IssueSplitterAgent(
+            config=self.config,
+            logger=self.logger,
+            llm_runner=self._llm,
+            state_store=self._state_store,
+        )
+
+        # Run splitter
+        result = splitter.run({
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+            "issue_title": issue_data.get("title", ""),
+            "issue_body": issue_data.get("body", ""),
+            "split_suggestions": gate_estimate.split_suggestions,
+            "estimated_turns": gate_estimate.estimated_turns,
+        })
+
+        if result.success:
+            # Apply split to state
+            self._apply_split_to_state(
+                feature_id=feature_id,
+                parent_issue_number=issue_number,
+                sub_issues=result.output.get("sub_issues", []),
+            )
+
+        return result
+
+    def _apply_split_to_state(
+        self,
+        feature_id: str,
+        parent_issue_number: int,
+        sub_issues: list[dict[str, Any]],
+    ) -> None:
+        """
+        Apply issue split to state: create child tasks, mark parent as SPLIT.
+
+        Args:
+            feature_id: The feature identifier.
+            parent_issue_number: The issue number being split.
+            sub_issues: List of sub-issue dicts with title, body, estimated_size.
+        """
+        from swarm_attack.models import TaskRef, TaskStage
+
+        if not self._state_store:
+            self._log("apply_split_no_store", {}, level="error")
+            return
+
+        state = self._state_store.load(feature_id)
+        if not state:
+            self._log("apply_split_no_state", {"feature_id": feature_id}, level="error")
+            return
+
+        # Find parent task
+        parent_task = None
+        for task in state.tasks:
+            if task.issue_number == parent_issue_number:
+                parent_task = task
+                break
+
+        if not parent_task:
+            self._log("apply_split_parent_not_found", {
+                "feature_id": feature_id,
+                "issue_number": parent_issue_number,
+            }, level="error")
+            return
+
+        # Get next available issue number
+        max_num = max(t.issue_number for t in state.tasks) if state.tasks else 0
+
+        # Create child tasks
+        child_nums = []
+        for i, sub in enumerate(sub_issues):
+            new_num = max_num + 1 + i
+            child_nums.append(new_num)
+
+            # First child inherits parent's deps, others chain sequentially
+            if i == 0:
+                deps = parent_task.dependencies.copy()
+            else:
+                deps = [child_nums[i - 1]]
+
+            # Determine initial stage
+            initial_stage = TaskStage.READY if not deps else TaskStage.BACKLOG
+
+            child_task = TaskRef(
+                issue_number=new_num,
+                stage=initial_stage,
+                title=sub.get("title", f"Sub-issue {i + 1}"),
+                dependencies=deps,
+                estimated_size=sub.get("estimated_size", "small"),
+                parent_issue=parent_issue_number,
+            )
+            state.tasks.append(child_task)
+
+        # Update parent task
+        parent_task.stage = TaskStage.SPLIT
+        parent_task.child_issues = child_nums
+        parent_task.blocked_reason = f"Split into {len(child_nums)} sub-issues: {child_nums}"
+
+        # Rewire dependents: anything depending on parent now depends on last child
+        if child_nums:
+            last_child = child_nums[-1]
+            for task in state.tasks:
+                if parent_issue_number in task.dependencies and task.issue_number != parent_issue_number:
+                    task.dependencies.remove(parent_issue_number)
+                    if last_child not in task.dependencies:
+                        task.dependencies.append(last_child)
+                    # Update stage if now unblocked
+                    if task.stage == TaskStage.BACKLOG and not task.dependencies:
+                        task.stage = TaskStage.READY
+
+        # Save state
+        self._state_store.save(state)
+
+        self._log("split_applied", {
+            "feature_id": feature_id,
+            "parent_issue": parent_issue_number,
+            "child_issues": child_nums,
+            "child_titles": [s.get("title", "") for s in sub_issues],
+        })
+
     def _generate_completion_summary(
         self,
         feature_id: str,
@@ -1910,7 +2056,7 @@ class Orchestrator:
                 total_cost += self._complexity_gate.get_total_cost()
 
                 if gate_estimate.needs_split:
-                    self._log("complexity_gate_reject", {
+                    self._log("complexity_gate_needs_split", {
                         "feature_id": feature_id,
                         "issue_number": issue_number,
                         "estimated_turns": gate_estimate.estimated_turns,
@@ -1919,17 +2065,47 @@ class Orchestrator:
                         "reasoning": gate_estimate.reasoning,
                     }, level="warning")
 
-                    # Return failure with split suggestions
-                    return (
-                        False,
-                        None,
-                        AgentResult.failure_result(
-                            f"Issue too complex (estimated {gate_estimate.estimated_turns} turns, "
-                            f"score {gate_estimate.complexity_score:.2f}). "
-                            f"Suggestions: {'; '.join(gate_estimate.split_suggestions)}"
-                        ),
-                        total_cost,
+                    # Auto-split the issue into smaller sub-issues
+                    split_result = self._auto_split_issue(
+                        feature_id=feature_id,
+                        issue_number=issue_number,
+                        issue_data=issue_data,
+                        gate_estimate=gate_estimate,
                     )
+                    total_cost += split_result.cost_usd
+
+                    if split_result.success:
+                        # Split successful - return with split action
+                        return (
+                            True,  # Success - issue was handled (by splitting)
+                            None,
+                            AgentResult.success_result(
+                                agent="orchestrator",
+                                output={
+                                    "action": "split",
+                                    "sub_issues": split_result.output.get("sub_issues", []),
+                                    "count": split_result.output.get("count", 0),
+                                },
+                                cost_usd=split_result.cost_usd,
+                            ),
+                            total_cost,
+                        )
+                    else:
+                        # Split failed - fall back to blocking
+                        self._log("auto_split_failed", {
+                            "feature_id": feature_id,
+                            "issue_number": issue_number,
+                            "error": split_result.error,
+                        }, level="error")
+                        return (
+                            False,
+                            None,
+                            AgentResult.failure_result(
+                                f"Issue too complex and auto-split failed: {split_result.error}. "
+                                f"Manual split needed. Suggestions: {'; '.join(gate_estimate.split_suggestions)}"
+                            ),
+                            total_cost,
+                        )
 
                 # Adjust max_turns based on gate estimate
                 context["max_turns_override"] = min(gate_estimate.estimated_turns + 5, 30)

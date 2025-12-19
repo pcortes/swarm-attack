@@ -643,3 +643,99 @@ class CheckpointSystem:
     def record_error(self) -> None:
         """Record an error for tracking consecutive failures."""
         self._error_count += 1
+
+    async def check_before_execution(self, goal: "DailyGoal") -> CheckpointResult:
+        """Check if a goal requires approval before execution.
+
+        This method:
+        1. Returns an existing pending checkpoint if one exists for the goal
+        2. Creates a new checkpoint if triggers are detected and none is pending
+        3. Returns CheckpointResult(requires_approval=False) if no triggers
+
+        Args:
+            goal: The DailyGoal to check before execution.
+
+        Returns:
+            CheckpointResult indicating whether approval is required.
+        """
+        # Check for existing pending checkpoint for this goal
+        pending_checkpoint = await self.store.get_pending_for_goal(goal.goal_id)
+        if pending_checkpoint is not None:
+            return CheckpointResult(
+                requires_approval=True,
+                approved=False,
+                checkpoint=pending_checkpoint,
+            )
+
+        # Detect triggers for this goal
+        triggers = self._detect_triggers(goal)
+        if not triggers:
+            return CheckpointResult(
+                requires_approval=False,
+                approved=True,
+                checkpoint=None,
+            )
+
+        # Create new checkpoint for the most significant trigger (first in list)
+        checkpoint = self._create_checkpoint(goal, triggers[0])
+        await self.store.save(checkpoint)
+
+        return CheckpointResult(
+            requires_approval=True,
+            approved=False,
+            checkpoint=checkpoint,
+        )
+
+    def update_daily_cost(self, cost: float) -> None:
+        """Increment daily cost tracking.
+
+        Args:
+            cost: The cost to add to daily total.
+        """
+        self.daily_cost += cost
+
+    def reset_daily_cost(self) -> None:
+        """Reset daily cost tracking to zero."""
+        self.daily_cost = 0.0
+
+    async def resolve_checkpoint(
+        self,
+        checkpoint_id: str,
+        chosen_option: str,
+        notes: str,
+    ) -> Checkpoint:
+        """Resolve a checkpoint with user's choice.
+
+        Args:
+            checkpoint_id: The ID of the checkpoint to resolve.
+            chosen_option: The option chosen by the user.
+            notes: Human notes/feedback about the decision.
+
+        Returns:
+            The resolved Checkpoint.
+
+        Raises:
+            KeyError: If checkpoint_id is not found.
+        """
+        from datetime import datetime
+
+        checkpoint = await self.store.get(checkpoint_id)
+        if checkpoint is None:
+            raise KeyError(f"Checkpoint not found: {checkpoint_id}")
+
+        # Set status based on chosen option
+        if chosen_option == "Proceed":
+            checkpoint.status = "approved"
+        else:
+            # Skip, Modify, Pause all set status to rejected
+            checkpoint.status = "rejected"
+
+        # Store the chosen option and notes
+        checkpoint.chosen_option = chosen_option
+        checkpoint.human_notes = notes
+        checkpoint.resolved_at = datetime.now().isoformat()
+
+        # Save the updated checkpoint
+        await self.store.save(checkpoint)
+
+        return checkpoint

@@ -1,6 +1,6 @@
 {
   "feature_id": "chief-of-staff-v2",
-  "phase": "IMPLEMENTING",
+  "phase": "ISSUES_CREATING",
   "tasks": [
     {
       "issue_number": 1,
@@ -136,7 +136,7 @@
     },
     {
       "issue_number": 8,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement checkpoint creation methods",
       "dependencies": [
         7
@@ -175,7 +175,7 @@
     },
     {
       "issue_number": 9,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement check_before_execution for CheckpointSystem",
       "dependencies": [
         7,
@@ -190,7 +190,7 @@
     },
     {
       "issue_number": 10,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement resolve and cost tracking for CheckpointSystem",
       "dependencies": [
         9
@@ -204,7 +204,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Add checkpoint CLI commands",
       "dependencies": [
         6,
@@ -219,7 +219,7 @@
     },
     {
       "issue_number": 12,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Integrate CheckpointSystem with AutopilotRunner",
       "dependencies": [
         1,
@@ -234,7 +234,7 @@
     },
     {
       "issue_number": 13,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Create RecoveryManager with retry logic",
       "dependencies": [
         10
@@ -248,7 +248,7 @@
     },
     {
       "issue_number": 14,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Add escalation to checkpoint with hiccup marking",
       "dependencies": [
         13
@@ -262,7 +262,7 @@
     },
     {
       "issue_number": 15,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement Episode logging and PreferenceLearner",
       "dependencies": [
         10
@@ -275,11 +275,11 @@
       "completion_summary": null
     }
   ],
-  "current_session": "sess_20251218_224545_048260",
+  "current_session": null,
   "created_at": "2025-12-18T17:26:54Z",
-  "updated_at": "2025-12-18T22:45:31.633201Z",
-  "cost_total_usd": 12.543345700000001,
+  "updated_at": "2025-12-19T00:33:51.713999Z",
+  "cost_total_usd": 14.392883450000001,
   "cost_by_phase": {
-    "IMPLEMENTATION": 0.5833457
+    "IMPLEMENTATION": 2.4328834500000003
   }
 }

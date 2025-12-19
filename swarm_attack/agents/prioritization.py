@@ -126,6 +126,10 @@ class PrioritizationAgent(BaseAgent):
             elif dep_stage == TaskStage.SKIPPED:
                 # Dependency was skipped - this task can never succeed
                 return False, "skipped", dep_issue_number
+            elif dep_stage == TaskStage.SPLIT:
+                # Dependency was split - wait for children to complete
+                # (Note: dependencies should be rewired to children, but handle edge case)
+                return False, "split", dep_issue_number
             elif dep_stage != TaskStage.DONE:
                 # Dependency exists but is not done yet (still in progress)
                 return False, "incomplete", dep_issue_number

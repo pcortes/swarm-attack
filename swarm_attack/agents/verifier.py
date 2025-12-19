@@ -615,7 +615,38 @@ class VerifierAgent(BaseAgent):
             # Build appropriate error message
             errors = []
             if not issue_tests_passed:
-                errors.append(f"Issue tests failed: {parsed['tests_failed']} failed, {parsed['tests_passed']} passed")
+                # Check for collection errors (ImportError, etc.) which indicate implementation issues
+                # These occur when tests can't even be collected due to missing imports
+                if parsed.get('errors', 0) > 0 and parsed['tests_run'] == 0:
+                    # Extract ImportError details if present in output
+                    # Use escaped quotes in regex to avoid parsing issues
+                    import_error_match = re.search(
+                        r"ImportError:\s*cannot import name ['\"]([^'\"]+)['\"]\s+from\s+['\"]([^'\"]+)['\"]",
+                        output
+                    )
+                    module_not_found_match = re.search(
+                        r"ModuleNotFoundError:\s*No module named ['\"]([^'\"]+)['\"]",
+                        output
+                    )
+                    if import_error_match:
+                        name, module = import_error_match.groups()
+                        errors.append(
+                            f"Collection error: cannot import '{name}' from '{module}' - "
+                            "implementation may be incomplete (missing class/function definition)"
+                        )
+                    elif module_not_found_match:
+                        module = module_not_found_match.group(1)
+                        errors.append(
+                            f"Collection error: module '{module}' not found - "
+                            "implementation file may be missing"
+                        )
+                    else:
+                        errors.append(
+                            f"Collection error: {parsed['errors']} error(s) during test collection - "
+                            "tests could not run (check for missing imports or syntax errors)"
+                        )
+                else:
+                    errors.append(f"Issue tests failed: {parsed['tests_failed']} failed, {parsed['tests_passed']} passed")
             if not regression_passed and check_regressions:
                 regression_info = result_output.get("regression_check", {})
                 if "error" in regression_info:

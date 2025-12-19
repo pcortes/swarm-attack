@@ -1,0 +1,496 @@
+{
+  "bug_id": "test-writer-no-tests",
+  "phase": "fixed",
+  "created_at": "2025-12-19T00:51:24.809314Z",
+  "updated_at": "2025-12-19T01:24:53.177930Z",
+  "report": {
+    "description": "Test writer not generating tests for cos-phase8-recovery issue 1",
+    "test_path": null,
+    "github_issue": null,
+    "error_message": "Issue tests failed: 0 failed, 0 passed - no test file created",
+    "stack_trace": null,
+    "steps_to_reproduce": []
+  },
+  "reproduction": {
+    "confirmed": true,
+    "reproduction_steps": [
+      "Ran pytest tests/generated/cos-phase8-recovery/test_issue_1.py -v --tb=long",
+      "Test collection failed with ImportError: cannot import name 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery'",
+      "Verified recovery.py only contains RecoveryLevel enum, not RetryStrategy or ErrorCategory enums",
+      "Checked issues.json to confirm Issue #1 requires adding RetryStrategy and ErrorCategory enums"
+    ],
+    "test_output": "/Users/philipjcortes/venv_rag_prod/lib/python3.13/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\n============================= test session starts ==============================\nplatform darwin -- Python 3.13.3, pytest-8.3.5, pluggy-1.5.0 -- /Users/philipjcortes/venv_rag_prod/bin/python3\ncachedir: .pytest_cache\n...\ncollecting ... collected 0 items / 1 error\n\n==================================== ERRORS ====================================\n_____ ERROR collecting tests/generated/cos-phase8-recovery/test_issue_1.py _____\nImportError while importing test module '/Users/philipjcortes/Desktop/swarm-attack/tests/generated/cos-phase8-recovery/test_issue_1.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\ntests/generated/cos-phase8-recovery/test_issue_1.py:4: in <module>\n    from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory\nE   ImportError: cannot import name 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery' (/Users/philipjcortes/Desktop/swarm-attack/swarm_attack/chief_of_staff/recovery.py)\n=========================== short test summary info ============================\nERROR tests/generated/cos-phase8-recovery/test_issue_1.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n=============================== 1 error in 0.05s ===============================",
+    "error_message": "ImportError: cannot import name 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery'",
+    "stack_trace": "Traceback:\n/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\ntests/generated/cos-phase8-recovery/test_issue_1.py:4: in <module>\n    from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory\nE   ImportError: cannot import name 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery' (/Users/philipjcortes/Desktop/swarm-attack/swarm_attack/chief_of_staff/recovery.py)",
+    "affected_files": [
+      "swarm_attack/chief_of_staff/recovery.py",
+      "tests/generated/cos-phase8-recovery/test_issue_1.py",
+      "swarm_attack/agents/coder.py",
+      "swarm_attack/agents/verifier.py"
+    ],
+    "related_code_snippets": {
+      "swarm_attack/chief_of_staff/recovery.py:21-26": "class RecoveryLevel(Enum):\n    \"\"\"Level of recovery action to take after failure.\"\"\"\n\n    RETRY_SAME = \"retry_same\"\n    ESCALATE = \"escalate\"",
+      "tests/generated/cos-phase8-recovery/test_issue_1.py:4": "from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory",
+      "swarm_attack/agents/verifier.py:480": "issue_tests_passed = exit_code == 0 and parsed[\"tests_failed\"] == 0",
+      "swarm_attack/agents/verifier.py:618": "errors.append(f\"Issue tests failed: {parsed['tests_failed']} failed, {parsed['tests_passed']} passed\")"
+    },
+    "confidence": "high",
+    "notes": "The bug report title is misleading. The test file WAS created by the coder agent (it exists at tests/generated/cos-phase8-recovery/test_issue_1.py). The actual bug is twofold:\n\n1. **PRIMARY BUG**: The coder agent created the test file but failed to implement the required enums (RetryStrategy, ErrorCategory) in recovery.py. The recovery.py file only contains RecoveryLevel enum, not the enums required by Issue #1.\n\n2. **SECONDARY BUG**: The verifier's error message '0 failed, 0 passed' is technically correct (no tests ran) but misleading - pytest had a collection error (ImportError) before any tests could run. The verifier does detect the error count but doesn't surface it well in the error message.\n\nRoot cause: The coder agent likely hit max_turns (error_max_turns in blocked_reason from bug state) before completing implementation. The coder was able to create the test file but exited before implementing the actual enums in recovery.py.",
+    "attempts": 1,
+    "environment": {
+      "python_version": "3.13.3",
+      "os": "Darwin 24.6.0 arm64",
+      "pytest_version": "8.3.5"
+    }
+  },
+  "root_cause": {
+    "summary": "CoderAgent creates tests in TDD mode but doesn't implement required enums before hitting max_turns",
+    "execution_trace": [
+      "1. Orchestrator.run_implementation_session() starts for cos-phase8-recovery issue #1",
+      "2. CoderAgent.run() is invoked with context including issue_number=1, feature_id='cos-phase8-recovery'",
+      "3. CoderAgent._get_default_test_path() returns tests/generated/cos-phase8-recovery/test_issue_1.py",
+      "4. Test file doesn't exist initially - coder enters 'TDD mode' (test_file_exists=False at coder.py:1133)",
+      "5. CoderAgent._format_test_section() generates prompt instructing coder to CREATE tests first",
+      "6. CoderAgent invokes LLM with max_turns=20 (default or adjusted by ComplexityGate)",
+      "7. LLM generates test file test_issue_1.py that imports RetryStrategy, ErrorCategory from recovery.py",
+      "8. CoderAgent._parse_file_outputs() parses LLM response and extracts test file content",
+      "9. Test file is written successfully to tests/generated/cos-phase8-recovery/test_issue_1.py",
+      "10. LLM hits max_turns limit (error_max_turns) BEFORE generating recovery.py with RetryStrategy and ErrorCategory enums",
+      "11. CoderAgent returns success=True (test file was created, but implementation incomplete)",
+      "12. VerifierAgent.run() is invoked and runs pytest on test_issue_1.py",
+      "13. pytest fails during test collection with ImportError - cannot import RetryStrategy from recovery.py",
+      "14. _parse_pytest_output() parses 'collected 0 items / 1 error' \u2192 tests_passed=0, tests_failed=0, errors=1",
+      "15. issue_tests_passed = (exit_code==0 AND tests_failed==0) evaluates to False due to exit_code!=0",
+      "16. Verifier returns error message: 'Issue tests failed: 0 failed, 0 passed' (misleading - doesn't mention ImportError)"
+    ],
+    "root_cause_file": "swarm_attack/agents/coder.py",
+    "root_cause_line": 1275,
+    "root_cause_code": "result = self.llm.run(\n    prompt,\n    allowed_tools=[],\n    max_turns=max_turns,\n)",
+    "root_cause_explanation": "The CoderAgent operates in a no-tools mode (allowed_tools=[]) and must output all code via # FILE: markers in a single LLM invocation. When in TDD mode (no test file exists), the coder is instructed to: (1) create the test file first, (2) then implement the code to make tests pass. For Issue #1, the LLM successfully generates test_issue_1.py with imports for RetryStrategy and ErrorCategory, but then hits max_turns before generating the implementation file (recovery.py additions). The max_turns limit (20 by default, adjustable by ComplexityGate) caps how long the LLM can spend generating output. Since the prompt instructs 'tests first', the test file is prioritized and written, but the implementation enums never make it into recovery.py. The coder considers this 'success' because files were parsed and written, but the implementation is incomplete - creating an impossible-to-pass test file that imports non-existent classes.",
+    "why_not_caught": "1. CoderAgent success check only verifies files were written (files_created not empty), not that implementation matches test imports. 2. No validation that classes imported by generated tests actually exist in generated implementation files. 3. Pre-check at coder.py:1146 (_check_tests_pass) only runs when test file already exists - in TDD mode this is skipped. 4. Verifier error message formatting at verifier.py:618 shows 'N failed, M passed' but doesn't surface pytest collection errors (ImportError) which occur before any tests run. 5. No unit tests verify coder handles max_turns exhaustion gracefully or validates test imports against implementation outputs.",
+    "confidence": "high",
+    "alternative_hypotheses": [
+      "Initially considered ComplexityGate rejecting the issue - ruled out because state shows BLOCKED due to 'Max retries exceeded' not split/reject",
+      "Considered coder parsing failure (# FILE: markers not recognized) - ruled out because test file was successfully created and written",
+      "Considered verifier bug in failure detection - partial issue: verifier correctly detects failure but error message obscures the actual ImportError"
+    ]
+  },
+  "fix_plan": {
+    "summary": "Validate test imports from generated files (not just disk), using AST parsing for robust import extraction, and add proper integration tests",
+    "changes": [
+      {
+        "file_path": "swarm_attack/agents/coder.py",
+        "change_type": "modify",
+        "current_code": "from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError\nfrom swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError\nfrom swarm_attack.models import IssueOutput\nfrom swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write",
+        "proposed_code": "import ast\n\nfrom swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError\nfrom swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError\nfrom swarm_attack.models import IssueOutput\nfrom swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write",
+        "explanation": "Add ast import at the top of the file for robust Python AST-based import parsing."
+      },
+      {
+        "file_path": "swarm_attack/agents/coder.py",
+        "change_type": "modify",
+        "current_code": "    def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:\n        \"\"\"\n        Extract classes/functions from written files.\n\n        Parses Python and Dart files for class definitions to track\n        what was created for context handoff to subsequent issues.\n\n        Args:\n            files: Dictionary mapping file paths to their contents.\n\n        Returns:\n            IssueOutput with files_created and classes_defined.\n        \"\"\"",
+        "proposed_code": "    def _extract_imports_from_tests_ast(self, test_content: str) -> list[tuple[str, str, list[str]]]:\n        \"\"\"\n        Extract import statements from test file using AST parsing.\n\n        Uses Python's ast module for robust parsing that handles:\n        - Multi-line imports with parentheses\n        - Aliased imports (import X as Y)\n        - Regular imports (import module)\n        - From imports (from module import name)\n\n        Args:\n            test_content: Content of the test file.\n\n        Returns:\n            List of tuples: (module_path, file_path, imported_names)\n            e.g., [(\"swarm_attack.chief_of_staff.recovery\", \"swarm_attack/chief_of_staff/recovery.py\", [\"RetryStrategy\", \"ErrorCategory\"])]\n        \"\"\"\n        imports = []\n\n        try:\n            tree = ast.parse(test_content)\n        except SyntaxError:\n            # Fall back to regex if AST parsing fails\n            return self._extract_imports_from_tests_regex(test_content)\n\n        for node in ast.walk(tree):\n            if isinstance(node, ast.ImportFrom):\n                if node.module is None:\n                    continue\n                module = node.module\n\n                # Skip standard library and test framework imports\n                if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):\n                    continue\n\n                # Get imported names (handle aliases)\n                imported_names = []\n                for alias in node.names:\n                    imported_names.append(alias.name)  # Use original name, not alias\n\n                # Convert module path to file path\n                file_path = module.replace(\".\", \"/\") + \".py\"\n\n                imports.append((module, file_path, imported_names))\n\n            elif isinstance(node, ast.Import):\n                for alias in node.names:\n                    module = alias.name\n                    # Skip standard library\n                    if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib', 're', 'collections', 'functools', 'itertools', 'enum', 'dataclasses', 'abc'):\n                        continue\n                    file_path = module.replace(\".\", \"/\") + \".py\"\n                    # For bare imports, we import the module itself\n                    imports.append((module, file_path, [module.split('.')[-1]]))\n\n        return imports\n\n    def _extract_imports_from_tests_regex(self, test_content: str) -> list[tuple[str, str, list[str]]]:\n        \"\"\"\n        Fallback regex-based import extraction for when AST parsing fails.\n\n        Handles common patterns including multi-line imports with parentheses.\n        \"\"\"\n        imports = []\n\n        # Pattern for multi-line imports: from module import (\\n    Name1,\\n    Name2,\\n)\n        multiline_pattern = r\"from\\s+([\\w.]+)\\s+import\\s+\\(([^)]+)\\)\"\n        for match in re.finditer(multiline_pattern, test_content, re.DOTALL):\n            module = match.group(1)\n            names_block = match.group(2)\n\n            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):\n                continue\n\n            # Parse names from block (handles commas, newlines, trailing commas)\n            imported_names = [n.strip().split(' as ')[0] for n in re.split(r'[,\\n]', names_block) if n.strip() and not n.strip().startswith('#')]\n            file_path = module.replace(\".\", \"/\") + \".py\"\n            imports.append((module, file_path, imported_names))\n\n        # Pattern for single-line imports: from module import X, Y, Z\n        singleline_pattern = r\"from\\s+([\\w.]+)\\s+import\\s+([^(\\n]+)\"\n        for match in re.finditer(singleline_pattern, test_content):\n            module = match.group(1)\n            names_str = match.group(2)\n\n            if module.split('.')[0] in ('pytest', 'unittest', 'os', 'sys', 'typing', 'json', 'datetime', 'pathlib'):\n                continue\n\n            # Check if this was already matched by multiline pattern\n            file_path = module.replace(\".\", \"/\") + \".py\"\n            if any(fp == file_path for _, fp, _ in imports):\n                continue\n\n            imported_names = [n.strip().split(' as ')[0] for n in names_str.split(',') if n.strip()]\n            imports.append((module, file_path, imported_names))\n\n        return imports\n\n    def _validate_test_imports_satisfied(\n        self,\n        test_content: str,\n        generated_files: dict[str, str],\n    ) -> tuple[bool, list[str]]:\n        \"\"\"\n        Validate that all imports in test content are satisfied by generated files.\n\n        This catches the case where tests are generated but implementation is incomplete,\n        which would cause ImportError at test collection time.\n\n        Args:\n            test_content: Content of the test file (can be newly generated or from disk).\n            generated_files: Files generated by this coder invocation.\n\n        Returns:\n            Tuple of (all_satisfied, missing_items) where missing_items is a list\n            of \"module_path:ClassName\" strings for imports that cannot be found.\n        \"\"\"\n        missing = []\n        imports = self._extract_imports_from_tests_ast(test_content)\n\n        for module_name, file_path, imported_names in imports:\n            # Check if file exists in generated files\n            file_content = None\n\n            # Try exact path match first\n            if file_path in generated_files:\n                file_content = generated_files[file_path]\n\n            # Try path variations (with/without leading directories)\n            if not file_content:\n                for gen_path, gen_content in generated_files.items():\n                    if gen_path.endswith(file_path) or file_path.endswith(gen_path):\n                        file_content = gen_content\n                        break\n                    # Also try matching just the filename parts\n                    if gen_path.replace('/', '.').rstrip('.py') == module_name or \\\n                       module_name.endswith(gen_path.replace('/', '.').rstrip('.py')):\n                        file_content = gen_content\n                        break\n\n            # Also try reading from disk if not in generated files\n            if not file_content:\n                disk_path = Path(self.config.repo_root) / file_path\n                if file_exists(disk_path):\n                    try:\n                        file_content = read_file(disk_path)\n                    except Exception:\n                        pass\n\n            if not file_content:\n                # Entire module file is missing\n                for name in imported_names:\n                    missing.append(f\"{file_path}:{name}\")\n                continue\n\n            # Check that each imported name exists in the file\n            for name in imported_names:\n                # Use AST to find definitions for accurate matching\n                name_found = False\n                try:\n                    impl_tree = ast.parse(file_content)\n                    for node in ast.walk(impl_tree):\n                        if isinstance(node, ast.ClassDef) and node.name == name:\n                            name_found = True\n                            break\n                        if isinstance(node, ast.FunctionDef) and node.name == name:\n                            name_found = True\n                            break\n                        if isinstance(node, ast.Assign):\n                            for target in node.targets:\n                                if isinstance(target, ast.Name) and target.id == name:\n                                    name_found = True\n                                    break\n                except SyntaxError:\n                    # Fall back to regex if AST fails\n                    class_pattern = rf\"^class\\s+{re.escape(name)}\\b\"\n                    func_pattern = rf\"^def\\s+{re.escape(name)}\\b\"\n                    var_pattern = rf\"^{re.escape(name)}\\s*=\"\n                    if (re.search(class_pattern, file_content, re.MULTILINE) or\n                        re.search(func_pattern, file_content, re.MULTILINE) or\n                        re.search(var_pattern, file_content, re.MULTILINE)):\n                        name_found = True\n\n                if not name_found:\n                    missing.append(f\"{file_path}:{name}\")\n\n        return (len(missing) == 0, missing)\n\n    def _extract_test_files_from_generated(self, files: dict[str, str]) -> dict[str, str]:\n        \"\"\"\n        Extract test files from the generated files dict.\n\n        Identifies files that are test files by:\n        - Path contains 'test' or 'tests'\n        - Filename starts with 'test_' or ends with '_test.py'\n\n        Args:\n            files: Dictionary mapping file paths to contents.\n\n        Returns:\n            Dictionary of test file paths to contents.\n        \"\"\"\n        test_files = {}\n        for path, content in files.items():\n            path_lower = path.lower()\n            filename = path.split('/')[-1].lower()\n\n            is_test = (\n                'test' in path_lower or\n                filename.startswith('test_') or\n                filename.endswith('_test.py') or\n                filename.endswith('_test.dart')\n            )\n\n            if is_test:\n                test_files[path] = content\n\n        return test_files\n\n    def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:\n        \"\"\"\n        Extract classes/functions from written files.\n\n        Parses Python and Dart files for class definitions to track\n        what was created for context handoff to subsequent issues.\n\n        Args:\n            files: Dictionary mapping file paths to their contents.\n\n        Returns:\n            IssueOutput with files_created and classes_defined.\n        \"\"\"",
+        "explanation": "Add four new methods: _extract_imports_from_tests_ast() uses Python AST for robust import parsing handling multi-line, aliased, and bare imports. _extract_imports_from_tests_regex() is a fallback. _validate_test_imports_satisfied() validates imports against generated/existing files using AST-based definition lookup. _extract_test_files_from_generated() identifies test files in the generated output by path patterns."
+      },
+      {
+        "file_path": "swarm_attack/agents/coder.py",
+        "change_type": "modify",
+        "current_code": "        # Parse file outputs from response\n        files = self._parse_file_outputs(result.text)\n\n        # Ensure all directories expected by tests exist (creates .gitkeep files)\n        directory_files = self._ensure_directories_exist(test_content)\n        for dir_file, content in directory_files.items():\n            if dir_file not in files:\n                files[dir_file] = content\n\n        # Write implementation files",
+        "proposed_code": "        # Parse file outputs from response\n        files = self._parse_file_outputs(result.text)\n\n        # Ensure all directories expected by tests exist (creates .gitkeep files)\n        directory_files = self._ensure_directories_exist(test_content)\n        for dir_file, content in directory_files.items():\n            if dir_file not in files:\n                files[dir_file] = content\n\n        # CRITICAL: Validate that test imports are satisfied by implementation\n        # This catches incomplete implementations before we write files and return success.\n        # KEY FIX: Check BOTH pre-existing test file (test_content) AND newly generated tests.\n        # The bug occurred because in TDD mode, tests are generated in the same LLM response\n        # and test_content (from disk) is empty - so we must check generated test files too.\n        generated_test_files = self._extract_test_files_from_generated(files)\n        all_test_content_to_validate = []\n\n        # Include pre-existing test file content if available\n        if test_content:\n            all_test_content_to_validate.append((\"disk\", str(test_path), test_content))\n\n        # Include any newly generated test files\n        for test_path_gen, test_content_gen in generated_test_files.items():\n            all_test_content_to_validate.append((\"generated\", test_path_gen, test_content_gen))\n\n        # Validate each test file's imports\n        all_missing = []\n        for source, path, content in all_test_content_to_validate:\n            imports_ok, missing = self._validate_test_imports_satisfied(content, files)\n            if not imports_ok:\n                self._log(\"coder_incomplete_implementation\", {\n                    \"warning\": f\"Test file imports classes not defined in implementation\",\n                    \"test_source\": source,\n                    \"test_path\": path,\n                    \"missing_imports\": missing,\n                }, level=\"warning\")\n                all_missing.extend(missing)\n\n        if all_missing:\n            self._log(\"coder_validation_failed\", {\n                \"error\": \"Generated tests import undefined names\",\n                \"missing_imports\": all_missing,\n                \"files_generated\": list(files.keys()),\n            }, level=\"error\")\n            return AgentResult.failure_result(\n                f\"Incomplete implementation: test file(s) import {len(all_missing)} undefined name(s): \"\n                f\"{', '.join(all_missing[:5])}\"\n                + (f\" (+{len(all_missing)-5} more)\" if len(all_missing) > 5 else \"\"),\n                cost_usd=cost,\n            )\n\n        # Write implementation files",
+        "explanation": "Add validation BEFORE writing files. The key fix: extract test files from the generated `files` dict (not just `test_content` from disk). In TDD mode, the coder generates both tests and implementation in the same response, so we must validate the generated test files. This addresses the critic's critical issue."
+      },
+      {
+        "file_path": "swarm_attack/agents/verifier.py",
+        "change_type": "modify",
+        "current_code": "            errors = []\n            if not issue_tests_passed:\n                errors.append(f\"Issue tests failed: {parsed['tests_failed']} failed, {parsed['tests_passed']} passed\")",
+        "proposed_code": "            errors = []\n            if not issue_tests_passed:\n                # Check for collection errors (ImportError, etc.) which indicate implementation issues\n                # These occur when tests can't even be collected due to missing imports\n                if parsed.get('errors', 0) > 0 and parsed['tests_run'] == 0:\n                    # Extract ImportError details if present in output\n                    import_error_match = re.search(\n                        r\"ImportError:\\s*cannot import name ['\"]([^'\"]+)['\"]\\s+from\\s+['\"]([^'\"]+)['\"]\",\n                        output\n                    )\n                    module_not_found_match = re.search(\n                        r\"ModuleNotFoundError:\\s*No module named ['\"]([^'\"]+)['\"]\",\n                        output\n                    )\n                    if import_error_match:\n                        name, module = import_error_match.groups()\n                        errors.append(\n                            f\"Collection error: cannot import '{name}' from '{module}' - \"\n                            \"implementation may be incomplete (missing class/function definition)\"\n                        )\n                    elif module_not_found_match:\n                        module = module_not_found_match.group(1)\n                        errors.append(\n                            f\"Collection error: module '{module}' not found - \"\n                            \"implementation file may be missing\"\n                        )\n                    else:\n                        errors.append(\n                            f\"Collection error: {parsed['errors']} error(s) during test collection - \"\n                            \"tests could not run (check for missing imports or syntax errors)\"\n                        )\n                else:\n                    errors.append(f\"Issue tests failed: {parsed['tests_failed']} failed, {parsed['tests_passed']} passed\")",
+        "explanation": "Improve error messages when tests fail during collection (ImportError, ModuleNotFoundError) rather than execution. This surfaces the actual root cause (missing imports/modules) instead of the misleading '0 failed, 0 passed' message."
+      }
+    ],
+    "test_cases": [
+      {
+        "name": "test_coder_validates_generated_test_imports",
+        "description": "Regression test: coder must validate imports in GENERATED test files, not just pre-existing ones",
+        "test_code": "def test_coder_validates_generated_test_imports():\n    \"\"\"Regression test: coder must validate imports in generated test files (TDD mode).\n\n    This tests the critical bug: in TDD mode, the coder generates BOTH tests and implementation\n    in the same LLM response. The bug was that validation only checked test_content (from disk),\n    which is empty in TDD mode, so incomplete implementations were marked as success.\n    \"\"\"\n    from swarm_attack.agents.coder import CoderAgent\n    from unittest.mock import MagicMock, patch\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/fake/root\")\n    config.specs_path = Path(\"/fake/root/specs\")\n\n    coder = CoderAgent(config)\n\n    # Simulate generated files from LLM response (TDD mode)\n    # The test file imports RetryStrategy and ErrorCategory, but implementation is incomplete\n    generated_files = {\n        \"tests/generated/feature/test_issue_1.py\": '''from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory\n\ndef test_retry_strategy():\n    assert RetryStrategy.SAME.value == \"same\"\n\ndef test_error_category():\n    assert ErrorCategory.TRANSIENT.value == \"transient\"\n''',\n        \"swarm_attack/chief_of_staff/recovery.py\": '''class RecoveryLevel:\n    \"\"\"Missing RetryStrategy and ErrorCategory enums!\"\"\"\n    pass\n'''\n    }\n\n    # Extract test files from generated output\n    test_files = coder._extract_test_files_from_generated(generated_files)\n    assert len(test_files) == 1\n    assert \"tests/generated/feature/test_issue_1.py\" in test_files\n\n    # Validate the generated test file's imports\n    test_content = test_files[\"tests/generated/feature/test_issue_1.py\"]\n    imports_ok, missing = coder._validate_test_imports_satisfied(test_content, generated_files)\n\n    assert imports_ok is False, \"Should detect missing imports\"\n    assert len(missing) == 2, f\"Should have 2 missing imports, got {missing}\"\n    assert any(\"RetryStrategy\" in m for m in missing)\n    assert any(\"ErrorCategory\" in m for m in missing)",
+        "category": "regression"
+      },
+      {
+        "name": "test_coder_passes_when_generated_implementation_complete",
+        "description": "Coder validation passes when generated test imports are fully satisfied",
+        "test_code": "def test_coder_passes_when_generated_implementation_complete():\n    \"\"\"Coder validation should pass when all imports in generated tests are satisfied.\"\"\"\n    from swarm_attack.agents.coder import CoderAgent\n    from unittest.mock import MagicMock\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/fake/root\")\n    config.specs_path = Path(\"/fake/root/specs\")\n\n    coder = CoderAgent(config)\n\n    # Simulate complete implementation\n    generated_files = {\n        \"tests/generated/feature/test_issue_1.py\": '''from swarm_attack.chief_of_staff.recovery import RetryStrategy, ErrorCategory\n\ndef test_retry_strategy():\n    assert RetryStrategy.SAME.value == \"same\"\n''',\n        \"swarm_attack/chief_of_staff/recovery.py\": '''from enum import Enum\n\nclass RetryStrategy(Enum):\n    SAME = \"same\"\n    ALTERNATIVE = \"alternative\"\n\nclass ErrorCategory(Enum):\n    TRANSIENT = \"transient\"\n    PERMANENT = \"permanent\"\n'''\n    }\n\n    test_files = coder._extract_test_files_from_generated(generated_files)\n    test_content = test_files[\"tests/generated/feature/test_issue_1.py\"]\n    imports_ok, missing = coder._validate_test_imports_satisfied(test_content, generated_files)\n\n    assert imports_ok is True\n    assert missing == []",
+        "category": "edge_case"
+      },
+      {
+        "name": "test_ast_parser_handles_multiline_imports",
+        "description": "AST-based import parser correctly handles multi-line imports with parentheses",
+        "test_code": "def test_ast_parser_handles_multiline_imports():\n    \"\"\"AST parser should correctly extract multi-line imports with parentheses.\"\"\"\n    from swarm_attack.agents.coder import CoderAgent\n    from unittest.mock import MagicMock\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/fake/root\")\n    config.specs_path = Path(\"/fake/root/specs\")\n\n    coder = CoderAgent(config)\n\n    # Test content with multi-line import (common after formatters)\n    test_content = '''from swarm_attack.chief_of_staff.recovery import (\n    RetryStrategy,\n    ErrorCategory,\n    RecoveryLevel,\n)\n\ndef test_something():\n    pass\n'''\n\n    imports = coder._extract_imports_from_tests_ast(test_content)\n\n    assert len(imports) == 1\n    module, file_path, names = imports[0]\n    assert module == \"swarm_attack.chief_of_staff.recovery\"\n    assert file_path == \"swarm_attack/chief_of_staff/recovery.py\"\n    assert \"RetryStrategy\" in names\n    assert \"ErrorCategory\" in names\n    assert \"RecoveryLevel\" in names",
+        "category": "edge_case"
+      },
+      {
+        "name": "test_ast_parser_handles_aliased_imports",
+        "description": "AST-based import parser correctly handles aliased imports (as keyword)",
+        "test_code": "def test_ast_parser_handles_aliased_imports():\n    \"\"\"AST parser should extract original name for aliased imports.\"\"\"\n    from swarm_attack.agents.coder import CoderAgent\n    from unittest.mock import MagicMock\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/fake/root\")\n    config.specs_path = Path(\"/fake/root/specs\")\n\n    coder = CoderAgent(config)\n\n    test_content = '''from swarm_attack.models import RetryStrategy as RS, ErrorCategory as EC\n\ndef test_something():\n    pass\n'''\n\n    imports = coder._extract_imports_from_tests_ast(test_content)\n\n    assert len(imports) == 1\n    module, file_path, names = imports[0]\n    assert \"RetryStrategy\" in names  # Should have original name, not alias\n    assert \"ErrorCategory\" in names\n    assert \"RS\" not in names  # Should NOT have alias\n    assert \"EC\" not in names",
+        "category": "edge_case"
+      },
+      {
+        "name": "test_coder_run_fails_on_incomplete_tdd_implementation",
+        "description": "Integration test: CoderAgent.run() returns failure when TDD-generated tests have unsatisfied imports",
+        "test_code": "def test_coder_run_fails_on_incomplete_tdd_implementation():\n    \"\"\"Integration test: CoderAgent.run() should fail when generated tests import missing classes.\n\n    This is the key integration test that exercises the actual behavior change in the run() method.\n    \"\"\"\n    from swarm_attack.agents.coder import CoderAgent\n    from swarm_attack.agents.base import AgentResult\n    from unittest.mock import MagicMock, patch, PropertyMock\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/tmp/fake_repo\")\n    config.specs_path = Path(\"/tmp/fake_repo/specs\")\n\n    # Mock LLM response with incomplete implementation\n    mock_llm_result = MagicMock()\n    mock_llm_result.text = '''# FILE: tests/generated/feature/test_issue_1.py\nfrom swarm_attack.recovery import MissingClass\n\ndef test_missing():\n    assert MissingClass().value == \"test\"\n\n# FILE: swarm_attack/recovery.py\nclass OtherClass:\n    pass\n'''\n    mock_llm_result.total_cost_usd = 0.05\n\n    mock_llm = MagicMock()\n    mock_llm.run.return_value = mock_llm_result\n\n    coder = CoderAgent(config, llm_runner=mock_llm)\n\n    # Mock file system operations\n    with patch.object(coder, '_load_skill_prompt', return_value=\"skill prompt\"):\n        with patch('swarm_attack.agents.coder.file_exists') as mock_exists:\n            with patch('swarm_attack.agents.coder.read_file') as mock_read:\n                # Spec exists, test file doesn't (TDD mode)\n                def exists_side_effect(path):\n                    path_str = str(path)\n                    if 'spec-final.md' in path_str:\n                        return True\n                    if 'issues.json' in path_str:\n                        return True\n                    return False\n\n                mock_exists.side_effect = exists_side_effect\n\n                def read_side_effect(path):\n                    path_str = str(path)\n                    if 'spec-final.md' in path_str:\n                        return \"# Spec content\"\n                    if 'issues.json' in path_str:\n                        return '{\"issues\": [{\"order\": 1, \"title\": \"Test Issue\", \"body\": \"Description\"}]}'\n                    raise FileNotFoundError(path)\n\n                mock_read.side_effect = read_side_effect\n\n                result = coder.run({\n                    \"feature_id\": \"feature\",\n                    \"issue_number\": 1,\n                })\n\n    # Should fail due to incomplete implementation\n    assert result.success is False, f\"Should fail with incomplete implementation, got: {result}\"\n    assert \"MissingClass\" in str(result.errors) or \"Incomplete implementation\" in str(result.errors)",
+        "category": "integration"
+      },
+      {
+        "name": "test_verifier_surfaces_import_errors_clearly",
+        "description": "Verifier provides helpful error message for ImportError during test collection",
+        "test_code": "def test_verifier_surfaces_import_errors_clearly():\n    \"\"\"Verifier should surface ImportError details, not just '0 failed, 0 passed'.\"\"\"\n    from swarm_attack.agents.verifier import VerifierAgent\n    from unittest.mock import MagicMock, patch\n    from pathlib import Path\n\n    config = MagicMock()\n    config.repo_root = Path(\"/fake/root\")\n    config.tests = MagicMock()\n    config.tests.timeout_seconds = 60\n\n    verifier = VerifierAgent(config)\n\n    # Simulate pytest output with ImportError during collection\n    pytest_output = '''============================= ERRORS ==============================\n_________________ ERROR collecting tests/test_feature.py __________________\nImportError: cannot import name 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery'\n=========================== short test summary info ===========================\nERROR tests/test_feature.py\n========================= 1 error in 0.52s =========================='''\n\n    parsed = verifier._parse_pytest_output(pytest_output)\n\n    # Should detect the error\n    assert parsed['errors'] == 1\n    assert parsed['tests_run'] == 0\n    assert parsed['tests_failed'] == 0",
+        "category": "regression"
+      }
+    ],
+    "risk_level": "low",
+    "risk_explanation": "The fix adds validation before returning success - it's purely additive and defensive. Existing working code paths are unaffected: if implementation is complete, validation passes and behavior is unchanged. The key difference from the previous plan is that we now also validate GENERATED test files, not just pre-existing ones from disk. AST parsing is robust and falls back to regex if needed. The only behavior change is that incomplete implementations now fail explicitly instead of returning false success.",
+    "scope": "Two files: coder.py (add validation methods using AST, add validation call that checks generated test files) and verifier.py (improve error messages for collection errors)",
+    "side_effects": [
+      "Incomplete implementations that previously returned success will now return failure - this is the intended fix and core behavior change",
+      "AST parsing adds minimal CPU overhead (parsing Python source) which is negligible compared to LLM invocation cost",
+      "If AST parsing fails on malformed Python, fallback regex parser is used ensuring robustness",
+      "Verifier error messages will be more descriptive for ImportError/ModuleNotFoundError cases - only affects failure path",
+      "TDD-mode implementations now have their generated tests validated before files are written to disk"
+    ],
+    "rollback_plan": "Remove the four new methods (_extract_imports_from_tests_ast, _extract_imports_from_tests_regex, _validate_test_imports_satisfied, _extract_test_files_from_generated) and the validation block from coder.py. Revert the error message improvements in verifier.py. This restores the broken behavior (false positives for incomplete TDD implementations) but doesn't break anything that was working.",
+    "estimated_effort": "medium"
+  },
+  "implementation": {
+    "success": true,
+    "files_changed": [
+      "swarm_attack/agents/coder.py",
+      "swarm_attack/agents/coder.py",
+      "swarm_attack/agents/coder.py",
+      "swarm_attack/agents/verifier.py"
+    ],
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "commit_hash": null,
+    "error": null
+  },
+  "costs": [
+    {
+      "agent_name": "bug_researcher",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2025-12-19T00:52:04.107413Z"
+    },
+    {
+      "agent_name": "bug_researcher",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2025-12-19T01:11:18.893454Z"
+    },
+    {
+      "agent_name": "bug_researcher",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2025-12-19T01:12:53.805054Z"
+    },
+    {
+      "agent_name": "bug_researcher",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.6744717,
+      "timestamp": "2025-12-19T01:15:41.223988Z"
+    },
+    {
+      "agent_name": "root_cause_analyzer",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.7454764500000001,
+      "timestamp": "2025-12-19T01:16:42.922228Z"
+    },
+    {
+      "agent_name": "root_cause_debate",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2025-12-19T01:17:55.088848Z"
+    },
+    {
+      "agent_name": "fix_planner",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.49732144999999994,
+      "timestamp": "2025-12-19T01:19:36.004436Z"
+    },
+    {
+      "agent_name": "fix_plan_debate",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.4989552,
+      "timestamp": "2025-12-19T01:24:24.849681Z"
+    }
+  ],
+  "transitions": [
+    {
+      "from_phase": "created",
+      "to_phase": "reproducing",
+      "timestamp": "2025-12-19T00:51:29.826088Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproducing",
+      "to_phase": "blocked",
+      "timestamp": "2025-12-19T00:52:04.107454Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "blocked",
+      "to_phase": "reproducing",
+      "timestamp": "2025-12-19T01:10:37.817859Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproducing",
+      "to_phase": "blocked",
+      "timestamp": "2025-12-19T01:11:18.893498Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "blocked",
+      "to_phase": "reproducing",
+      "timestamp": "2025-12-19T01:11:37.482228Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproducing",
+      "to_phase": "blocked",
+      "timestamp": "2025-12-19T01:12:53.805099Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "blocked",
+      "to_phase": "reproducing",
+      "timestamp": "2025-12-19T01:13:53.149820Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproducing",
+      "to_phase": "reproduced",
+      "timestamp": "2025-12-19T01:15:41.224007Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproduced",
+      "to_phase": "analyzing",
+      "timestamp": "2025-12-19T01:15:41.226733Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "analyzing",
+      "to_phase": "analyzed",
+      "timestamp": "2025-12-19T01:17:55.088880Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "analyzed",
+      "to_phase": "planning",
+      "timestamp": "2025-12-19T01:17:55.091133Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "planning",
+      "to_phase": "planned",
+      "timestamp": "2025-12-19T01:24:24.849722Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "planned",
+      "to_phase": "approved",
+      "timestamp": "2025-12-19T01:24:47.713993Z",
+      "trigger": "user_command",
+      "metadata": {}
+    },
+    {
+      "from_phase": "approved",
+      "to_phase": "implementing",
+      "timestamp": "2025-12-19T01:24:53.174280Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "implementing",
+      "to_phase": "verifying",
+      "timestamp": "2025-12-19T01:24:53.176552Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "verifying",
+      "to_phase": "fixed",
+      "timestamp": "2025-12-19T01:24:53.177927Z",
+      "trigger": "auto",
+      "metadata": {}
+    }
+  ],
+  "approval_record": {
+    "approved_by": "philipjcortes",
+    "approved_at": "2025-12-19T01:24:47.713871Z",
+    "fix_plan_hash": "a1eb625e7a07af537b7ab556ba20232e9355f3831a70c26e017e5f0cae952ea7"
+  },
+  "debate_history": {
+    "root_cause_rounds": [
+      {
+        "round_number": 1,
+        "scores": {
+          "evidence_quality": 0.4,
+          "hypothesis_correctness": 0.6,
+          "completeness": 0.4,
+          "alternative_consideration": 0.5
+        },
+        "issues": [
+          {
+            "severity": "moderate",
+            "description": "The analysis asserts that the LLM hit the max_turns limit (steps 10\u201311) without citing any concrete log output or state evidence from this run; the execution trace is narrative rather than proven.",
+            "suggestion": "Reference the actual orchestrator/coder logs (e.g., blocked_reason in the bug state or stderr showing error_max_turns) that demonstrate the turn limit was reached before recovery.py was emitted."
+          },
+          {
+            "severity": "moderate",
+            "description": "The cited root cause location (coder.py line 1275 `self.llm.run(...)`) is just the routine call to the LLM and does not explain why enums weren\u2019t produced; nothing in that code enforces tests-before-implementation or mishandles max_turns.",
+            "suggestion": "Point to the logic that enforces TDD ordering or the handler that treats `error_max_turns` as success, and explain how it leaves recovery.py incomplete."
+          },
+          {
+            "severity": "moderate",
+            "description": "The secondary bug (misleading verifier output of '0 failed, 0 passed' despite collection errors) is mentioned but no root cause analysis is provided\u2014there\u2019s no inspection of `verifier.py` to show how collection errors are surfaced or why messaging omits them.",
+            "suggestion": "Examine the verifier\u2019s parsing/reporting path to identify the exact code that hides pytest collection errors and describe how it should include the ImportError details."
+          }
+        ],
+        "improvements": [],
+        "recommendation": "REVISE",
+        "continue_debate": true,
+        "timestamp": "2025-12-19T01:17:03.412728Z",
+        "critic_cost_usd": 0.0,
+        "moderator_cost_usd": 0.0
+      },
+      {
+        "round_number": 2,
+        "scores": {
+          "evidence_quality": 0.45,
+          "hypothesis_correctness": 0.55,
+          "completeness": 0.6,
+          "alternative_consideration": 0.6
+        },
+        "issues": [
+          {
+            "severity": "moderate",
+            "description": "The analysis asserts that the LLM hit the `max_turns` limit but provides no concrete evidence (logs, bug state dump, or reproducer) to support that claim, so the proposed causal chain is speculative.",
+            "suggestion": "Cite the actual orchestrator or bug-state output showing `blocked_reason=error_max_turns` (or similar) and explain how that trace demonstrates the session terminated before emitting the recovery enums."
+          },
+          {
+            "severity": "moderate",
+            "description": "The timeline is internally inconsistent: step 10 states the LLM aborted due to `max_turns`, yet step 11 claims `CoderAgent` returned `success=True` and the verifier proceeded, which contradicts a max-turn abort scenario and undermines confidence in the hypothesis.",
+            "suggestion": "Clarify the control flow with references to the relevant functions: show whether `max_turns` produces an exception, how the agent handles it, and why execution would continue to verification despite the error."
+          }
+        ],
+        "improvements": [],
+        "recommendation": "REVISE",
+        "continue_debate": true,
+        "timestamp": "2025-12-19T01:17:39.561631Z",
+        "critic_cost_usd": 0.0,
+        "moderator_cost_usd": 0.0
+      }
+    ],
+    "fix_plan_rounds": [
+      {
+        "round_number": 1,
+        "scores": {
+          "correctness": 0.2,
+          "completeness": 0.3,
+          "risk_assessment": 0.4,
+          "test_coverage": 0.3,
+          "side_effect_analysis": 0.4
+        },
+        "issues": [
+          {
+            "severity": "critical",
+            "description": "The validation hook is driven by `test_content`, which only contains the pre-existing on-disk tests. In the failing scenario the coder generates brand-new tests in the current LLM response (held in `files`), so `test_content` is empty and the new `_validate_test_imports_satisfied` never sees those imports; the incomplete implementation still gets written. That means the proposed change cannot detect the bug it targets.",
+            "suggestion": "Extract the test files from the freshly generated `files` dict (e.g., look for paths under the test directory or track which files the LLM marked as tests) and run the import validation against that content before writing anything to disk."
+          },
+          {
+            "severity": "moderate",
+            "description": "`_extract_imports_from_tests` uses a very narrow regex that only matches single-line `from module import \u2026` statements. It ignores multi\u2011line imports, parentheses, aliases, and plain `import module` statements, so many realistic test files (especially formatter-wrapped ones) will not be analyzed and missing implementations will slip through.",
+            "suggestion": "Parse the test file with Python\u2019s `ast` module and walk `Import`/`ImportFrom` nodes so multi-line, aliased, and bare imports are captured reliably, or at least extend the parser to cover those common patterns."
+          },
+          {
+            "severity": "moderate",
+            "description": "The proposed tests do not exercise the new behaviors: they only unit-test the helper function and the pytest parser, never asserting that `CoderAgent.run` now fails when imports are missing or that `VerifierAgent` emits the improved collection error messaging. Without such integration coverage, regressions in the main code path will go unnoticed.",
+            "suggestion": "Add tests that simulate a coder run with generated tests lacking implementations and assert the agent returns a failure with the logged missing imports, and add a verifier test that ensures collection errors produce the new descriptive message."
+          }
+        ],
+        "improvements": [
+          "CRITICAL FIX: Validation now checks GENERATED test files from the LLM response, not just pre-existing test_content from disk. This directly addresses the bug where TDD-mode implementations were marked success despite incomplete implementation.",
+          "Added _extract_test_files_from_generated() to identify test files in the generated output by path patterns (test/, test_, _test.py)",
+          "Replaced narrow regex import parser with AST-based parsing that handles multi-line imports, parenthesized imports, aliases, and bare imports",
+          "Added regex fallback (_extract_imports_from_tests_regex) for when AST parsing fails on malformed Python",
+          "Added AST-based definition lookup in _validate_test_imports_satisfied() instead of just regex matching",
+          "Added integration test (test_coder_run_fails_on_incomplete_tdd_implementation) that exercises the actual CoderAgent.run() method behavior",
+          "Added test for multi-line import parsing",
+          "Added test for aliased import handling",
+          "Improved verifier error messages to also handle ModuleNotFoundError, not just ImportError"
+        ],
+        "recommendation": "REVISE",
+        "continue_debate": true,
+        "timestamp": "2025-12-19T01:20:39.001916Z",
+        "critic_cost_usd": 0.0,
+        "moderator_cost_usd": 0.4989552
+      },
+      {
+        "round_number": 2,
+        "scores": {
+          "correctness": 0.3,
+          "completeness": 0.3,
+          "risk_assessment": 0.4,
+          "test_coverage": 0.6,
+          "side_effect_analysis": 0.5
+        },
+        "issues": [
+          {
+            "severity": "critical",
+            "description": "The plan never addresses the actual root cause (CoderAgent exiting after hitting max_turns without generating the missing enums). Adding import validation only makes the agent fail earlier; it does not help the agent produce the missing RetryStrategy/ErrorCategory definitions or unblock the test writer. The underlying bug therefore remains.",
+            "suggestion": "Add changes that help the coder finish the implementation (e.g., extend turn handling, ensure required enums are scaffolded before tests run, or drive another iteration when imports are missing) rather than only reporting the problem."
+          },
+          {
+            "severity": "critical",
+            "description": "The proposed `_validate_test_imports_satisfied` treats bare `import module` statements as if they import a symbol equal to the module\u2019s last path segment, and then requires that symbol to exist as a class/function/assignment in the file. This is incorrect: importing a module only requires the module file to exist. Valid tests that import modules (or use aliases) will be flagged as failures even when the implementation is complete, so the fix breaks legitimate workflows.",
+            "suggestion": "Handle `ast.Import` nodes by simply verifying that the referenced module file exists (and optionally that it was generated), without trying to find a symbol with the module name inside the file."
+          },
+          {
+            "severity": "moderate",
+            "description": "Risk is characterized as \u201clow\u201d, but the change adds complex AST parsing, new heuristics for file matching, and a new failure gate inside the primary CoderAgent flow. Given the likelihood of false positives (especially for module imports, packages, or non-.py files), the actual blast radius is substantial.",
+            "suggestion": "Reassess the risk level to at least medium and call out the possibility of blocking valid runs; consider feature-flagging or narrowing the validation scope."
+          }
+        ],
+        "improvements": [],
+        "recommendation": "REVISE",
+        "continue_debate": true,
+        "timestamp": "2025-12-19T01:24:02.008798Z",
+        "critic_cost_usd": 0.0,
+        "moderator_cost_usd": 0.0
+      }
+    ]
+  },
+  "blocked_reason": "Claude invocation failed: Claude CLI returned error: error_max_turns",
+  "rejection_reason": null,
+  "notes": [],
+  "version": 1
+}

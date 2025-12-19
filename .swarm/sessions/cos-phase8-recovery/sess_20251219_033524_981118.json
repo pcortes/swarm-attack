@@ -1,0 +1,70 @@
+{
+  "session_id": "sess_20251219_033524_981118",
+  "feature_id": "cos-phase8-recovery",
+  "issue_number": 1,
+  "started_at": "2025-12-19T03:35:24.981144Z",
+  "status": "complete",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:36:04.273203Z",
+      "commit": null,
+      "cost_usd": 0.0638237
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:36:04.534683Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:36:36.259821Z",
+      "commit": null,
+      "cost_usd": 0.17432645
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:36:36.534179Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:37:07.489769Z",
+      "commit": null,
+      "cost_usd": 0.16843645
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:37:07.723106Z",
+      "commit": null,
+      "cost_usd": 0.0
+    },
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:37:35.704783Z",
+      "commit": null,
+      "cost_usd": 0.16545145
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-19T03:37:35.939455Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": "2025-12-19T03:37:40.081331Z",
+  "end_status": "failed",
+  "cost_usd": 0.57203805,
+  "worktree_path": null,
+  "commits": []
+}

@@ -38,13 +38,15 @@ Return ONLY JSON (no markdown, no explanation):
 }
 ```
 
-## Red Flags (likely needs split)
+## Red Flags (triggers auto-split)
 
 - More than 8 acceptance criteria
 - More than 6 methods to implement
 - Multiple enum types or trigger handlers
 - Changes to config + implementation + tests
 - "Implement X with Y integration" (two things at once)
+
+**Note:** When `needs_split=true`, the orchestrator automatically invokes the IssueSplitterAgent to create 2-4 smaller sub-issues. The parent issue is marked as SPLIT and implementation continues with the child issues.
 
 ## Turn Estimation Heuristics
 
