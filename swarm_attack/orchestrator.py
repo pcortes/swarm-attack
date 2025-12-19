@@ -1853,18 +1853,32 @@ class Orchestrator:
 
         Returns True if:
         - auto_split_on_timeout is enabled in config
-        - The error message indicates a timeout
+        - The error indicates timeout OR max_turns exceeded (both = issue too complex)
 
         Args:
             result: The AgentResult from the coder.
 
         Returns:
-            True if timeout auto-split should be triggered.
+            True if auto-split should be triggered due to complexity.
         """
         if not getattr(self.config, "auto_split_on_timeout", True):
             return False
 
-        if result.error and "timed out" in result.error.lower():
+        if not result.error:
+            return False
+
+        error_lower = result.error.lower()
+
+        # Timeout patterns - issue took too long
+        if "timed out" in error_lower:
+            return True
+
+        # Max turns patterns - issue required too many LLM turns
+        if "error_max_turns" in error_lower or "max_turns" in error_lower:
+            return True
+
+        # Context exhausted - issue too large for context window
+        if "context" in error_lower and "exhaust" in error_lower:
             return True
 
         return False
