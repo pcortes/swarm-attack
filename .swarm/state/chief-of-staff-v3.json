@@ -312,7 +312,7 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Test/implementation API mismatch - needs manual review",
       "outputs": {
         "files_created": [
           "/Users/philipjcortes/Desktop/swarm-attack/tests/generated/chief-of-staff-v3/test_issue_14.py",
@@ -341,7 +341,7 @@
     },
     {
       "issue_number": 15,
-      "stage": "DONE",
+      "stage": "BLOCKED",
       "title": "Implement CodeCritic variants",
       "dependencies": [
         13
@@ -349,7 +349,7 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Test/implementation API mismatch - needs manual review",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
@@ -365,7 +365,7 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Test/implementation API mismatch - needs manual review",
       "outputs": {
         "files_created": [
           "tests/generated/chief-of-staff-v3/test_issue_16.py",
