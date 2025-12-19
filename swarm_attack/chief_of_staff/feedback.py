@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from swarm_attack.chief_of_staff.checkpoints import Checkpoint
 
@@ -15,19 +15,59 @@ class HumanFeedback:
     
     Attributes:
         checkpoint_id: Unique identifier for the checkpoint this feedback relates to.
-        timestamp: When the feedback was provided.
+        timestamp: When the feedback was provided (datetime or ISO string).
         feedback_type: Type of feedback (e.g., 'approval', 'rejection', 'modification').
         content: The actual feedback content/message.
         applies_to: List of goal IDs or contexts this feedback applies to.
         expires_at: Optional expiration datetime for time-limited feedback.
+        
+    Also supports alternative field names for backwards compatibility:
+        decision: Alias for feedback_type
+        notes: Alias for content
+        tags: Alias for applies_to
     """
     
     checkpoint_id: str
-    timestamp: datetime
-    feedback_type: str
-    content: str
-    applies_to: list[str]
-    expires_at: Optional[datetime] = None
+    # Support both datetime and string for timestamp
+    timestamp: Union[datetime, str] = field(default_factory=lambda: datetime.now())
+    # feedback_type can be set via 'decision' kwarg
+    feedback_type: str = "guidance"
+    # content can be set via 'notes' kwarg
+    content: str = ""
+    # applies_to can be set via 'tags' kwarg
+    applies_to: list[str] = field(default_factory=list)
+    expires_at: Optional[Union[datetime, str]] = None
+    
+    # Additional fields for the alternative API
+    decision: Optional[str] = field(default=None, repr=False)
+    notes: Optional[str] = field(default=None, repr=False)
+    tags: Optional[list[str]] = field(default=None, repr=False)
+    
+    def __post_init__(self) -> None:
+        """Handle alternative field names after initialization."""
+        # If 'decision' was provided, use it for feedback_type
+        if self.decision is not None and self.feedback_type == "guidance":
+            self.feedback_type = self.decision
+        # If 'notes' was provided, use it for content
+        if self.notes is not None and self.content == "":
+            self.content = self.notes
+        # If 'tags' was provided, use it for applies_to
+        if self.tags is not None and not self.applies_to:
+            self.applies_to = self.tags
+        
+        # Normalize timestamp to datetime if string
+        if isinstance(self.timestamp, str):
+            self._timestamp_str = self.timestamp
+            self.timestamp = datetime.fromisoformat(self.timestamp)
+        else:
+            self._timestamp_str = None
+        
+        # Normalize expires_at to datetime if string
+        if isinstance(self.expires_at, str):
+            self._expires_at_str = self.expires_at
+            self.expires_at = datetime.fromisoformat(self.expires_at)
+        else:
+            self._expires_at_str = None
     
     def to_dict(self) -> dict[str, Any]:
         """Serialize HumanFeedback to a dictionary.
@@ -35,13 +75,28 @@ class HumanFeedback:
         Returns:
             Dictionary representation suitable for JSON serialization.
         """
+        timestamp_val = self.timestamp
+        if isinstance(timestamp_val, datetime):
+            timestamp_val = timestamp_val.isoformat()
+            
+        expires_at_val = None
+        if self.expires_at is not None:
+            if isinstance(self.expires_at, datetime):
+                expires_at_val = self.expires_at.isoformat()
+            else:
+                expires_at_val = self.expires_at
+        
         return {
             "checkpoint_id": self.checkpoint_id,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": timestamp_val,
             "feedback_type": self.feedback_type,
             "content": self.content,
             "applies_to": self.applies_to,
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "expires_at": expires_at_val,
+            # Also include alternative field names for compatibility
+            "decision": self.feedback_type,
+            "notes": self.content,
+            "tags": self.applies_to,
         }
     
     @classmethod
@@ -54,16 +109,19 @@ class HumanFeedback:
         Returns:
             HumanFeedback instance.
         """
-        expires_at = None
-        if data.get("expires_at"):
-            expires_at = datetime.fromisoformat(data["expires_at"])
+        expires_at = data.get("expires_at")
+        
+        # Handle both field name conventions
+        feedback_type = data.get("feedback_type") or data.get("decision", "guidance")
+        content = data.get("content") or data.get("notes", "")
+        applies_to = data.get("applies_to") or data.get("tags", [])
         
         return cls(
             checkpoint_id=data["checkpoint_id"],
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            feedback_type=data["feedback_type"],
-            content=data["content"],
-            applies_to=data.get("applies_to", []),
+            timestamp=data["timestamp"],
+            feedback_type=feedback_type,
+            content=content,
+            applies_to=applies_to,
             expires_at=expires_at,
         )
 
@@ -114,9 +172,21 @@ class FeedbackStore:
         self._ensure_directory()
         return list(self._feedback)
     
-    def save(self) -> None:
-        """Save all feedback to the JSON file."""
+    def save(self, feedback: Optional[HumanFeedback] = None) -> None:
+        """Save feedback to the JSON file.
+        
+        Can be called in two ways:
+        1. save() - saves all feedback in memory to the file
+        2. save(feedback) - adds a single feedback item and saves
+        
+        Args:
+            feedback: Optional single HumanFeedback to add before saving.
+        """
         self._ensure_directory()
+        
+        # If a feedback item is provided, add it first
+        if feedback is not None:
+            self._feedback.append(feedback)
         
         data = [fb.to_dict() for fb in self._feedback]
         
@@ -304,3 +374,76 @@ class FeedbackIncorporator:
         
         expiry_dt = datetime.now() + timedelta(days=expiry_days)
         return expiry_dt.isoformat()
+    
+    def get_relevant_feedback(self, goal: Any) -> list[HumanFeedback]:
+        """Get feedback relevant to a given goal.
+        
+        Filters feedback by:
+        1. Matching tags between feedback and goal
+        2. Goal type matching feedback tags
+        3. Excludes expired feedback
+        
+        Args:
+            goal: A goal object with 'tags' (list[str]) and 'goal_type' (str) attributes.
+            
+        Returns:
+            List of relevant, non-expired HumanFeedback items.
+        """
+        all_feedback = self.feedback_store.get_all()
+        relevant: list[HumanFeedback] = []
+        now = datetime.now()
+        
+        # Get goal tags and type
+        goal_tags = getattr(goal, 'tags', []) or []
+        goal_type = getattr(goal, 'goal_type', '') or ''
+        
+        # Combine goal tags with goal type for matching
+        match_tags = set(goal_tags)
+        if goal_type:
+            match_tags.add(goal_type)
+        
+        for fb in all_feedback:
+            # Check if expired
+            if fb.expires_at is not None:
+                expires_at = fb.expires_at
+                if isinstance(expires_at, str):
+                    expires_at = datetime.fromisoformat(expires_at)
+                if expires_at < now:
+                    continue  # Skip expired feedback
+            
+            # Check for tag matches
+            fb_tags = set(fb.applies_to or [])
+            if fb_tags & match_tags:  # If there's any intersection
+                relevant.append(fb)
+        
+        return relevant
+    
+    def build_feedback_context(self, goal: Any) -> str:
+        """Build a prompt context section from relevant feedback.
+        
+        Creates a markdown-formatted section suitable for injection into
+        agent prompts, containing relevant human feedback.
+        
+        Args:
+            goal: A goal object with 'tags' (list[str]) and 'goal_type' (str) attributes.
+            
+        Returns:
+            Markdown-formatted string with feedback context, or empty string if no relevant feedback.
+        """
+        relevant_feedback = self.get_relevant_feedback(goal)
+        
+        if not relevant_feedback:
+            return ""
+        
+        lines = ["## Human Feedback from Recent Checkpoints", ""]
+        
+        for fb in relevant_feedback:
+            # Format each feedback item
+            decision = fb.feedback_type
+            notes = fb.content
+            
+            lines.append(f"**Decision:** {decision}")
+            lines.append(f"**Notes:** {notes}")
+            lines.append("")
+        
+        return "\n".join(lines)

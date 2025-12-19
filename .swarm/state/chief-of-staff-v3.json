@@ -595,7 +595,7 @@
     },
     {
       "issue_number": 26,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "FeedbackIncorporator: Record feedback with classification",
       "dependencies": [
         25
@@ -633,7 +633,7 @@
     },
     {
       "issue_number": 27,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "FeedbackIncorporator: Retrieval and context building",
       "dependencies": [
         26
@@ -642,8 +642,20 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/feedback.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/feedback.py": [
+            "HumanFeedback",
+            "FeedbackStore",
+            "FeedbackIncorporator"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 1 file(s): swarm_attack/chief_of_staff/feedback.py; Defined: HumanFeedback, FeedbackStore, FeedbackIncorporator",
       "parent_issue": 21,
       "child_issues": []
     },
@@ -733,7 +745,7 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_163427_281737",
+  "current_session": "sess_20251219_172005_743264",
   "created_at": "2025-12-19T05:36:34.147250Z",
   "updated_at": "2025-12-19T16:13:08.062956Z",
   "cost_total_usd": 7.80307225,
