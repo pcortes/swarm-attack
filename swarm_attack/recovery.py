@@ -396,6 +396,10 @@ class LockManager:
         """
         Get information about who holds the lock.
 
+        Handles two lock formats for backwards compatibility:
+        1. Plain timestamp string (from SessionManager): "2025-12-19T16:24:11Z"
+        2. JSON with full LockInfo (newer format): {"session_id": ..., "pid": ...}
+
         Args:
             feature_id: The feature identifier.
             issue_number: GitHub issue number.
@@ -409,9 +413,29 @@ class LockManager:
             return None
 
         try:
-            lock_data = json.loads(lock_path.read_text())
-            return LockInfo.from_dict(lock_data)
-        except (json.JSONDecodeError, KeyError, OSError):
+            lock_content = lock_path.read_text().strip()
+
+            # Try JSON format first (newer format)
+            try:
+                lock_data = json.loads(lock_content)
+                return LockInfo.from_dict(lock_data)
+            except json.JSONDecodeError:
+                pass
+
+            # Fall back to plain timestamp format (SessionManager format)
+            # Create a minimal LockInfo with what we know
+            if lock_content:
+                return LockInfo(
+                    session_id="unknown",
+                    pid=0,
+                    hostname="unknown",
+                    started_at=lock_content,
+                    feature_id=feature_id,
+                    issue_number=issue_number,
+                )
+
+            return None
+        except (KeyError, OSError):
             return None
 
     def force_release(self, feature_id: str, issue_number: int) -> bool:

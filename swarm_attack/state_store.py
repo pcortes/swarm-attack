@@ -504,17 +504,57 @@ class StateStore:
         """
         Get the active (non-ended) session for a feature.
 
+        Automatically marks stale sessions (older than stale_timeout_minutes)
+        as abandoned to prevent blocking future implementations.
+
         Args:
             feature_id: The feature identifier.
 
         Returns:
             Active SessionState or None if no active session.
         """
+        from datetime import datetime, timezone, timedelta
+
         session_ids = self.list_sessions(feature_id)
+        stale_timeout = self._config.sessions.stale_timeout_minutes
 
         for sid in session_ids:
             session = self.load_session(feature_id, sid)
             if session is not None and session.status == "active":
+                # Check if session is stale (older than stale_timeout)
+                try:
+                    started_at = datetime.fromisoformat(
+                        session.started_at.replace("Z", "+00:00")
+                    )
+                    now = datetime.now(timezone.utc)
+                    age = now - started_at
+
+                    if age >= timedelta(minutes=stale_timeout):
+                        # Auto-abandon stale session
+                        session.status = "abandoned"
+                        session.ended_at = now.isoformat()
+                        session.end_status = "stale_abandoned"
+                        self.save_session(session)
+
+                        if self._logger:
+                            self._logger.log(
+                                "stale_session_abandoned",
+                                {
+                                    "feature_id": feature_id,
+                                    "session_id": sid,
+                                    "age_minutes": age.total_seconds() / 60,
+                                    "stale_timeout_minutes": stale_timeout,
+                                },
+                            )
+                        continue  # Skip this stale session
+
+                except (ValueError, AttributeError):
+                    # Can't parse timestamp - consider it stale
+                    session.status = "abandoned"
+                    session.end_status = "invalid_timestamp"
+                    self.save_session(session)
+                    continue
+
                 return session
 
         return None
