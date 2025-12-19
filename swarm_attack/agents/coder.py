@@ -1153,7 +1153,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 
     def _extract_file_paths_from_issue_body(self, issue_body: str) -> tuple[list[str], list[str]]:
         """
-        Extract file paths from the issue body's UPDATE and CREATE sections.
+        Extract file paths from the issue body's UPDATE, CREATE, and File: sections.
 
         Parses the issue body for patterns like:
         - **UPDATE:**
@@ -1161,6 +1161,8 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
           - `swarm_attack/cli.py` (preserve: existing code)
         - **CREATE:**
           - `swarm_attack/chief_of_staff/recovery.py`
+        - Technical Notes format (used by issue generator):
+          - File: `swarm_attack/chief_of_staff/episodes.py`
 
         Args:
             issue_body: The issue body text.
@@ -1216,6 +1218,25 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                             update_paths.append(file_path)
                         else:
                             create_paths.append(file_path)
+
+        # CRITICAL FIX: Also extract "- File:" format from Technical Notes
+        # This is the format used by the issue generator:
+        #   ## Technical Notes
+        #   - File: `swarm_attack/chief_of_staff/episodes.py`
+        # These files are treated as UPDATE (modifying existing code)
+        file_pattern_with_backticks = r'-\s*File:\s*`([^`]+)`'
+        for match in re.finditer(file_pattern_with_backticks, issue_body):
+            file_path = match.group(1).strip()
+            if file_path and file_path not in update_paths:
+                update_paths.append(file_path)
+
+        # Also handle without backticks: - File: swarm_attack/foo.py
+        # But skip if it starts with backtick (already handled above)
+        file_pattern_no_backticks = r'-\s*File:\s*([^`\s][^\s]*\.\w+)'
+        for match in re.finditer(file_pattern_no_backticks, issue_body):
+            file_path = match.group(1).strip()
+            if file_path and file_path not in update_paths:
+                update_paths.append(file_path)
 
         return update_paths, create_paths
 
