@@ -245,7 +245,7 @@ class DailyLog:
             "date": self.date.isoformat(),
             "standups": [s.to_dict() for s in self.standups],
             "work_entries": [w.to_dict() for w in self.work_entries],
-            "goals": [g.to_dict() for g in self.goals],
+            "goals": [g if isinstance(g, dict) else g.to_dict() for g in self.goals],
             "summary": self.summary.to_dict() if self.summary else None,
         }
 
@@ -338,19 +338,35 @@ class DailyLogManager:
             lines.append("## Goals")
             lines.append("")
             for goal in log.goals:
+                # Handle both DailyGoal objects and dicts
+                if isinstance(goal, dict):
+                    status = goal.get("status", "pending")
+                    estimated_minutes = goal.get("estimated_minutes", 0)
+                    actual_minutes = goal.get("actual_minutes")
+                    description = goal.get("description", "")
+                    priority = goal.get("priority", "medium")
+                    notes = goal.get("notes", "")
+                else:
+                    status = goal.status.value if hasattr(goal.status, 'value') else goal.status
+                    estimated_minutes = goal.estimated_minutes
+                    actual_minutes = goal.actual_minutes
+                    description = goal.description
+                    priority = goal.priority.value if hasattr(goal.priority, 'value') else goal.priority
+                    notes = goal.notes
+
                 status_emoji = {
                     "complete": "[x]",
                     "in_progress": "[-]",
                     "pending": "[ ]",
                     "blocked": "[!]",
                     "deferred": "[~]",
-                }.get(goal.status, "[ ]")
-                time_info = f"~{goal.estimated_minutes}min"
-                if goal.actual_minutes is not None:
-                    time_info = f"{goal.actual_minutes}/{goal.estimated_minutes}min"
-                lines.append(f"- {status_emoji} **{goal.description}** ({time_info}) [{goal.priority}]")
-                if goal.notes:
-                    lines.append(f"  - {goal.notes}")
+                }.get(status, "[ ]")
+                time_info = f"~{estimated_minutes}min"
+                if actual_minutes is not None:
+                    time_info = f"{actual_minutes}/{estimated_minutes}min"
+                lines.append(f"- {status_emoji} **{description}** ({time_info}) [{priority}]")
+                if notes:
+                    lines.append(f"  - {notes}")
             lines.append("")
 
         # Summary section

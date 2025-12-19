@@ -44,6 +44,7 @@ class GoalExecutionResult:
     duration_seconds: int
     error: Optional[str] = None
     output: str = ""
+    checkpoint_pending: bool = False
 
 
 @dataclass
@@ -135,6 +136,35 @@ class AutopilotRunner:
         self.on_goal_start = on_goal_start
         self.on_goal_complete = on_goal_complete
         self.on_checkpoint = on_checkpoint
+
+    @staticmethod
+    def _parse_duration(duration: str) -> int:
+        """Parse duration string to minutes.
+
+        Args:
+            duration: Duration string like "2h", "90m", "1h30m"
+
+        Returns:
+            Duration in minutes
+        """
+        import re
+        total_minutes = 0
+
+        # Match hours
+        hours_match = re.search(r'(\d+)h', duration)
+        if hours_match:
+            total_minutes += int(hours_match.group(1)) * 60
+
+        # Match minutes
+        mins_match = re.search(r'(\d+)m', duration)
+        if mins_match:
+            total_minutes += int(mins_match.group(1))
+
+        # If no units found, assume minutes
+        if total_minutes == 0 and duration.isdigit():
+            total_minutes = int(duration)
+
+        return total_minutes if total_minutes > 0 else 120  # Default 2 hours
 
     def _execute_feature_goal(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a feature goal via Orchestrator.
@@ -386,6 +416,8 @@ class AutopilotRunner:
         goals: list[DailyGoal],
         budget_usd: Optional[float] = None,
         duration_minutes: Optional[int] = None,
+        stop_trigger: Optional[str] = None,
+        dry_run: bool = False,
     ) -> AutopilotRunResult:
         """Start a new autopilot session with the given goals.
 
@@ -393,10 +425,17 @@ class AutopilotRunner:
             goals: List of DailyGoal to execute
             budget_usd: Budget limit in USD (defaults to config)
             duration_minutes: Time limit in minutes (defaults to config)
+            stop_trigger: Optional keyword to stop at (e.g., "approval")
+            dry_run: If True, don't actually execute (for testing)
 
         Returns:
             AutopilotRunResult with session state and execution summary
         """
+        # Store stop trigger for checkpoint handling
+        self._stop_trigger = stop_trigger
+        self._dry_run = dry_run
+        import asyncio
+
         start_time = time.time()
 
         # Use config defaults if not specified
@@ -404,6 +443,9 @@ class AutopilotRunner:
             budget_usd = self.config.budget_usd
         if duration_minutes is None:
             duration_minutes = self.config.duration_minutes
+
+        # Reset daily cost at session start (Issue #12 requirement)
+        self.checkpoint_system.reset_daily_cost()
 
         # Create new session
         session_id = str(uuid.uuid4())[:8]
@@ -421,20 +463,45 @@ class AutopilotRunner:
         # Execute goals
         goals_completed = 0
         total_cost = 0.0
+        checkpoint_pending = False
 
         for i, goal in enumerate(goals):
             session.current_goal_index = i
 
+            # Check checkpoint before execution (Issue #12 requirement)
+            # This checks for triggers like COST, UX_CHANGE, ARCHITECTURE, etc.
+            try:
+                loop = asyncio.get_running_loop()
+                # If we're in an async context, use nest_asyncio or create task
+                import nest_asyncio
+                nest_asyncio.apply()
+                checkpoint_result = loop.run_until_complete(
+                    self.checkpoint_system.check_before_execution(goal)
+                )
+            except RuntimeError:
+                # No running loop - create a new one
+                checkpoint_result = asyncio.run(
+                    self.checkpoint_system.check_before_execution(goal)
+                )
+
+            if checkpoint_result.requires_approval and not checkpoint_result.approved:
+                # Checkpoint requires approval - pause execution
+                checkpoint_pending = True
+                session.state = AutopilotState.PAUSED
+
+                if self.on_checkpoint and checkpoint_result.checkpoint:
+                    self.on_checkpoint(checkpoint_result.checkpoint.trigger)
+
+                break
+
             # Check budget before execution
-            estimated_cost = goal.estimated_cost_usd or 0.0
-            budget_check = check_budget(
-                estimated_cost=estimated_cost,
-                current_spend=total_cost,
-                budget_limit=budget_usd,
+            remaining_budget = budget_usd - total_cost
+            can_execute = check_budget(
+                remaining_budget=remaining_budget,
                 min_execution_budget=self.config.min_execution_budget,
             )
 
-            if not budget_check.can_execute:
+            if not can_execute:
                 session.state = AutopilotState.PAUSED
                 break
 
@@ -445,6 +512,9 @@ class AutopilotRunner:
             # Execute goal
             result = self._execute_goal(goal)
 
+            # Update daily cost tracking (Issue #12 requirement)
+            self.checkpoint_system.update_daily_cost(result.cost_usd)
+
             # Update totals
             total_cost += result.cost_usd
             session.total_cost_usd = total_cost
@@ -454,6 +524,12 @@ class AutopilotRunner:
                 goals_completed += 1
             else:
                 goal.status = GoalStatus.BLOCKED
+
+            # Check if execution returned checkpoint_pending
+            if result.checkpoint_pending:
+                checkpoint_pending = True
+                session.state = AutopilotState.PAUSED
+                break
 
             # Callback after execution
             if self.on_goal_complete:

@@ -215,27 +215,27 @@ class GoalTracker:
                 recommendations.append(
                     Recommendation(
                         priority=RecommendationPriority.P1,
-                        action=f"Approve spec for {feature.name}",
+                        action=f"Approve spec for {feature.feature_id}",
                         reason="Spec needs approval before implementation",
-                        linked_item=feature.name,
+                        linked_item=feature.feature_id,
                     )
                 )
             elif phase in P2_FEATURE_PHASES:
                 recommendations.append(
                     Recommendation(
                         priority=RecommendationPriority.P2,
-                        action=f"Continue {feature.name}",
+                        action=f"Continue {feature.feature_id}",
                         reason=f"Feature is in {phase}",
-                        linked_item=feature.name,
+                        linked_item=feature.feature_id,
                     )
                 )
             elif phase in P3_FEATURE_PHASES:
                 recommendations.append(
                     Recommendation(
                         priority=RecommendationPriority.P3,
-                        action=f"Start {feature.name}",
+                        action=f"Start {feature.feature_id}",
                         reason=f"Feature is ready ({phase})",
-                        linked_item=feature.name,
+                        linked_item=feature.feature_id,
                     )
                 )
 
@@ -279,3 +279,182 @@ class GoalTracker:
         recommendations.sort(key=lambda r: priority_order[r.priority])
 
         return recommendations
+
+    def get_today_goals(self) -> list[DailyGoal]:
+        """Get today's goals from the daily log.
+
+        Returns:
+            List of today's goals.
+        """
+        today_log = self.log_manager.get_today()
+        # Always convert to goal_tracker.DailyGoal with proper enums
+        # daily_log.DailyGoal uses strings, we need GoalStatus enums
+        result = []
+        for g in today_log.goals:
+            if isinstance(g, dict):
+                result.append(DailyGoal.from_dict(g))
+            elif hasattr(g, 'to_dict'):
+                # It's a daily_log.DailyGoal, convert via dict
+                result.append(DailyGoal.from_dict(g.to_dict()))
+            else:
+                result.append(g)
+        return result
+
+    def get_yesterday_goals(self) -> list[DailyGoal]:
+        """Get yesterday's goals for comparison.
+
+        Returns:
+            List of yesterday's goals, empty list if no log exists.
+        """
+        yesterday_log = self.log_manager.get_yesterday()
+        if yesterday_log is None:
+            return []
+        # Always convert to goal_tracker.DailyGoal with proper enums
+        result = []
+        for g in yesterday_log.goals:
+            if isinstance(g, dict):
+                result.append(DailyGoal.from_dict(g))
+            elif hasattr(g, 'to_dict'):
+                result.append(DailyGoal.from_dict(g.to_dict()))
+            else:
+                result.append(g)
+        return result
+
+    def set_goals(self, goals: list[DailyGoal]) -> None:
+        """Set today's goals in the daily log.
+
+        Args:
+            goals: List of goals to set for today.
+        """
+        today_log = self.log_manager.get_today()
+        today_log.goals = [g.to_dict() if isinstance(g, DailyGoal) else g for g in goals]
+        self.log_manager.save_log(today_log)
+
+    def update_goal(
+        self,
+        goal_id: str,
+        status: Optional[GoalStatus] = None,
+        notes: Optional[str] = None,
+    ) -> None:
+        """Update a goal's status and/or notes.
+
+        Args:
+            goal_id: ID of the goal to update.
+            status: New status (if provided).
+            notes: New notes (if provided).
+
+        Raises:
+            ValueError: If goal not found.
+        """
+        today_log = self.log_manager.get_today()
+
+        for i, goal_data in enumerate(today_log.goals):
+            goal = DailyGoal.from_dict(goal_data) if isinstance(goal_data, dict) else goal_data
+            if goal.goal_id == goal_id:
+                if status is not None:
+                    goal.status = status
+                if notes is not None:
+                    goal.notes = notes
+                today_log.goals[i] = goal.to_dict() if isinstance(goal_data, dict) else goal
+                self.log_manager.save_log(today_log)
+                return
+
+        raise ValueError(f"Goal not found: {goal_id}")
+
+    def mark_complete(self, goal_id: str, actual_minutes: Optional[int] = None) -> None:
+        """Mark a goal as complete.
+
+        Args:
+            goal_id: ID of the goal to mark complete.
+            actual_minutes: Actual time spent (optional).
+
+        Raises:
+            ValueError: If goal not found.
+        """
+        today_log = self.log_manager.get_today()
+
+        for i, goal_data in enumerate(today_log.goals):
+            goal = DailyGoal.from_dict(goal_data) if isinstance(goal_data, dict) else goal_data
+            if goal.goal_id == goal_id:
+                goal.status = GoalStatus.COMPLETE
+                if actual_minutes is not None:
+                    goal.actual_minutes = actual_minutes
+                today_log.goals[i] = goal.to_dict() if isinstance(goal_data, dict) else goal
+                self.log_manager.save_log(today_log)
+                return
+
+        raise ValueError(f"Goal not found: {goal_id}")
+
+    def compare_plan_vs_actual(self) -> dict[str, Any]:
+        """Compare yesterday's plan vs actual results.
+
+        Returns:
+            Dictionary with:
+            - total_planned: Total number of goals planned
+            - total_completed: Number of goals completed
+            - completion_rate: Float (0-1) completion rate
+            - estimated_minutes: Total estimated time
+            - actual_minutes: Total actual time spent
+            - time_variance: Difference (actual - estimated)
+            - incomplete_goals: List of incomplete goal IDs
+        """
+        yesterday_goals = self.get_yesterday_goals()
+
+        if not yesterday_goals:
+            return {
+                "total_planned": 0,
+                "total_completed": 0,
+                "completion_rate": 0.0,
+                "estimated_minutes": 0,
+                "actual_minutes": 0,
+                "time_variance": 0,
+                "incomplete_goals": [],
+            }
+
+        total_planned = len(yesterday_goals)
+        completed_goals = [g for g in yesterday_goals if g.status == GoalStatus.COMPLETE]
+        total_completed = len(completed_goals)
+
+        completion_rate = total_completed / total_planned if total_planned > 0 else 0.0
+
+        estimated_minutes = sum(g.estimated_minutes for g in yesterday_goals)
+        actual_minutes = sum(g.actual_minutes or 0 for g in completed_goals)
+        time_variance = actual_minutes - estimated_minutes
+
+        incomplete_goal_ids = [
+            g.goal_id for g in yesterday_goals if g.status != GoalStatus.COMPLETE
+        ]
+
+        return {
+            "total_planned": total_planned,
+            "total_completed": total_completed,
+            "completion_rate": completion_rate,
+            "estimated_minutes": estimated_minutes,
+            "actual_minutes": actual_minutes,
+            "time_variance": time_variance,
+            "incomplete_goals": incomplete_goal_ids,
+        }
+
+    def get_carryover_goals(self) -> list[DailyGoal]:
+        """Get incomplete goals that should carry over from yesterday.
+
+        Returns:
+            List of goals with status PENDING or IN_PROGRESS.
+        """
+        yesterday_goals = self.get_yesterday_goals()
+
+        carryover_statuses = {GoalStatus.PENDING, GoalStatus.IN_PROGRESS}
+        return [g for g in yesterday_goals if g.status in carryover_statuses]
+
+    def generate_recommendations(self, snapshot: RepoStateSnapshot) -> list[Recommendation]:
+        """Generate prioritized recommendations based on repo state.
+
+        This is an alias for reconcile_with_state to match the expected interface.
+
+        Args:
+            snapshot: Current repository state.
+
+        Returns:
+            List of prioritized recommendations.
+        """
+        return self.reconcile_with_state(snapshot)
