@@ -479,37 +479,110 @@ class CoderAgent(BaseAgent):
 
     def _format_test_failures(self, failures: list[dict[str, Any]]) -> str:
         """
-        Format test failures for inclusion in the prompt.
+        Format ALL failure types for inclusion in the prompt.
+
+        Handles multiple failure types:
+        - recovery_agent_plan: Instructions from RecoveryAgent (highest priority)
+        - test_failure: Standard pytest failures from VerifierAgent
+        - Unknown types: Formatted as generic errors
 
         Args:
-            failures: List of failure dictionaries from VerifierAgent.
+            failures: List of failure dictionaries from orchestrator.
+                Can include test failures, recovery plans, or any future type.
 
         Returns:
-            Formatted string describing the failures.
+            Formatted string with recovery plans FIRST, then test failures.
         """
         if not failures:
             return ""
 
-        lines = ["## ⚠️ TEST FAILURES FROM PREVIOUS RUN", ""]
-        lines.append(f"**{len(failures)} test(s) failed.** You must fix these specific issues:")
-        lines.append("")
+        # Separate failure types for proper prioritization
+        recovery_plans: list[dict[str, Any]] = []
+        test_failures: list[dict[str, Any]] = []
+        other_failures: list[dict[str, Any]] = []
 
-        for i, failure in enumerate(failures, 1):
-            test_name = failure.get("test", "unknown")
-            test_class = failure.get("class", "")
-            file_path = failure.get("file", "unknown")
-            line_num = failure.get("line", "?")
-            error_msg = failure.get("error", "Unknown error")
+        for failure in failures:
+            failure_type = failure.get("type", "")
+            if failure_type == "recovery_agent_plan":
+                recovery_plans.append(failure)
+            elif "test" in failure or "error" in failure:
+                # Standard test failure format from VerifierAgent
+                test_failures.append(failure)
+            else:
+                other_failures.append(failure)
 
-            full_test_name = f"{test_class}::{test_name}" if test_class else test_name
+        lines: list[str] = []
 
-            lines.append(f"### Failure {i}: `{full_test_name}`")
-            lines.append(f"**File:** `{file_path}` line {line_num}")
-            lines.append(f"**Error:** {error_msg}")
+        # RECOVERY PLANS FIRST - highest priority, must be seen
+        if recovery_plans:
+            lines.append("## 🔧 RECOVERY INSTRUCTIONS (FOLLOW THESE FIRST)")
+            lines.append("")
+            lines.append("The RecoveryAgent analyzed your previous failure and generated these instructions.")
+            lines.append("**You MUST follow these instructions to fix the issue:**")
             lines.append("")
 
-        lines.append("**IMPORTANT:** Focus on fixing THESE SPECIFIC failures. Do not rewrite working code.")
-        lines.append("")
+            for i, plan in enumerate(recovery_plans, 1):
+                if len(recovery_plans) > 1:
+                    lines.append(f"### Recovery Plan {i}")
+                    lines.append("")
+
+                root_cause = plan.get("root_cause", "")
+                message = plan.get("message", "")
+                suggested_actions = plan.get("suggested_actions", [])
+
+                if root_cause:
+                    lines.append(f"**Root Cause:** {root_cause}")
+                    lines.append("")
+
+                if message:
+                    lines.append("**What to Fix:**")
+                    lines.append("")
+                    lines.append(message)
+                    lines.append("")
+
+                if suggested_actions:
+                    lines.append("**Suggested Actions:**")
+                    for action in suggested_actions:
+                        lines.append(f"- {action}")
+                    lines.append("")
+
+            lines.append("---")
+            lines.append("")
+
+        # TEST FAILURES - specific assertion details
+        if test_failures:
+            lines.append("## ⚠️ TEST FAILURES FROM PREVIOUS RUN")
+            lines.append("")
+            lines.append(f"**{len(test_failures)} test(s) failed.** You must fix these specific issues:")
+            lines.append("")
+
+            for i, failure in enumerate(test_failures, 1):
+                test_name = failure.get("test", "unknown")
+                test_class = failure.get("class", "")
+                file_path = failure.get("file", "unknown")
+                line_num = failure.get("line", "?")
+                error_msg = failure.get("error", "Unknown error")
+
+                full_test_name = f"{test_class}::{test_name}" if test_class else test_name
+
+                lines.append(f"### Failure {i}: `{full_test_name}`")
+                lines.append(f"**File:** `{file_path}` line {line_num}")
+                lines.append(f"**Error:** {error_msg}")
+                lines.append("")
+
+            lines.append("**IMPORTANT:** Focus on fixing THESE SPECIFIC failures. Do not rewrite working code.")
+            lines.append("")
+
+        # OTHER FAILURES - unknown types, formatted generically for extensibility
+        if other_failures:
+            lines.append("## ⚠️ OTHER ERRORS")
+            lines.append("")
+            for i, failure in enumerate(other_failures, 1):
+                failure_type = failure.get("type", "unknown")
+                message = failure.get("message", str(failure))
+                lines.append(f"### Error {i} (type: {failure_type})")
+                lines.append(f"**Details:** {message}")
+                lines.append("")
 
         return "\n".join(lines)
 
