@@ -189,6 +189,28 @@ class RecoveryManager:
         self.backoff_base_seconds = backoff_base_seconds
         self.backoff_multiplier = backoff_multiplier
 
+    def _log_level2_fallthrough(
+        self,
+        goal_id: str,
+        error_type: LLMErrorType,
+        error_message: str,
+    ) -> None:
+        """Log explicit message when Level 2 ALTERNATIVE falls through to ESCALATE.
+        
+        This creates an audit trail and makes the extension point visible for
+        future implementation of alternative recovery strategies.
+        
+        Args:
+            goal_id: The ID of the goal that encountered the error.
+            error_type: The LLMErrorType of the systematic error.
+            error_message: The error message from the exception.
+        """
+        timestamp = datetime.now().isoformat()
+        logger.warning(
+            f"[{timestamp}] Level 2 ALTERNATIVE not implemented, falling through to ESCALATE | "
+            f"goal_id={goal_id} | error_type={error_type.name} | error={error_message}"
+        )
+
     async def execute_with_recovery(
         self,
         goal: "DailyGoal",
@@ -279,9 +301,12 @@ class RecoveryManager:
 
                 elif category == ErrorCategory.SYSTEMATIC:
                     # Level 2: ALTERNATIVE - Extension point, falls through to Level 4
-                    logger.warning(
-                        f"Level 2 (ALTERNATIVE): Systematic error detected, "
-                        f"falling through to Level 4 (ESCALATE): {last_error}"
+                    # Log explicit fallthrough message for audit trail and future extension
+                    error_type = getattr(e, "error_type", None)
+                    self._log_level2_fallthrough(
+                        goal_id=goal.goal_id,
+                        error_type=error_type,
+                        error_message=last_error,
                     )
                     recovery_level = RetryStrategy.ESCALATE.value
                     break

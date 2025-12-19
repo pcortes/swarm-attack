@@ -108,7 +108,7 @@
     },
     {
       "issue_number": 4,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Refactor execute_with_recovery() to support 4-level hierarchy",
       "dependencies": [
         1,
@@ -160,8 +160,26 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/cos-phase8-recovery/test_issue_5.py",
+          "swarm_attack/chief_of_staff/recovery.py"
+        ],
+        "classes_defined": {
+          "tests/generated/cos-phase8-recovery/test_issue_5.py": [
+            "TestLevel2FallthroughLogging"
+          ],
+          "swarm_attack/chief_of_staff/recovery.py": [
+            "RecoveryLevel",
+            "RetryStrategy",
+            "ErrorCategory",
+            "RecoveryResult",
+            "RecoveryManager"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/cos-phase8-recovery/test_issue_5.py, swarm_attack/chief_of_staff/recovery.py; Defined: TestLevel2FallthroughLogging, RecoveryLevel, RetryStrategy, ErrorCategory, RecoveryResult",
       "parent_issue": null,
       "child_issues": []
     },
@@ -223,13 +241,13 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_035208_125295",
+  "current_session": "sess_20251219_035452_365397",
   "created_at": "2025-12-19T00:35:43.691231Z",
-  "updated_at": "2025-12-19T03:52:02.026982Z",
-  "cost_total_usd": 5.237422099999999,
+  "updated_at": "2025-12-19T03:54:47.791294Z",
+  "cost_total_usd": 5.964978549999999,
   "cost_by_phase": {
     "SPEC_IN_PROGRESS": 1.25291445,
     "ISSUES": 0.20130694999999998,
-    "IMPLEMENTATION": 3.7832006999999996
+    "IMPLEMENTATION": 4.51075715
   }
 }
