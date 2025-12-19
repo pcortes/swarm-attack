@@ -7,6 +7,7 @@ with checkpoint-based pause/resume capability. It integrates with:
 - GoalTracker for goal management
 - Orchestrator for feature/spec execution (Chief of Staff v3)
 - BugOrchestrator for bug execution (Chief of Staff v3)
+- RecoveryManager for hierarchical retry/escalation
 
 Implementation: Real Execution (v3)
 - Full checkpoint trigger validation with real logic
@@ -15,10 +16,12 @@ Implementation: Real Execution (v3)
 - Real execution via Orchestrator.run_issue_session() for features
 - Real execution via BugOrchestrator.fix() for bugs
 - Real execution via Orchestrator.run_spec_pipeline() for specs
+- Hierarchical recovery with RecoveryManager for automatic retries
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -31,10 +34,12 @@ from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, Checkpoint
 from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalStatus
 from swarm_attack.chief_of_staff.budget import check_budget, get_effective_cost
+from swarm_attack.chief_of_staff.recovery import RecoveryManager
 
 if TYPE_CHECKING:
     from swarm_attack.orchestrator import Orchestrator
     from swarm_attack.bug_orchestrator import BugOrchestrator
+    from swarm_attack.chief_of_staff.episodes import EpisodeStore
 
 
 @dataclass
@@ -83,6 +88,7 @@ class AutopilotRunner:
     2. Session persistence via AutopilotSessionStore
     3. Goal-by-goal execution with progress tracking
     4. Pause on checkpoint triggers, resume from stored state
+    5. Hierarchical recovery via RecoveryManager
 
     Implementation (v3 Real Execution):
     - Validates all checkpoint logic
@@ -91,6 +97,7 @@ class AutopilotRunner:
     - Calls Orchestrator.run_issue_session() for feature goals
     - Calls BugOrchestrator.fix() for bug goals
     - Calls Orchestrator.run_spec_pipeline() for spec goals
+    - Uses RecoveryManager for automatic retry/escalation
 
     Usage:
         runner = AutopilotRunner(
@@ -115,6 +122,8 @@ class AutopilotRunner:
         session_store: AutopilotSessionStore,
         orchestrator: Optional["Orchestrator"] = None,
         bug_orchestrator: Optional["BugOrchestrator"] = None,
+        recovery_manager: Optional[RecoveryManager] = None,
+        episode_store: Optional["EpisodeStore"] = None,
         on_goal_start: Optional[Callable[[DailyGoal], None]] = None,
         on_goal_complete: Optional[Callable[[DailyGoal, GoalExecutionResult], None]] = None,
         on_checkpoint: Optional[Callable[[CheckpointTrigger], None]] = None,
@@ -127,6 +136,9 @@ class AutopilotRunner:
             session_store: AutopilotSessionStore for persistence
             orchestrator: Optional Orchestrator for feature execution
             bug_orchestrator: Optional BugOrchestrator for bug execution
+            recovery_manager: Optional RecoveryManager for retry/escalation.
+                              If not provided, one will be created.
+            episode_store: Optional EpisodeStore for logging recovery episodes.
             on_goal_start: Optional callback when goal execution starts
             on_goal_complete: Optional callback when goal completes
             on_checkpoint: Optional callback when checkpoint triggers
@@ -139,6 +151,13 @@ class AutopilotRunner:
         self.on_goal_start = on_goal_start
         self.on_goal_complete = on_goal_complete
         self.on_checkpoint = on_checkpoint
+        self.episode_store = episode_store
+
+        # Initialize or use provided RecoveryManager
+        if recovery_manager is not None:
+            self.recovery_manager = recovery_manager
+        else:
+            self.recovery_manager = RecoveryManager(checkpoint_system)
 
     @staticmethod
     def _parse_duration(duration: str) -> int:
@@ -169,8 +188,10 @@ class AutopilotRunner:
 
         return total_minutes if total_minutes > 0 else 120  # Default 2 hours
 
-    def _execute_feature_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a feature goal via Orchestrator.
+    def _execute_feature_goal_sync(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a feature goal via Orchestrator (synchronous).
+
+        This is the core execution function without recovery wrapping.
 
         Args:
             goal: DailyGoal with linked_feature and linked_issue set
@@ -182,6 +203,49 @@ class AutopilotRunner:
 
         # Check if orchestrator is available
         if self.orchestrator is None:
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=0,
+                error="No orchestrator configured for feature execution",
+                output="",
+            )
+
+        # Call orchestrator.run_issue_session(feature_id, issue_number)
+        result = self.orchestrator.run_issue_session(
+            feature_id=goal.linked_feature,
+            issue_number=goal.linked_issue,
+        )
+
+        duration = int(time.time() - start_time)
+
+        # Map result status to success boolean
+        success = result.status == "success"
+        cost_usd = getattr(result, "cost_usd", 0.0)
+        error = getattr(result, "error", None) if not success else None
+        # Ensure output is a string (mock objects may return MagicMock)
+        msg = getattr(result, "message", "")
+        output = msg if isinstance(msg, str) else ""
+
+        return GoalExecutionResult(
+            success=success,
+            cost_usd=cost_usd,
+            duration_seconds=duration,
+            error=error,
+            output=output,
+        )
+
+    def _execute_feature_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a feature goal with recovery via RecoveryManager.
+
+        Args:
+            goal: DailyGoal with linked_feature and linked_issue set
+
+        Returns:
+            GoalExecutionResult with success, cost_usd, duration_seconds
+        """
+        # Check if orchestrator is available first
+        if self.orchestrator is None:
             goal.error_count += 1
             return GoalExecutionResult(
                 success=False,
@@ -191,41 +255,30 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Create async execute function for recovery manager
+        async def execute_fn():
+            # Execute synchronously within async wrapper
+            return self._execute_feature_goal_sync(goal)
+
+        # Run with recovery
         try:
-            # Call orchestrator.run_issue_session(feature_id, issue_number)
-            result = self.orchestrator.run_issue_session(
-                feature_id=goal.linked_feature,
-                issue_number=goal.linked_issue,
+            loop = asyncio.get_running_loop()
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = loop.run_until_complete(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
+            )
+        except RuntimeError:
+            # No running loop - create a new one
+            result = asyncio.run(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
             )
 
-            duration = int(time.time() - start_time)
-
-            # Map result status to success boolean
-            success = result.status == "success"
-            cost_usd = getattr(result, "cost_usd", 0.0)
-            error = getattr(result, "error", None) if not success else None
-            # Ensure output is a string (mock objects may return MagicMock)
-            msg = getattr(result, "message", "")
-            output = msg if isinstance(msg, str) else ""
-
-            return GoalExecutionResult(
-                success=success,
-                cost_usd=cost_usd,
-                duration_seconds=duration,
-                error=error,
-                output=output,
-            )
-
-        except Exception as e:
-            goal.error_count += 1
-            duration = int(time.time() - start_time)
-            return GoalExecutionResult(
-                success=False,
-                cost_usd=0.0,
-                duration_seconds=duration,
-                error=str(e),
-                output="",
-            )
+        return result
 
     def _execute_goal_with_budget_check(
         self,
@@ -251,8 +304,10 @@ class AutopilotRunner:
             )
         return self._execute_goal(goal)
 
-    def _execute_bug_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a bug goal via BugOrchestrator.
+    def _execute_bug_goal_sync(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a bug goal via BugOrchestrator (synchronous).
+
+        This is the core execution function without recovery wrapping.
 
         Args:
             goal: DailyGoal with linked_bug set
@@ -264,6 +319,53 @@ class AutopilotRunner:
 
         # Check if bug_orchestrator is available
         if self.bug_orchestrator is None:
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=0,
+                error="No bug_orchestrator configured for bug execution",
+                output="",
+            )
+
+        # Call bug_orchestrator.fix(bug_id)
+        result = self.bug_orchestrator.fix(goal.linked_bug)
+
+        duration = int(time.time() - start_time)
+
+        # Map result to success boolean
+        # Success if result.success is True or phase.value == "fixed"
+        success = False
+        if hasattr(result, "success"):
+            success = result.success
+        if hasattr(result, "phase") and hasattr(result.phase, "value"):
+            if result.phase.value == "fixed":
+                success = True
+
+        cost_usd = getattr(result, "cost_usd", 0.0)
+        error = getattr(result, "error", None) if not success else None
+        # Ensure output is a string (mock objects may return MagicMock)
+        msg = getattr(result, "message", "")
+        output = msg if isinstance(msg, str) else ""
+
+        return GoalExecutionResult(
+            success=success,
+            cost_usd=cost_usd,
+            duration_seconds=duration,
+            error=error,
+            output=output,
+        )
+
+    def _execute_bug_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a bug goal with recovery via RecoveryManager.
+
+        Args:
+            goal: DailyGoal with linked_bug set
+
+        Returns:
+            GoalExecutionResult with success, cost_usd, duration_seconds
+        """
+        # Check if bug_orchestrator is available first
+        if self.bug_orchestrator is None:
             goal.error_count += 1
             return GoalExecutionResult(
                 success=False,
@@ -273,48 +375,35 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Create async execute function for recovery manager
+        async def execute_fn():
+            # Execute synchronously within async wrapper
+            return self._execute_bug_goal_sync(goal)
+
+        # Run with recovery
         try:
-            # Call bug_orchestrator.fix(bug_id)
-            result = self.bug_orchestrator.fix(goal.linked_bug)
-
-            duration = int(time.time() - start_time)
-
-            # Map result to success boolean
-            # Success if result.success is True or phase.value == "fixed"
-            success = False
-            if hasattr(result, "success"):
-                success = result.success
-            if hasattr(result, "phase") and hasattr(result.phase, "value"):
-                if result.phase.value == "fixed":
-                    success = True
-
-            cost_usd = getattr(result, "cost_usd", 0.0)
-            error = getattr(result, "error", None) if not success else None
-            # Ensure output is a string (mock objects may return MagicMock)
-            msg = getattr(result, "message", "")
-            output = msg if isinstance(msg, str) else ""
-
-            return GoalExecutionResult(
-                success=success,
-                cost_usd=cost_usd,
-                duration_seconds=duration,
-                error=error,
-                output=output,
+            loop = asyncio.get_running_loop()
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = loop.run_until_complete(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
+            )
+        except RuntimeError:
+            # No running loop - create a new one
+            result = asyncio.run(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
             )
 
-        except Exception as e:
-            goal.error_count += 1
-            duration = int(time.time() - start_time)
-            return GoalExecutionResult(
-                success=False,
-                cost_usd=0.0,
-                duration_seconds=duration,
-                error=str(e),
-                output="",
-            )
+        return result
 
-    def _execute_spec_goal(self, goal: DailyGoal) -> GoalExecutionResult:
-        """Execute a spec goal via Orchestrator.run_spec_pipeline.
+    def _execute_spec_goal_sync(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a spec goal via Orchestrator.run_spec_pipeline (synchronous).
+
+        This is the core execution function without recovery wrapping.
 
         Args:
             goal: DailyGoal with linked_spec set
@@ -326,6 +415,47 @@ class AutopilotRunner:
 
         # Check if orchestrator is available
         if self.orchestrator is None:
+            return GoalExecutionResult(
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=0,
+                error="No orchestrator configured for spec execution",
+                output="",
+            )
+
+        # Call orchestrator.run_spec_pipeline(spec_id)
+        result = self.orchestrator.run_spec_pipeline(goal.linked_spec)
+
+        duration = int(time.time() - start_time)
+
+        # Map result status to success boolean
+        # Only "success" status means true success
+        success = result.status == "success"
+        cost_usd = getattr(result, "total_cost_usd", 0.0)
+        error = getattr(result, "error", None) if not success else None
+        # Ensure output is a string (mock objects may return MagicMock)
+        msg = getattr(result, "message", "")
+        output = msg if isinstance(msg, str) else ""
+
+        return GoalExecutionResult(
+            success=success,
+            cost_usd=cost_usd,
+            duration_seconds=duration,
+            error=error,
+            output=output,
+        )
+
+    def _execute_spec_goal(self, goal: DailyGoal) -> GoalExecutionResult:
+        """Execute a spec goal with recovery via RecoveryManager.
+
+        Args:
+            goal: DailyGoal with linked_spec set
+
+        Returns:
+            GoalExecutionResult with success, cost_usd, duration_seconds
+        """
+        # Check if orchestrator is available first
+        if self.orchestrator is None:
             goal.error_count += 1
             return GoalExecutionResult(
                 success=False,
@@ -335,39 +465,30 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Create async execute function for recovery manager
+        async def execute_fn():
+            # Execute synchronously within async wrapper
+            return self._execute_spec_goal_sync(goal)
+
+        # Run with recovery
         try:
-            # Call orchestrator.run_spec_pipeline(spec_id)
-            result = self.orchestrator.run_spec_pipeline(goal.linked_spec)
-
-            duration = int(time.time() - start_time)
-
-            # Map result status to success boolean
-            # Only "success" status means true success
-            success = result.status == "success"
-            cost_usd = getattr(result, "total_cost_usd", 0.0)
-            error = getattr(result, "error", None) if not success else None
-            # Ensure output is a string (mock objects may return MagicMock)
-            msg = getattr(result, "message", "")
-            output = msg if isinstance(msg, str) else ""
-
-            return GoalExecutionResult(
-                success=success,
-                cost_usd=cost_usd,
-                duration_seconds=duration,
-                error=error,
-                output=output,
+            loop = asyncio.get_running_loop()
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = loop.run_until_complete(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
+            )
+        except RuntimeError:
+            # No running loop - create a new one
+            result = asyncio.run(
+                self.recovery_manager.execute_with_recovery(
+                    goal, execute_fn, episode_store=self.episode_store
+                )
             )
 
-        except Exception as e:
-            goal.error_count += 1
-            duration = int(time.time() - start_time)
-            return GoalExecutionResult(
-                success=False,
-                cost_usd=0.0,
-                duration_seconds=duration,
-                error=str(e),
-                output="",
-            )
+        return result
 
     def _execute_generic_goal(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a generic goal (no linked artifact).

@@ -29,3 +29,10 @@
 {"ts": "2025-12-19T03:52:08.126032Z", "event": "issue_started", "issue": 4, "session": "sess_20251219_035208_125295"}
 {"ts": "2025-12-19T03:54:44.120884Z", "event": "issue_done", "issue": 4, "commit": "d4f6ad3f35d200633e6997258a814ab230bf064b", "cost_usd": 0.7275564500000001}
 {"ts": "2025-12-19T03:54:52.366166Z", "event": "issue_started", "issue": 5, "session": "sess_20251219_035452_365397"}
+{"ts": "2025-12-19T03:56:54.669319Z", "event": "issue_done", "issue": 5, "commit": "fd137c46990c77865a35541b23b05c45a9714edd", "cost_usd": 0.41002834999999993}
+{"ts": "2025-12-19T03:57:03.971334Z", "event": "issue_started", "issue": 6, "session": "sess_20251219_035703_970040"}
+{"ts": "2025-12-19T03:58:27.723905Z", "event": "retry_started", "issue": 6, "attempt": 1}
+{"ts": "2025-12-19T03:59:20.750275Z", "event": "retry_started", "issue": 6, "attempt": 2}
+{"ts": "2025-12-19T04:00:13.574903Z", "event": "retry_started", "issue": 6, "attempt": 3}
+{"ts": "2025-12-19T04:02:02.301771Z", "event": "issue_blocked", "issue": 6, "reason": "Max retries exceeded: Issue tests failed: 2 failed, 15 passed", "retries": 3}
+{"ts": "2025-12-19T05:00:17.295836Z", "event": "issue_started", "issue": 7, "session": "sess_20251219_050017_295081"}
