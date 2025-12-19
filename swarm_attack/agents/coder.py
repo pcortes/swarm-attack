@@ -54,6 +54,7 @@ class CoderAgent(BaseAgent):
     INTERNAL_FEATURES = frozenset([
         "chief-of-staff",
         "chief-of-staff-v2",
+        "chief-of-staff-v3",
         "cos-phase8-recovery",
     ])
 

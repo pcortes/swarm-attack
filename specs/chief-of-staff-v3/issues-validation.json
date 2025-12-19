@@ -1,0 +1,23 @@
+{
+  "feature_id": "chief-of-staff-v3",
+  "validated_at": "2025-12-19T05:49:43.332184Z",
+  "valid": false,
+  "summary": "Found 2 errors and 0 warnings across 24 issues",
+  "problems": [
+    {
+      "issue_order": 19,
+      "severity": "error",
+      "type": "ambiguous_requirements",
+      "description": "Risk factor calculations (scope, reversibility, confidence, precedent) are only described in prose with no scoring formulas or thresholds, so the resulting numeric weights and test expectations cannot be implemented confidently."
+    },
+    {
+      "issue_order": 20,
+      "severity": "error",
+      "type": "insufficient_detail",
+      "description": "Dependency, budget, and conflict checks are referenced but there is no guidance on how to derive required dependencies, how to inspect file conflicts, or what data structures the checker should use, leaving the core validation logic undefined."
+    }
+  ],
+  "issues_checked": 24,
+  "passed": 22,
+  "failed": 2
+}

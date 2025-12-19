@@ -10,64 +10,435 @@
 - Shunyu Yao (Princeton) - ReAct, Tree-of-Thought planning
 
 **Date:** December 2025
-**Status:** DRAFT - Ready for Review
+**Status:** FINAL - Ready for Implementation
+**Version:** v3 Strategic (24 issues)
 
-**Prerequisite:** Requires chief-of-staff-v2 (Core Autonomy)
+---
+
+## Prerequisites
+
+**⚠️ IMPORTANT: v3 requires v2 completion**
+
+This spec builds on the foundation established in v2 (23 issues completed):
+- Real execution (chief-of-staff-v2, 15 issues) - AutopilotRunner, CheckpointSystem, EpisodeStore
+- Hierarchical recovery (cos-phase8-recovery, 8 issues) - 4-level RecoveryManager
+
+**What v2 Actually Delivered:**
+- AutopilotRunner with real orchestrator integration
+- 6-trigger CheckpointSystem (UX_CHANGE, COST_SINGLE, COST_CUMULATIVE, ARCHITECTURE, SCOPE_CHANGE, HICCUP)
+- EpisodeStore with basic save/load operations
+- PreferenceLearner with signal recording and approval rate tracking
+- RecoveryManager with 4-level hierarchy
+
+**What v3 Needs (Added as Phase 9.5 below):**
+- EpisodeStore.find_similar() for similarity-based risk assessment
+- PreferenceLearner.find_similar_decisions() for checkpoint recommendations
+- ProgressTracker for real-time execution monitoring
+
+v3 adds strategic capability on top of v2's autonomous foundation.
 
 ---
 
 ## 1. Executive Summary
 
-### What v1 Delivered
-Chief of Staff v1 is **complete** (20/20 issues, 279 tests, 6 CLI commands). It provides:
-- Cross-session memory via daily logs and JSONL decisions
-- Daily standups with intelligent recommendations
-- Goal tracking with automatic state reconciliation
-- Autopilot mode with checkpoint gates (stub execution)
-
 ### What v2 Delivered
-v2 transformed Chief of Staff from a **workflow tool** into a **truly autonomous development partner**:
+Chief of Staff v2 provides the **autonomous foundation**:
 - Real orchestrator integration (no more stubs)
-- 4-level automatic recovery system
-- Episode memory + Reflexion + Preference Learning
-- Human-in-the-loop checkpoints for collaborative autonomy
+- 4-level automatic recovery (RecoveryManager)
+- Basic episode memory (EpisodeStore with save/load)
+- Basic preference learning (PreferenceLearner with approval rate)
+- Human-in-the-loop checkpoint system (6 triggers)
 
 ### What v3 Adds
-v3 builds on v2's autonomous foundation to add **strategic capability** and **world-class enhancements**:
+v3 adds **strategic capability** for multi-day planning and reduced human oversight:
 
 | Capability | v2 State | v3 Target |
 |------------|----------|-----------|
 | Planning | Single-day horizon | **Multi-day campaigns + Weekly summaries** |
-| Validation | Human reviews everything | **Internal critics pre-filter (~70% reduction)** |
-| Risk Assessment | Binary pattern matching | **Multi-factor risk scoring (0-1)** |
-| Pre-execution | No validation | **Pre-flight checks before execution** |
-| Feedback | One-time approval | **Feedback incorporated into future prompts** |
+| Validation | Human reviews everything | **Internal critics pre-filter (~70% auto-approve)** |
+| Risk Assessment | Basic triggers | **Multi-factor risk scoring engine** |
+| Execution | Stop on failure | **Continue-on-block strategy** |
+| Q&A Format | Simple options | **Enhanced format with tradeoffs + recommendations** |
 
-### v3 Scope
+### v3 Scope (24 Issues)
 
-v3 focuses on three areas deferred from v2:
+| Phase | Issues | Description |
+|-------|--------|-------------|
+| Phase 9.5 | 9.5.1-9.5.4 (4) | Foundation Completion (v2 gaps) |
+| Phase 10 | 10.1-10.8 (8) | Multi-Day Campaigns + Weekly Planning |
+| Phase 11 | 11.1-11.6 (6) | Internal Validation Critics |
+| Phase 12 (Remaining) | 12.1, 12.2, 12.5, 12.7, 12.8, 12.9 (6) | Advanced World-Class Enhancements |
 
-| Area | Priority | Components |
-|------|----------|------------|
-| **Phase 1: Multi-Day Campaigns** | P4 | Campaigns, milestones, weekly planning |
-| **Phase 2: Internal Validation** | P5 | Diverse critics, consensus building, auto-approval |
-| **Phase 3: World-Class Enhancements** | Research-driven | Risk scoring, pre-flight, feedback incorporation, continue-on-block, enhanced Q&A |
-
-**Total: 20 issues across 3 phases**
-
-### Scope Boundaries (What v3 Does NOT Include)
-
-The following remain **deferred to future versions**:
-
-| Deferred Item | PRD Priority | Rationale |
-|---------------|--------------|-----------|
-| Parallel Execution (P6) | 7×6=42 | Jerry Liu warned against premature parallelism; sequential campaigns cover 95% of use cases |
-| Semantic Memory/Embeddings (P8) | 6×5=30 | Nice-to-have infrastructure; simple JSONL retrieval is sufficient |
-| Prompt Self-Optimization (P10) | 5×4=20 | Risky self-modification; needs careful bounds |
 
 ---
 
-## 2. Phase 1: Multi-Day Campaigns + Weekly Planning
+## 4. Phase 9.5: Foundation Completion (Prerequisite)
+
+### Consensus Decision
+
+These issues complete the foundation that v2 intended but didn't fully implement. They are prerequisites for the advanced features in Phases 10-12.
+
+### 9.5.1 Add find_similar() to EpisodeStore
+
+**Rationale:** Risk scoring (12.1) needs to find similar past episodes to assess precedent.
+
+```python
+# In swarm_attack/chief_of_staff/episodes.py
+
+class EpisodeStore:
+    # ... existing methods ...
+
+    def find_similar(self, content: str, k: int = 5) -> list[Episode]:
+        """Find k most similar episodes based on content.
+
+        Uses simple keyword matching for now. Can be upgraded to embeddings later.
+
+        Args:
+            content: Goal or action description to match against
+            k: Maximum number of similar episodes to return
+
+        Returns:
+            List of similar episodes, sorted by relevance
+        """
+        all_episodes = self.load_all()
+
+        # Simple keyword-based similarity
+        content_words = set(content.lower().split())
+
+        scored = []
+        for episode in all_episodes:
+            episode_words = set(episode.goal_id.lower().split())
+            # Jaccard similarity
+            if content_words or episode_words:
+                intersection = len(content_words & episode_words)
+                union = len(content_words | episode_words)
+                score = intersection / union if union > 0 else 0
+                scored.append((score, episode))
+
+        # Sort by score descending, return top k
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [episode for score, episode in scored[:k] if score > 0]
+```
+
+**Tests:**
+```python
+class TestFindSimilar:
+    def test_finds_similar_by_keywords(self):
+        store = EpisodeStore(tmp_path)
+        store.save(Episode(goal_id="implement user auth", success=True, ...))
+        store.save(Episode(goal_id="implement user login", success=True, ...))
+        store.save(Episode(goal_id="fix database bug", success=False, ...))
+
+        similar = store.find_similar("user authentication", k=2)
+        assert len(similar) == 2
+        assert "user" in similar[0].goal_id
+
+    def test_returns_empty_for_no_matches(self):
+        store = EpisodeStore(tmp_path)
+        store.save(Episode(goal_id="database migration", ...))
+
+        similar = store.find_similar("completely unrelated xyz", k=5)
+        assert similar == []
+
+    def test_respects_k_limit(self):
+        store = EpisodeStore(tmp_path)
+        for i in range(10):
+            store.save(Episode(goal_id=f"feature task {i}", ...))
+
+        similar = store.find_similar("feature", k=3)
+        assert len(similar) == 3
+```
+
+---
+
+### 9.5.2 Add find_similar_decisions() to PreferenceLearner
+
+**Rationale:** Enhanced checkpoints (12.8) need to show similar past decisions for context.
+
+```python
+# In swarm_attack/chief_of_staff/episodes.py
+
+class PreferenceLearner:
+    # ... existing methods ...
+
+    def find_similar_decisions(
+        self,
+        goal: "DailyGoal",
+        k: int = 3
+    ) -> list[dict]:
+        """Find similar past checkpoint decisions for a goal.
+
+        Args:
+            goal: The goal to find similar decisions for
+            k: Maximum number of decisions to return
+
+        Returns:
+            List of dicts with keys: trigger, context_summary, was_accepted, chosen_option
+        """
+        # Get signals that match the goal's tags
+        goal_tags = set(getattr(goal, 'tags', []))
+
+        relevant_signals = []
+        for signal in self.signals:
+            # Check if trigger matches expected patterns for goal tags
+            trigger_matches = False
+            if 'ui' in goal_tags or 'ux' in goal_tags:
+                trigger_matches = signal.trigger == "UX_CHANGE"
+            elif 'architecture' in goal_tags or 'refactor' in goal_tags:
+                trigger_matches = signal.trigger == "ARCHITECTURE"
+            elif signal.trigger in ["COST_SINGLE", "COST_CUMULATIVE"]:
+                trigger_matches = True  # Cost triggers are always relevant
+
+            if trigger_matches:
+                was_accepted = signal.signal_type.startswith("approved_")
+                relevant_signals.append({
+                    "trigger": signal.trigger,
+                    "context_summary": signal.context_summary,
+                    "was_accepted": was_accepted,
+                    "chosen_option": signal.chosen_option,
+                    "timestamp": signal.timestamp,
+                })
+
+        # Sort by recency, return top k
+        relevant_signals.sort(key=lambda x: x["timestamp"], reverse=True)
+        return relevant_signals[:k]
+```
+
+**Tests:**
+```python
+class TestFindSimilarDecisions:
+    def test_finds_decisions_matching_goal_tags(self):
+        learner = PreferenceLearner()
+        # Record some checkpoint decisions
+        learner.record_decision(checkpoint_with_trigger=UX_CHANGE, chosen="proceed")
+        learner.record_decision(checkpoint_with_trigger=ARCHITECTURE, chosen="skip")
+
+        goal = DailyGoal(description="Update UI", tags=["ui", "frontend"])
+        similar = learner.find_similar_decisions(goal, k=2)
+
+        assert len(similar) >= 1
+        assert similar[0]["trigger"] == "UX_CHANGE"
+
+    def test_returns_was_accepted_flag(self):
+        learner = PreferenceLearner()
+        learner.record_decision(checkpoint_with_trigger=COST_SINGLE, chosen="proceed")
+
+        goal = DailyGoal(description="expensive task", tags=[])
+        similar = learner.find_similar_decisions(goal, k=1)
+
+        assert similar[0]["was_accepted"] == True
+```
+
+---
+
+### 9.5.3 Create ProgressTracker class
+
+**Rationale:** Campaigns (Phase 10) and CLI commands (12.9) need real-time progress tracking.
+
+```python
+# New file: swarm_attack/chief_of_staff/progress.py
+
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from typing import Optional
+from pathlib import Path
+import json
+
+
+@dataclass
+class ProgressSnapshot:
+    """Point-in-time progress state."""
+    timestamp: str
+    goals_completed: int
+    goals_total: int
+    cost_usd: float
+    duration_seconds: int
+    current_goal: Optional[str] = None
+    blockers: list[str] = field(default_factory=list)
+
+    @property
+    def completion_percent(self) -> float:
+        if self.goals_total == 0:
+            return 0.0
+        return (self.goals_completed / self.goals_total) * 100
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ProgressSnapshot":
+        return cls(**data)
+
+
+class ProgressTracker:
+    """Tracks execution progress in real-time."""
+
+    def __init__(self, base_path: Path):
+        self.base_path = base_path
+        self.progress_file = base_path / "progress.json"
+        self.snapshots: list[ProgressSnapshot] = []
+        self._current_snapshot: Optional[ProgressSnapshot] = None
+
+    def start_session(self, total_goals: int) -> None:
+        """Start tracking a new session."""
+        self._current_snapshot = ProgressSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            goals_completed=0,
+            goals_total=total_goals,
+            cost_usd=0.0,
+            duration_seconds=0,
+        )
+        self.snapshots = [self._current_snapshot]
+        self._save()
+
+    def update(
+        self,
+        goals_completed: int = None,
+        cost_usd: float = None,
+        duration_seconds: int = None,
+        current_goal: str = None,
+        blocker: str = None,
+    ) -> ProgressSnapshot:
+        """Update progress and create new snapshot."""
+        if self._current_snapshot is None:
+            raise RuntimeError("No active session. Call start_session() first.")
+
+        new_snapshot = ProgressSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            goals_completed=goals_completed if goals_completed is not None
+                else self._current_snapshot.goals_completed,
+            goals_total=self._current_snapshot.goals_total,
+            cost_usd=cost_usd if cost_usd is not None
+                else self._current_snapshot.cost_usd,
+            duration_seconds=duration_seconds if duration_seconds is not None
+                else self._current_snapshot.duration_seconds,
+            current_goal=current_goal,
+            blockers=self._current_snapshot.blockers + ([blocker] if blocker else []),
+        )
+
+        self._current_snapshot = new_snapshot
+        self.snapshots.append(new_snapshot)
+        self._save()
+        return new_snapshot
+
+    def get_current(self) -> Optional[ProgressSnapshot]:
+        """Get current progress snapshot."""
+        return self._current_snapshot
+
+    def get_history(self) -> list[ProgressSnapshot]:
+        """Get all progress snapshots."""
+        return self.snapshots
+
+    def _save(self) -> None:
+        """Persist progress to disk."""
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        data = [s.to_dict() for s in self.snapshots]
+        self.progress_file.write_text(json.dumps(data, indent=2))
+
+    def load(self) -> None:
+        """Load progress from disk."""
+        if self.progress_file.exists():
+            data = json.loads(self.progress_file.read_text())
+            self.snapshots = [ProgressSnapshot.from_dict(s) for s in data]
+            if self.snapshots:
+                self._current_snapshot = self.snapshots[-1]
+```
+
+**Tests:**
+```python
+class TestProgressTracker:
+    def test_start_session_creates_initial_snapshot(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=5)
+
+        current = tracker.get_current()
+        assert current.goals_total == 5
+        assert current.goals_completed == 0
+        assert current.completion_percent == 0.0
+
+    def test_update_increments_progress(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=4)
+
+        tracker.update(goals_completed=1, cost_usd=2.50)
+        tracker.update(goals_completed=2, cost_usd=5.00)
+
+        current = tracker.get_current()
+        assert current.goals_completed == 2
+        assert current.completion_percent == 50.0
+
+    def test_persists_to_disk(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=3)
+        tracker.update(goals_completed=1)
+
+        # Load in new instance
+        tracker2 = ProgressTracker(tmp_path)
+        tracker2.load()
+
+        assert tracker2.get_current().goals_completed == 1
+```
+
+---
+
+### 9.5.4 Integrate ProgressTracker with AutopilotRunner
+
+**Rationale:** Progress tracking needs to be wired into the execution loop.
+
+```python
+# Modifications to swarm_attack/chief_of_staff/autopilot_runner.py
+
+class AutopilotRunner:
+    def __init__(self, ...):
+        # ... existing init ...
+        self.progress_tracker = ProgressTracker(
+            self.base_path / "progress"
+        )
+
+    async def start(self, goals: list[DailyGoal], ...):
+        # Start progress tracking
+        self.progress_tracker.start_session(total_goals=len(goals))
+
+        # ... existing start logic ...
+
+    async def _execute_goal(self, goal: DailyGoal, session: AutopilotSession):
+        # Update current goal in progress
+        self.progress_tracker.update(current_goal=goal.description)
+
+        # ... existing execution logic ...
+
+        # Update progress after completion
+        self.progress_tracker.update(
+            goals_completed=session.current_goal_index + 1,
+            cost_usd=session.total_cost_usd,
+        )
+```
+
+**Tests:**
+```python
+class TestAutopilotRunnerProgressIntegration:
+    def test_starts_progress_tracking(self):
+        runner = AutopilotRunner(...)
+        goals = [DailyGoal(...), DailyGoal(...)]
+
+        await runner.start(goals, budget_usd=50.0)
+
+        progress = runner.progress_tracker.get_current()
+        assert progress.goals_total == 2
+
+    def test_updates_progress_after_each_goal(self):
+        runner = AutopilotRunner(...)
+        # Mock execution to succeed
+
+        await runner.start([goal1, goal2], budget_usd=50.0)
+
+        history = runner.progress_tracker.get_history()
+        assert len(history) >= 3  # start + 2 goals
+```
+
+---
+
+## 5. Phase 10: Multi-Day Campaigns + Weekly Planning (P4)
 
 ### Consensus Decision
 
@@ -81,7 +452,7 @@ The following remain **deferred to future versions**:
 
 **PRD Requirement (User Story #6):** "I want a weekly planning session that projects forward, not just daily standups that look backward."
 
-### 2.1 Campaign Data Model
+### 5.1 Campaign Data Model
 
 ```python
 class CampaignState(Enum):
@@ -232,7 +603,7 @@ class Campaign:
         return progress_gap > self.replanning_threshold
 ```
 
-### 2.2 Campaign Planner
+### 5.2 Campaign Planner
 
 ```python
 class CampaignPlanner:
@@ -348,7 +719,7 @@ class CampaignPlanner:
         return campaign
 ```
 
-### 2.3 Campaign Executor
+### 5.3 Campaign Executor
 
 ```python
 class CampaignExecutor:
@@ -519,7 +890,7 @@ class CampaignStore:
         return campaigns
 ```
 
-### 2.4 Weekly Planning (Minimal - PRD User Story #6)
+### 5.4 Weekly Planning (Minimal - PRD User Story #6)
 
 ```python
 @dataclass
@@ -670,18 +1041,18 @@ swarm-attack cos weekly --report                 # Full weekly report
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
-| 1.1 | Create Campaign, Milestone, DayPlan dataclasses | M | - |
-| 1.2 | Implement CampaignStore persistence | M | 1.1 |
-| 1.3 | Implement CampaignPlanner.plan() | L | 1.1 |
-| 1.4 | Implement CampaignPlanner.replan() | M | 1.3 |
-| 1.5 | Implement CampaignExecutor.execute_day() | L | 1.1, chief-of-staff-v2 Phase 7 |
-| 1.6 | Add campaign CLI commands | M | 1.2, 1.5 |
-| 1.7 | Add campaign progress to standup | S | 1.2 |
-| 1.8 | Implement WeeklyPlanner and weekly CLI command | M | 1.2, chief-of-staff-v2 Phase 9 |
+| 10.1 | Create Campaign, Milestone, DayPlan dataclasses | M | - |
+| 10.2 | Implement CampaignStore persistence | M | 10.1 |
+| 10.3 | Implement CampaignPlanner.plan() | L | 10.1 |
+| 10.4 | Implement CampaignPlanner.replan() | M | 10.3 |
+| 10.5 | Implement CampaignExecutor.execute_day() | L | 10.1, Phase 7 |
+| 10.6 | Add campaign CLI commands | M | 10.2, 10.5 |
+| 10.7 | Add campaign progress to standup | S | 10.2 |
+| 10.8 | Implement WeeklyPlanner and weekly CLI command | M | 10.2, 9.2 |
 
 ---
 
-## 3. Phase 2: Internal Validation Critics
+## 6. Phase 11: Internal Validation Critics (P5)
 
 ### Consensus Decision
 
@@ -691,7 +1062,7 @@ swarm-attack cos weekly --report                 # Full weekly report
 
 **David Dohan:** "Track critic accuracy over time. If a critic is consistently wrong, reduce its weight. But never zero - preserve voice."
 
-### 3.1 Critic Data Model
+### 6.1 Critic Data Model
 
 ```python
 class CriticFocus(Enum):
@@ -757,7 +1128,7 @@ class ValidationResult:
         }
 ```
 
-### 3.2 Critic Implementations
+### 6.2 Critic Implementations
 
 ```python
 class Critic:
@@ -873,7 +1244,7 @@ class TestCritic(Critic):
         )
 ```
 
-### 3.3 Validation Layer
+### 6.3 Validation Layer
 
 ```python
 class ValidationLayer:
@@ -967,7 +1338,7 @@ class ValidationLayer:
             return f"NEEDS REVIEW: concerns in {', '.join(concerns)} (avg: {avg_score:.2f})"
 ```
 
-### 3.4 Integration Flow
+### 6.4 Integration Flow
 
 The ValidationLayer integrates at three key points in the pipeline:
 
@@ -1068,20 +1439,23 @@ def validate_artifact(artifact_type: str, path: str):
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
-| 2.1 | Create Critic base class and CriticScore | S | - |
-| 2.2 | Implement SpecCritic variants | M | 2.1 |
-| 2.3 | Implement CodeCritic variants | M | 2.1 |
-| 2.4 | Implement TestCritic variants | M | 2.1 |
-| 2.5 | Implement ValidationLayer consensus | M | 2.2-2.4 |
-| 2.6 | Integrate validation gates into pipelines | M | 2.5, chief-of-staff-v2 Phase 7 |
+| 11.1 | Create Critic base class and CriticScore | S | - |
+| 11.2 | Implement SpecCritic variants | M | 11.1 |
+| 11.3 | Implement CodeCritic variants | M | 11.1 |
+| 11.4 | Implement TestCritic variants | M | 11.1 |
+| 11.5 | Implement ValidationLayer consensus | M | 11.2-11.4 |
+| 11.6 | Integrate validation gates into pipelines | M | 11.5, Phase 7 |
 
 ---
 
-## 4. Phase 3: World-Class Enhancements
+
+---
+
+## 7. World-Class Enhancements (Research-Driven)
 
 Based on analysis of LangGraph interrupt patterns, Apify orchestration, and agent-harness architecture, these enhancements elevate the checkpoint system to industry-leading standards.
 
-### 4.1 Risk Scoring Engine
+### 7.1 Risk Scoring Engine
 
 **Pattern:** Calculate risk 0-1 instead of binary pattern matching. More nuanced than current trigger detection.
 
@@ -1208,7 +1582,7 @@ class CheckpointSystem:
         # ... existing trigger detection ...
 ```
 
-### 4.2 Pre-flight Validation
+### 7.2 Pre-flight Validation
 
 **Pattern:** Validate BEFORE execution starts, not just after. Catch issues early.
 
@@ -1327,7 +1701,7 @@ class AutopilotRunner:
         # ... proceed with execution ...
 ```
 
-### 4.3 Feedback Incorporation Loop
+### 7.5 Feedback Incorporation Loop
 
 **Pattern:** Capture human feedback at checkpoints, inject into subsequent agent prompts. Learning that sticks.
 
@@ -1416,7 +1790,7 @@ class CoderAgent:
         # ... rest of coder logic ...
 ```
 
-### 4.4 Continue-on-Block Strategy
+### 7.7 Continue-on-Block Strategy
 
 **Pattern:** Don't halt entire feature when one issue fails. Continue with independent issues.
 
@@ -1488,7 +1862,7 @@ class AutopilotRunner:
         return results
 ```
 
-### 4.5 Enhanced Q&A Format
+### 7.8 Enhanced Q&A Format
 
 **Pattern:** Structured Q&A with tradeoffs, similar past decisions, and clear recommendations.
 
@@ -1610,123 +1984,167 @@ class CheckpointSystem:
                     },
                     estimated_cost=goal.estimated_cost_usd * 0.6,
                     risk_level="low",
-                    is_recommended=False,
                 ),
                 EnhancedCheckpointOption(
                     id="skip",
                     label="Skip this goal",
-                    description="Defer to next session",
+                    description="Move to next goal, come back later",
                     tradeoffs={
-                        "pros": "Preserve all budget",
-                        "cons": "Goal incomplete, may block dependents",
+                        "pros": "Zero cost, preserve full budget",
+                        "cons": "Goal remains incomplete, may block dependents",
                     },
-                    estimated_cost=0.0,
+                    estimated_cost=0,
                     risk_level="low",
-                    is_recommended=False,
                 ),
             ]
 
-        # ... other trigger types ...
+        # ... similar for other trigger types ...
 ```
 
-### Implementation Tasks (6 issues)
+**CLI Output:**
+
+```
+🔔 CHECKPOINT: COST (Single Action)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Context: About to implement user authentication flow
+Risk Score: 0.45 (medium) | Reversibility: full
+
+Progress: 5/20 issues (25%) | Budget: $18.60 remaining
+
+❓ How should we proceed with this $7.50 action?
+
+  1. ✅ Proceed with estimated cost [$7.50] (Recommended)
+     Pros: Complete goal without modification
+     Cons: Uses 40% of remaining budget
+
+  2. 💰 Optimize to reduce cost [$4.50]
+     Pros: Preserve budget for later goals
+     Cons: May take longer or reduce quality
+
+  3. ⏭️  Skip this goal [$0]
+     Pros: Zero cost, preserve full budget
+     Cons: Goal remains incomplete
+
+💡 Recommendation: Proceed - similar past decisions were approved 4/5 times
+   You typically approve cost actions under $10.
+
+📊 Similar past decisions:
+   - [Dec 15] Auth middleware: Approved ($6.20)
+   - [Dec 14] API routes: Approved ($8.10)
+
+[1] Proceed  [2] Optimize  [3] Skip  [?] Discuss
+```
+
+
+### 7.9 Implementation Tasks (v3 World-Class)
 
 | # | Task | Size | Dependencies |
 |---|------|------|--------------|
-| 3.1 | Implement RiskScoringEngine | M | chief-of-staff-v2 Phase 9 |
-| 3.2 | Implement PreFlightChecker | M | 3.1 |
-| 3.3 | Implement FeedbackIncorporator | M | chief-of-staff-v2 Phase 7 |
-| 3.4 | Implement continue-on-block execution strategy | M | chief-of-staff-v2 Phase 7 |
-| 3.5 | Implement EnhancedCheckpoint format | M | chief-of-staff-v2 Phase 7, 3.1 |
-| 3.6 | Add progress and feedback CLI commands | S | 3.3 |
+| 12.1 | Implement RiskScoringEngine | M | v2 complete (9.2, 9.3) |
+| 12.2 | Implement PreFlightChecker | M | 12.1 |
+| 12.5 | Implement FeedbackIncorporator | M | v2 complete (7.6) |
+| 12.7 | Implement continue-on-block execution strategy | M | v2 complete (7.2) |
+| 12.8 | Implement EnhancedCheckpoint format | M | v2 complete (7.6), 12.1 |
+| 12.9 | Add progress and feedback CLI commands | S | 12.5, v2 (12.6) |
 
 ---
 
-## 5. Implementation Roadmap
+## 8. Success Metrics
 
-### Phase 1: Multi-Day Campaigns (Strategic Planning)
-**8 issues**
+| Metric | v2 Baseline | v3 Target | Measurement |
+|--------|-------------|-----------|-------------|
+| Multi-day completion | N/A | >75% | Campaigns finished as planned |
+| Human review reduction | 100% manual | <30% | Artifacts bypassing review (via critics) |
+| Risk detection accuracy | Basic triggers | >85% | False positive/negative rate |
+| Continue-on-block success | N/A | >60% | Goals recovered via alternative paths |
+| Feedback incorporation | None | Track usage | Feedback applied to future prompts |
 
-Enables multi-day development campaigns with backward planning, automatic replanning, and weekly summaries.
+---
 
-### Phase 2: Internal Validation Critics (Scale)
+## 9. Risk Mitigations
+
+| Risk | Mitigation | Owner |
+|------|------------|-------|
+| Runaway campaigns | Per-campaign budget caps, milestone checkpoints | David's design |
+| Bad critic consensus | Require 2/3 agreement, human override path | Harrison's design |
+| Over-automation | Weekly summary review gate | Shunyu's design |
+| Stale feedback | Expiration on feedback, recency weighting | Kanjun's design |
+| Continue-on-block loops | Maximum skip count per session | Jerry's design |
+
+---
+
+## 10. Implementation Roadmap
+
+### Phase 10: Multi-Day Campaigns + Weekly Planning (Strategic)
+**8 issues** (7 campaigns + 1 weekly)
+
+Graduate from "daily tasks" to "build this feature over the week." Weekly planning satisfies PRD User Story #6.
+
+### Phase 11: Internal Validation (Scale)
 **6 issues**
 
-Reduces human bottleneck by ~70%. Most specs/code auto-approve; you only see the hard cases.
+Reduces human bottleneck. Most specs/code auto-approve; you only see the hard cases.
 
-### Phase 3: World-Class Enhancements (Research-Driven)
+### Phase 12 (Remaining): World-Class Enhancements (Research-Driven)
 **6 issues**
 
-Industry-leading patterns from LangGraph, Apify, and agent-harness:
+Industry-leading patterns:
 - Risk scoring engine (nuanced 0-1 scores vs binary)
 - Pre-flight validation (catch issues before execution)
 - Feedback incorporation (learning that sticks)
 - Continue-on-block (resilient execution)
 - Enhanced Q&A format (tradeoffs, recommendations, context)
 
-**Total: 20 issues across 3 phases**
+**v3 Total: 20 issues across 3 phases**
 
 ---
 
-## 6. Success Metrics
+## 11. Expert Panel Statement (v3 Scope)
 
-| Metric | v2 Baseline | v3 Target | Measurement |
-|--------|-------------|-----------|-------------|
-| Multi-day completion | N/A | >75% | Campaigns finished as planned |
-| Human review reduction | 100% manual | <30% | Artifacts bypassing review |
-| Risk detection accuracy | Binary patterns | >85% | Risk score correlation with actual issues |
-| Pre-flight issue catch rate | 0% | >60% | Issues caught before execution |
-| Feedback incorporation | None | >80% | Relevant feedback injected into prompts |
-| Campaign replanning | N/A | <20% | Campaigns needing replan |
+**Harrison Chase:** "With v2's autonomous foundation in place, campaigns and critics are the natural next step. Risk scoring from LangGraph interrupt patterns is exactly right for nuanced decision-making."
 
----
+**Jerry Liu:** "Weekly summaries (PRD User Story #6) require the episode memory from v2. Campaign state tracking builds cleanly on existing infrastructure."
 
-## 7. Risk Mitigations
+**Kanjun Qiu:** "Risk scoring with nuanced 0-1 values (vs binary) is a massive upgrade. Combined with feedback incorporation, the system continuously improves."
 
-| Risk | Mitigation | Owner |
-|------|------------|-------|
-| Campaign budget overrun | Per-day + per-campaign caps (David's design) | chief-of-staff-v2 Phase 7 |
-| Critic false positives | Weighted voting, track accuracy over time | Kanjun's design |
-| Risk score calibration | Learn from human override patterns | Preference learning |
-| Pre-flight false alarms | Severity levels, warnings vs blockers | Pre-flight design |
-| Feedback context bloat | Expiry times, relevance scoring | Feedback incorporator |
+**David Dohan:** "Pre-flight validation catches issues BEFORE spending tokens - this is the right safety enhancement. Critics reduce human load while maintaining security veto."
+
+**Shunyu Yao:** "Continue-on-block makes campaigns practical for overnight runs. The enhanced Q&A format with tradeoffs matches how senior engineers actually want to review decisions."
 
 ---
 
-## 8. Expert Panel Final Statement
+## 12. Dependencies
 
-**Harrison Chase:** "v3 completes the strategic capability layer. Campaigns enable week-long features without daily restarts. The enhanced checkpoint Q&A format from LangGraph patterns is exactly right."
+### v2 Foundation (Complete)
 
-**Jerry Liu:** "Internal validation critics are the right investment for scale. The 60% approval threshold with security veto is well-balanced. Weekly planning gives forward visibility."
+v3 builds on the v2 foundation (23 issues across 2 features):
+- **chief-of-staff-v2** (15 issues): AutopilotRunner, CheckpointSystem, basic EpisodeStore/PreferenceLearner
+- **cos-phase8-recovery** (8 issues): 4-level RecoveryManager, error classification
 
-**Kanjun Qiu:** "Risk scoring is a major upgrade over binary pattern matching. Feedback incorporation ensures human guidance persists. This is where the system learns what matters to YOUR team."
+### Phase 9.5 → v3 Dependencies
 
-**David Dohan:** "Pre-flight validation is critical - catch budget/dependency issues BEFORE spending tokens. The per-campaign budget caps prevent runaway spending over multiple days."
+Phase 9.5 (this spec) fills gaps needed by later phases:
 
-**Shunyu Yao:** "Backward planning for campaigns is the right approach. Continue-on-block prevents one failure from halting everything. Replanning threshold at 30% behind is reasonable."
+| v3 Issue | Depends on Phase 9.5 |
+|----------|----------------------|
+| 12.1 (Risk Scoring) | 9.5.1 (EpisodeStore.find_similar) |
+| 12.8 (Enhanced Checkpoint) | 9.5.2 (PreferenceLearner.find_similar_decisions) |
+| 12.9 (CLI Commands) | 9.5.3 (ProgressTracker) |
+| Phase 10 (Campaigns) | 9.5.3, 9.5.4 (ProgressTracker integration) |
 
----
+### v3 Internal Dependencies
 
-## 9. Summary: What Makes v3 World-Class
-
-| Dimension | v2 Approach | v3 Approach |
-|-----------|-------------|-------------|
-| **Planning Horizon** | Single day | Multi-day campaigns with milestones |
-| **Risk Detection** | Pattern matching | Multi-factor scoring (0-1) |
-| **Pre-execution** | None | Pre-flight validation |
-| **Validation** | Human reviews all | Internal critics pre-filter |
-| **Feedback** | One-time approval | Incorporated into future prompts |
-| **Resilience** | Stop on failure | Continue with independent issues |
-| **Checkpoint Q&A** | Simple options | Tradeoffs, recommendations, context |
-
-This spec builds on v2's autonomous foundation to add:
-- **Strategic capability** (campaigns, weekly planning)
-- **Validation at scale** (internal critics, consensus building)
-- **World-class patterns** (risk scoring, pre-flight, feedback loops)
+| v3 Issue | Depends on v3 |
+|----------|---------------|
+| 12.2 (Pre-flight) | 12.1 (Risk Scoring) |
+| 12.8 (Enhanced Checkpoint) | 12.1 (Risk Scoring) |
 
 ---
 
-*Spec drafted: December 2025*
+*v3 Spec updated: December 2025*
 *Expert Panel: LangChain, LlamaIndex, Imbue, Anthropic, Princeton*
-*Prerequisite: chief-of-staff-v2 (Core Autonomy)*
-*Ready for review*
+*Prerequisites: v2 complete (23 issues)*
+*Phases: 9.5 (Foundation), 10 (Campaigns), 11 (Critics), 12-remaining (World-Class)*
+*Issues: 24*
+*Ready for implementation*

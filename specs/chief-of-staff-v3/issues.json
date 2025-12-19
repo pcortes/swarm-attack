@@ -1,0 +1,367 @@
+{
+  "feature_id": "chief-of-staff-v3",
+  "generated_at": "2025-12-18T12:00:00Z",
+  "issues": [
+    {
+      "title": "Add find_similar() method to EpisodeStore",
+      "body": "## Description\n\nAdd a `find_similar()` method to the `EpisodeStore` class that finds similar past episodes based on content matching. This is needed by the Risk Scoring Engine (12.1) to assess precedent for risk calculations.\n\n## Acceptance Criteria\n\n- [ ] `find_similar(content: str, k: int = 5) -> list[Episode]` method implemented\n- [ ] Uses keyword-based Jaccard similarity for matching\n- [ ] Returns episodes sorted by relevance (highest first)\n- [ ] Respects the `k` limit parameter\n- [ ] Returns empty list when no matches found\n- [ ] Unit tests for: finds similar by keywords, returns empty for no matches, respects k limit\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/episodes.py`\n- Pattern Reference: See spec section 9.5.1 for implementation details\n- Simple keyword-based similarity using Jaccard coefficient\n- Can be upgraded to embeddings later\n\n## Interface Contract (REQUIRED)\n\n**Required Method:**\n- `find_similar(content: str, k: int = 5) -> list[Episode]`\n\n**Called By:**\n- `swarm_attack/chief_of_staff/risk_scoring.py` (future - 12.1)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add find_similar_decisions() method to PreferenceLearner",
+      "body": "## Description\n\nAdd a `find_similar_decisions()` method to the `PreferenceLearner` class that finds similar past checkpoint decisions for a goal. This is needed by Enhanced Checkpoints (12.8) to show context about similar past decisions.\n\n## Acceptance Criteria\n\n- [ ] `find_similar_decisions(goal: DailyGoal, k: int = 3) -> list[dict]` method implemented\n- [ ] Returns dicts with keys: trigger, context_summary, was_accepted, chosen_option, timestamp\n- [ ] Matches signals based on goal tags (ui/ux -> UX_CHANGE, architecture/refactor -> ARCHITECTURE)\n- [ ] Cost triggers (COST_SINGLE, COST_CUMULATIVE) always considered relevant\n- [ ] Results sorted by recency (most recent first)\n- [ ] Respects k limit\n- [ ] Unit tests for: finds decisions matching goal tags, returns was_accepted flag correctly\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/episodes.py`\n- Pattern Reference: See spec section 9.5.2 for implementation details\n- Relies on existing `signals` list in PreferenceLearner\n\n## Interface Contract (REQUIRED)\n\n**Required Method:**\n- `find_similar_decisions(goal: DailyGoal, k: int = 3) -> list[dict]`\n\n**Called By:**\n- `swarm_attack/chief_of_staff/checkpoints.py` (future - 12.8)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create ProgressTracker class for real-time execution monitoring",
+      "body": "## Description\n\nCreate a new `ProgressTracker` class that tracks execution progress in real-time. This is needed by Campaigns (Phase 10) and CLI commands (12.9) for progress visibility.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/progress.py`\n- [ ] `ProgressSnapshot` dataclass with: timestamp, goals_completed, goals_total, cost_usd, duration_seconds, current_goal, blockers\n- [ ] `completion_percent` property that calculates percentage\n- [ ] `to_dict()` and `from_dict()` methods on ProgressSnapshot\n- [ ] `ProgressTracker` class with:\n  - [ ] `start_session(total_goals: int)` method\n  - [ ] `update()` method with optional parameters for goals_completed, cost_usd, duration_seconds, current_goal, blocker\n  - [ ] `get_current()` method returning current snapshot\n  - [ ] `get_history()` method returning all snapshots\n  - [ ] `load()` method to restore from disk\n- [ ] Persists to `progress.json` in base_path\n- [ ] Unit tests for: start_session creates initial snapshot, update increments progress, persists to disk and loads back\n\n## Technical Notes\n\n- New file: `swarm_attack/chief_of_staff/progress.py`\n- Pattern Reference: See spec section 9.5.3 for full implementation\n- Uses dataclasses and JSON persistence\n\n## Interface Contract (REQUIRED)\n\n**Required Methods:**\n- `start_session(total_goals: int) -> None`\n- `update(...) -> ProgressSnapshot`\n- `get_current() -> Optional[ProgressSnapshot]`\n- `get_history() -> list[ProgressSnapshot]`\n- `load() -> None`\n\n**Called By:**\n- `swarm_attack/chief_of_staff/autopilot_runner.py` (9.5.4)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Integrate ProgressTracker with AutopilotRunner",
+      "body": "## Description\n\nIntegrate the `ProgressTracker` with `AutopilotRunner` to provide real-time progress tracking during execution. This wires progress tracking into the execution loop.\n\n## Acceptance Criteria\n\n- [ ] AutopilotRunner initializes ProgressTracker in `__init__`\n- [ ] `start()` method calls `progress_tracker.start_session(total_goals=len(goals))`\n- [ ] `_execute_goal()` updates progress with current_goal at start\n- [ ] `_execute_goal()` updates goals_completed and cost_usd after completion\n- [ ] Progress tracker accessible via `runner.progress_tracker`\n- [ ] Integration tests for: starts progress tracking, updates progress after each goal\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Pattern Reference: See spec section 9.5.4 for integration points\n- Progress path: `self.base_path / \"progress\"`\n\n## Interface Contract (REQUIRED)\n\n**Required Attribute:**\n- `progress_tracker: ProgressTracker`\n\n**Integration Points:**\n- `start()` - initialize session\n- `_execute_goal()` - update on goal start and completion",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3
+      ],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create Campaign, Milestone, and DayPlan dataclasses",
+      "body": "## Description\n\nCreate the core data models for multi-day campaign management: Campaign, Milestone, DayPlan, and CampaignState enum.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/campaigns.py`\n- [ ] `CampaignState` enum with: PLANNING, ACTIVE, PAUSED, COMPLETED, FAILED\n- [ ] `Milestone` dataclass with: milestone_id, name, description, target_day, success_criteria, status, completed_at\n- [ ] `DayPlan` dataclass with: day_number, date, goals, budget_usd, status, actual_cost_usd, notes\n- [ ] `Campaign` dataclass with all fields from spec section 5.1\n- [ ] All classes have `to_dict()` and `from_dict()` methods\n- [ ] `Campaign.days_behind()` method calculates days behind schedule\n- [ ] `Campaign.needs_replan()` method checks if >30% behind\n- [ ] Unit tests for serialization/deserialization, days_behind calculation, needs_replan logic\n\n## Technical Notes\n\n- New file: `swarm_attack/chief_of_staff/campaigns.py`\n- Pattern Reference: See spec section 5.1 for full dataclass definitions\n- DayPlan.goals contains list of DailyGoal objects\n\n## Interface Contract (REQUIRED)\n\n**Required Methods (all classes):**\n- `to_dict() -> dict`\n- `from_dict(cls, data: dict) -> Self`\n\n**Campaign-specific:**\n- `days_behind() -> int`\n- `needs_replan() -> bool`",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CampaignStore for campaign persistence",
+      "body": "## Description\n\nImplement `CampaignStore` class for persistent storage of campaigns to JSON files.\n\n## Acceptance Criteria\n\n- [ ] `CampaignStore` class in `swarm_attack/chief_of_staff/campaigns.py`\n- [ ] Constructor takes `base_path: Path` and creates `campaigns/` subdirectory\n- [ ] `save(campaign: Campaign) -> None` - saves to `{campaign_id}.json`\n- [ ] `load(campaign_id: str) -> Optional[Campaign]` - loads from JSON, returns None if not found\n- [ ] `list_all() -> list[Campaign]` - lists all campaigns\n- [ ] All methods are async\n- [ ] Unit tests for: save and load roundtrip, list_all returns multiple campaigns, load returns None for missing\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/campaigns.py`\n- Pattern Reference: See spec section 5.3 for CampaignStore implementation\n- Storage path: `base_path / \"campaigns\" / \"{campaign_id}.json\"`\n\n## Interface Contract (REQUIRED)\n\n**Required Methods:**\n- `async save(campaign: Campaign) -> None`\n- `async load(campaign_id: str) -> Optional[Campaign]`\n- `async list_all() -> list[Campaign]`",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        5
+      ],
+      "order": 6,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CampaignPlanner.plan() with backward planning",
+      "body": "## Description\n\nImplement the `CampaignPlanner` class with `plan()` method that uses backward planning from goal state to create campaign plans.\n\n## Acceptance Criteria\n\n- [ ] `CampaignPlanner` class in `swarm_attack/chief_of_staff/campaigns.py`\n- [ ] Constructor takes `llm: LLMClient`\n- [ ] `plan(goal: str, deadline_days: Optional[int], budget_usd: Optional[float]) -> Campaign`\n- [ ] Uses LLM with backward planning prompt (define end state, identify milestones, sequence, decompose)\n- [ ] Returns Campaign with:\n  - [ ] Generated campaign_id (camp-{8 hex chars})\n  - [ ] Milestones with milestone_id, name, description, target_day, success_criteria\n  - [ ] Day plans with goals decomposed from milestones\n  - [ ] Budget distributed across days\n  - [ ] original_duration_days set\n- [ ] Method is async\n- [ ] Unit tests with mocked LLM response\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/campaigns.py`\n- Pattern Reference: See spec section 5.2 for CampaignPlanner.plan()\n- Prompt should guide LLM through backward planning steps\n- Parse LLM JSON response to construct Campaign object\n\n## Interface Contract (REQUIRED)\n\n**Required Method:**\n- `async plan(goal: str, deadline_days: Optional[int] = None, budget_usd: Optional[float] = None) -> Campaign`",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "large",
+      "dependencies": [
+        5
+      ],
+      "order": 7,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CampaignPlanner.replan() for campaign adjustment",
+      "body": "## Description\n\nImplement the `replan()` method on `CampaignPlanner` that revises remaining days of a campaign based on actual progress.\n\n## Acceptance Criteria\n\n- [ ] `replan(campaign: Campaign) -> Campaign` method added to CampaignPlanner\n- [ ] Analyzes completed vs remaining milestones\n- [ ] Considers days elapsed, budget spent, budget remaining\n- [ ] Uses LLM to generate revised day plans for remaining work\n- [ ] Updates campaign.day_plans with revised plans\n- [ ] Increments campaign.replan_count\n- [ ] Method is async\n- [ ] Unit tests with mocked LLM response\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/campaigns.py`\n- Pattern Reference: See spec section 5.2 for CampaignPlanner.replan()\n- Prompt includes context about what's done, what's remaining, and actual pace",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        7
+      ],
+      "order": 8,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CampaignExecutor.execute_day()",
+      "body": "## Description\n\nImplement the `CampaignExecutor` class with `execute_day()` method that executes one day of a campaign.\n\n## Acceptance Criteria\n\n- [ ] `CampaignExecutor` class in `swarm_attack/chief_of_staff/campaigns.py`\n- [ ] Constructor takes: autopilot, planner, store, checkpoint_system\n- [ ] `execute_day(campaign: Campaign) -> DayResult` method:\n  - [ ] Validates campaign is ACTIVE\n  - [ ] Checks for milestone boundary and creates checkpoint if needed\n  - [ ] Pauses campaign if checkpoint pending\n  - [ ] Runs autopilot for today's goals with budget cap\n  - [ ] Updates day_plan.actual_cost_usd and campaign.spent_usd\n  - [ ] Checks if replan needed and triggers if so\n  - [ ] Advances current_day\n  - [ ] Marks campaign COMPLETED or FAILED when done\n  - [ ] Persists campaign state\n- [ ] `DayResult` dataclass with: campaign_id, day, goals_completed, cost_usd, campaign_progress, paused_for_checkpoint\n- [ ] `resume(campaign_id: str) -> Campaign` method for resuming paused campaigns\n- [ ] Method is async\n- [ ] Unit tests for: executes day successfully, pauses at milestone boundary, triggers replan when behind\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/campaigns.py`\n- Pattern Reference: See spec section 5.3 for CampaignExecutor\n- Uses AutopilotRunner.start() for goal execution\n- Budget cap: min(daily_budget, total_remaining)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "large",
+      "dependencies": [
+        5,
+        6,
+        8
+      ],
+      "order": 9,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add campaign CLI commands",
+      "body": "## Description\n\nAdd CLI commands for campaign management under the `cos` command group.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos campaign create \"goal\" --days N --budget N` - creates new campaign\n- [ ] `swarm-attack cos campaign status [CAMPAIGN_ID]` - shows campaign status (default: active campaign)\n- [ ] `swarm-attack cos campaign list` - lists all campaigns with state\n- [ ] `swarm-attack cos campaign run [CAMPAIGN_ID]` - executes today's goals\n- [ ] `swarm-attack cos campaign resume [CAMPAIGN_ID]` - resumes paused campaign\n- [ ] `swarm-attack cos campaign pause [CAMPAIGN_ID]` - pauses active campaign\n- [ ] `swarm-attack cos campaign replan [CAMPAIGN_ID]` - forces replan\n- [ ] All commands have proper error handling and user feedback\n- [ ] Integration tests for CLI commands\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py` (or dedicated campaign CLI module)\n- Pattern Reference: See spec section 5.3 CLI Extensions\n- Use click for command definitions\n- Wire to CampaignPlanner, CampaignExecutor, CampaignStore",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        6,
+        9
+      ],
+      "order": 10,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add campaign progress to standup command",
+      "body": "## Description\n\nEnhance the `cos standup` command to include active campaign progress in the morning briefing.\n\n## Acceptance Criteria\n\n- [ ] `cos standup` shows active campaigns section\n- [ ] Displays: campaign name, current day / total days, milestones completed/total\n- [ ] Shows today's planned goals from active campaign\n- [ ] Shows budget spent vs remaining\n- [ ] Shows if campaign needs attention (behind schedule, nearing budget)\n- [ ] Gracefully handles no active campaigns\n- [ ] Unit tests for standup output with campaigns\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py` or standup module\n- Uses CampaignStore.list_all() to find active campaigns\n- Filter by CampaignState.ACTIVE",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        6
+      ],
+      "order": 11,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement WeeklyPlanner and weekly CLI command",
+      "body": "## Description\n\nImplement `WeeklyPlanner` class and `cos weekly` CLI command for weekly planning summaries (PRD User Story #6).\n\n## Acceptance Criteria\n\n- [ ] `WeeklySummary` dataclass with all fields from spec section 5.4\n- [ ] `WeeklyPlanner` class with:\n  - [ ] Constructor takes campaign_store, episode_store, llm\n  - [ ] `generate_weekly_summary() -> WeeklySummary` method\n  - [ ] `generate_weekly_report() -> str` method (human-readable markdown)\n  - [ ] `_project_next_week()` helper for projecting upcoming goals\n- [ ] `swarm-attack cos weekly` - shows weekly summary\n- [ ] `swarm-attack cos weekly --report` - shows full weekly report\n- [ ] Summary includes: active/completed campaigns, milestone counts, goal stats, cost, next week projection\n- [ ] Unit tests for weekly summary generation\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/weekly.py` (new) and CLI\n- Pattern Reference: See spec section 5.4 for WeeklyPlanner\n- Uses campaign and episode data to compute metrics\n- Projects next 5 working days of goals",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        6,
+        1
+      ],
+      "order": 12,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create Critic base class and CriticScore dataclass",
+      "body": "## Description\n\nCreate the foundation for the internal validation critics: `Critic` base class, `CriticFocus` enum, and `CriticScore` dataclass.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/critics.py`\n- [ ] `CriticFocus` enum with: COMPLETENESS, FEASIBILITY, SECURITY, STYLE, COVERAGE, EDGE_CASES\n- [ ] `CriticScore` dataclass with: critic_name, focus, score (0-1), approved, issues, suggestions, reasoning\n- [ ] `CriticScore.to_dict()` and `from_dict()` methods\n- [ ] `Critic` base class with:\n  - [ ] Constructor takes focus, llm, weight (default 1.0)\n  - [ ] `has_veto` property (True for SECURITY focus)\n  - [ ] Abstract `evaluate(artifact: str) -> CriticScore` method\n- [ ] Unit tests for CriticScore serialization, has_veto property\n\n## Technical Notes\n\n- New file: `swarm_attack/chief_of_staff/critics.py`\n- Pattern Reference: See spec section 6.1 for data models\n- SECURITY focus has veto power (blocks consensus)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 13,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement SpecCritic variants",
+      "body": "## Description\n\nImplement `SpecCritic` class with variants for COMPLETENESS, FEASIBILITY, and SECURITY evaluation of engineering specs.\n\n## Acceptance Criteria\n\n- [ ] `SpecCritic` class extends `Critic`\n- [ ] `evaluate(spec_content: str) -> CriticScore` implementation\n- [ ] Focus-specific prompts for:\n  - [ ] COMPLETENESS: Missing sections, gaps in requirements\n  - [ ] FEASIBILITY: Can it be implemented? Unclear requirements?\n  - [ ] SECURITY: Injection risks, auth gaps, data exposure\n- [ ] Uses LLM to generate evaluation\n- [ ] Parses LLM JSON response into CriticScore\n- [ ] Truncates spec_content to 4000 chars for prompt\n- [ ] Unit tests with mocked LLM for each variant\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/critics.py`\n- Pattern Reference: See spec section 6.2 for SpecCritic\n- LLM response format: {score, approved, issues, suggestions, reasoning}",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        13
+      ],
+      "order": 14,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement CodeCritic variants",
+      "body": "## Description\n\nImplement `CodeCritic` class with variants for STYLE and SECURITY evaluation of code changes.\n\n## Acceptance Criteria\n\n- [ ] `CodeCritic` class extends `Critic`\n- [ ] `evaluate(code_diff: str) -> CriticScore` implementation\n- [ ] Focus-specific prompts for:\n  - [ ] STYLE: Naming, structure, readability\n  - [ ] SECURITY: Vulnerabilities, injection, unsafe operations, secrets\n- [ ] Uses LLM to generate evaluation\n- [ ] Parses LLM JSON response into CriticScore\n- [ ] Truncates code_diff to 4000 chars for prompt\n- [ ] Unit tests with mocked LLM for each variant\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/critics.py`\n- Pattern Reference: See spec section 6.2 for CodeCritic\n- SECURITY critic has veto power",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        13
+      ],
+      "order": 15,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement TestCritic variants",
+      "body": "## Description\n\nImplement `TestCritic` class with variants for COVERAGE and EDGE_CASES evaluation of test files.\n\n## Acceptance Criteria\n\n- [ ] `TestCritic` class extends `Critic`\n- [ ] `evaluate(test_content: str) -> CriticScore` implementation\n- [ ] Focus-specific prompts for:\n  - [ ] COVERAGE: Test coverage adequate? Missing scenarios?\n  - [ ] EDGE_CASES: Boundary conditions? Error scenarios?\n- [ ] Uses LLM to generate evaluation\n- [ ] Parses LLM JSON response into CriticScore\n- [ ] Truncates test_content to 4000 chars for prompt\n- [ ] Unit tests with mocked LLM for each variant\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/critics.py`\n- Pattern Reference: See spec section 6.2 for TestCritic",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        13
+      ],
+      "order": 16,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement ValidationLayer consensus mechanism",
+      "body": "## Description\n\nImplement `ValidationLayer` class that orchestrates multiple critics and builds consensus for artifact validation.\n\n## Acceptance Criteria\n\n- [ ] `ValidationResult` dataclass with: artifact_type, artifact_id, approved, scores, blocking_issues, consensus_summary, human_review_required\n- [ ] `ValidationLayer` class with:\n  - [ ] Constructor takes llm, initializes critic sets for spec/code/test\n  - [ ] `validate(artifact: str, artifact_type: str, artifact_id: str) -> ValidationResult`\n  - [ ] Runs all relevant critics in parallel (asyncio.gather)\n  - [ ] Security veto: any security critic rejection blocks approval\n  - [ ] Majority vote: 60% weighted approval threshold\n  - [ ] Builds consensus summary with average score\n- [ ] Returns human_review_required=True when blocked or <60% approval\n- [ ] Unit tests for: security veto blocks, majority approval passes, consensus summary\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/critics.py`\n- Pattern Reference: See spec section 6.3 for ValidationLayer\n- Security is NOT a democracy - any security veto blocks",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        14,
+        15,
+        16
+      ],
+      "order": 17,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Integrate validation gates into pipelines",
+      "body": "## Description\n\nIntegrate the ValidationLayer into the spec pipeline, code execution, and add a CLI validation command.\n\n## Acceptance Criteria\n\n- [ ] Spec Pipeline: Validate before SPEC_NEEDS_APPROVAL, auto-advance if approved\n- [ ] Code Execution: Validate code diff before marking goal complete\n- [ ] `swarm-attack cos validate <artifact_type> <path>` CLI command\n  - [ ] artifact_type: spec, code, test\n  - [ ] Shows APPROVED/NEEDS REVIEW with summary\n  - [ ] Lists blocking issues if any\n- [ ] Gating rules:\n  - [ ] Spec: 60% threshold, security veto\n  - [ ] Code: 60% threshold, security veto\n  - [ ] Test: 60% threshold, coverage <80% requires review\n- [ ] Integration tests for validation gates\n\n## Technical Notes\n\n- Files: `swarm_attack/orchestrator.py`, `swarm_attack/chief_of_staff/autopilot_runner.py`, CLI\n- Pattern Reference: See spec section 6.4 for integration points\n- ValidationLayer.validate() called at gate points",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        17
+      ],
+      "order": 18,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement RiskScoringEngine",
+      "body": "## Description\n\nImplement the `RiskScoringEngine` that calculates nuanced 0-1 risk scores for checkpoint decisions based on multiple factors.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/risk_scoring.py`\n- [ ] `RiskAssessment` dataclass with: score, factors, reversibility, estimated_cost, estimated_duration_seconds, recommendation\n- [ ] `RiskScoringEngine` class with:\n  - [ ] Constructor takes episode_store, preference_learner\n  - [ ] `assess_risk(goal: DailyGoal, context: dict) -> RiskAssessment`\n  - [ ] Weighted factors (cost: 0.25, scope: 0.20, reversibility: 0.25, confidence: 0.15, precedent: 0.15)\n  - [ ] Cost factor based on budget percentage\n  - [ ] Scope factor based on files affected and core paths\n  - [ ] Reversibility factor based on destructive/external keywords\n  - [ ] Confidence factor from similar episode success rate (uses find_similar)\n  - [ ] Precedent factor from similar decision approval rate (uses find_similar_decisions)\n- [ ] Recommendation: proceed (<0.4), checkpoint (0.4-0.7), block (>0.7)\n- [ ] Unit tests for each factor calculation and overall scoring\n\n## Technical Notes\n\n- New file: `swarm_attack/chief_of_staff/risk_scoring.py`\n- Pattern Reference: See spec section 7.1 for RiskScoringEngine\n- Depends on EpisodeStore.find_similar (9.5.1) and PreferenceLearner.find_similar_decisions (9.5.2)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        2
+      ],
+      "order": 19,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement PreFlightChecker for early validation",
+      "body": "## Description\n\nImplement `PreFlightChecker` that validates BEFORE execution starts to catch issues early and avoid wasting tokens.\n\n## Acceptance Criteria\n\n- [ ] New file or addition to: `swarm_attack/chief_of_staff/preflight.py`\n- [ ] `PreFlightIssue` dataclass with: severity, category, message, suggested_action, factors (optional)\n- [ ] `PreFlightWarning` dataclass with: category, message\n- [ ] `PreFlightResult` dataclass with: passed, issues, warnings, risk_assessment, requires_checkpoint\n- [ ] `PreFlightChecker` class with:\n  - [ ] Constructor takes risk_engine, checkpoint_system, config\n  - [ ] `validate_before_execute(goal: DailyGoal, action_plan: dict) -> PreFlightResult`\n  - [ ] Budget check: estimated cost vs remaining budget\n  - [ ] Dependency check: required dependencies available\n  - [ ] Risk assessment: risk score > 0.7 creates issue\n  - [ ] Conflict check: files being modified elsewhere\n- [ ] Severity levels: critical, blocking, high_risk\n- [ ] Integrate into AutopilotRunner._execute_goal() before execution\n- [ ] Unit tests for each check type\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/preflight.py` or similar\n- Pattern Reference: See spec section 7.2 for PreFlightChecker\n- Depends on RiskScoringEngine (12.1)",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        19
+      ],
+      "order": 20,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement FeedbackIncorporator for learning from checkpoints",
+      "body": "## Description\n\nImplement `FeedbackIncorporator` that captures human feedback at checkpoints and injects it into subsequent agent prompts.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/feedback.py`\n- [ ] `HumanFeedback` dataclass with: checkpoint_id, timestamp, feedback_type, content, applies_to, expires_at\n- [ ] `FeedbackStore` for persisting feedback to JSON\n- [ ] `FeedbackIncorporator` class with:\n  - [ ] Constructor takes feedback_store\n  - [ ] `record_feedback(checkpoint: Checkpoint, notes: str) -> HumanFeedback`\n  - [ ] `_classify_feedback(notes: str) -> str` - guidance/correction/preference\n  - [ ] `_extract_tags(checkpoint, notes) -> list[str]`\n  - [ ] `_calculate_expiry(feedback_type) -> Optional[str]`\n  - [ ] `get_relevant_feedback(goal: DailyGoal) -> list[HumanFeedback]`\n  - [ ] `build_feedback_context(goal: DailyGoal) -> str` - builds prompt section\n- [ ] Feedback context format: \"## Human Feedback from Recent Checkpoints\\n...\"\n- [ ] Unit tests for recording, retrieval, and context building\n\n## Technical Notes\n\n- New file: `swarm_attack/chief_of_staff/feedback.py`\n- Pattern Reference: See spec section 7.5 for FeedbackIncorporator\n- Integrate with CoderAgent and other agents to inject feedback context into prompts",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 21,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement continue-on-block execution strategy",
+      "body": "## Description\n\nImplement the continue-on-block execution strategy that allows execution to continue past blocked issues to independent issues.\n\n## Acceptance Criteria\n\n- [ ] `ExecutionStrategy` enum with: SEQUENTIAL, CONTINUE_ON_BLOCK, PARALLEL_SAFE\n- [ ] `DependencyGraph` dataclass/class with:\n  - [ ] `issues: list[TaskRef]`\n  - [ ] `dependencies: dict[int, list[int]]`\n  - [ ] `get_ready_issues(completed: set[int], blocked: set[int]) -> list[TaskRef]`\n- [ ] `AutopilotRunner._execute_goals_continue_on_block()` method:\n  - [ ] Builds dependency graph from goals\n  - [ ] Gets ready goals (dependencies met, not blocked)\n  - [ ] Executes ready goals, tracks completed vs blocked\n  - [ ] Marks blocked goals, creates hiccup checkpoint\n  - [ ] Continues with other independent goals\n  - [ ] Returns all results\n- [ ] Config option to enable continue-on-block strategy\n- [ ] Unit tests for: continues past blocked goal, respects dependencies, stops when no ready goals\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Pattern Reference: See spec section 7.7 for continue-on-block strategy\n- DAG-based dependency tracking prevents cycles",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 22,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement EnhancedCheckpoint format with tradeoffs",
+      "body": "## Description\n\nImplement the enhanced checkpoint format with tradeoffs, similar past decisions, and clear recommendations.\n\n## Acceptance Criteria\n\n- [ ] `EnhancedCheckpointOption` dataclass with: id, label, description, tradeoffs, estimated_cost, estimated_time, risk_level, is_recommended, recommendation_reason\n- [ ] `EnhancedCheckpoint` dataclass with:\n  - [ ] checkpoint_id, trigger, context, current_progress, risk_assessment\n  - [ ] question, options (EnhancedCheckpointOption list)\n  - [ ] recommended_option_id, recommendation_rationale\n  - [ ] similar_past_decisions, preference_insights\n  - [ ] created_at, expires_at, urgency\n- [ ] `CheckpointSystem._create_enhanced_checkpoint()` method:\n  - [ ] Gets risk assessment from RiskScoringEngine\n  - [ ] Gets progress snapshot from ProgressTracker\n  - [ ] Gets similar decisions from PreferenceLearner\n  - [ ] Gets preference insights\n  - [ ] Builds enhanced options with tradeoffs (pros/cons)\n  - [ ] Determines recommendation based on context\n- [ ] Trigger-specific option building (COST_SINGLE, UX_CHANGE, etc.)\n- [ ] Unit tests for enhanced checkpoint creation\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/checkpoints.py`\n- Pattern Reference: See spec section 7.8 for EnhancedCheckpoint\n- Depends on RiskScoringEngine (12.1) and ProgressTracker (9.5.3)\n- See spec for example CLI output format",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        19,
+        4,
+        2
+      ],
+      "order": 23,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add progress and feedback CLI commands",
+      "body": "## Description\n\nAdd CLI commands for viewing progress and managing feedback.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack cos progress` - shows current progress snapshot\n  - [ ] Goals completed/total with percentage\n  - [ ] Cost spent\n  - [ ] Duration\n  - [ ] Current goal (if any)\n  - [ ] Blockers (if any)\n- [ ] `swarm-attack cos progress --history` - shows progress history\n- [ ] `swarm-attack cos feedback list` - shows active feedback\n- [ ] `swarm-attack cos feedback add \"content\" --type guidance|correction|preference --tags tag1,tag2`\n- [ ] `swarm-attack cos feedback clear --expired` - clears expired feedback\n- [ ] All commands have proper error handling\n- [ ] Integration tests for CLI commands\n\n## Technical Notes\n\n- File: `swarm_attack/cli.py` or dedicated CLI modules\n- Uses ProgressTracker (9.5.3) and FeedbackIncorporator (12.5)\n- Pattern Reference: See spec for CLI patterns",
+      "labels": [
+        "enhancement",
+        "backend",
+        "cli",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4,
+        21
+      ],
+      "order": 24,
+      "automation_type": "automated"
+    }
+  ]
+}

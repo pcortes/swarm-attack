@@ -11,7 +11,7 @@
 
 **Date:** December 2025
 **Status:** FINAL - Ready for Implementation
-**Version:** v3 Strategic (20 issues)
+**Version:** v3 Strategic (24 issues)
 
 ---
 
@@ -19,11 +19,21 @@
 
 **⚠️ IMPORTANT: v3 requires v2 completion**
 
-This spec builds on the foundation established in v2 (24 issues):
-- Real execution (Phase 7)
-- Hierarchical recovery (Phase 8)
-- Episode memory + Reflexion + Preferences (Phase 9)
-- Early enhancements: Discovery, Interval Checkpoints, Progress Tracking
+This spec builds on the foundation established in v2 (23 issues completed):
+- Real execution (chief-of-staff-v2, 15 issues) - AutopilotRunner, CheckpointSystem, EpisodeStore
+- Hierarchical recovery (cos-phase8-recovery, 8 issues) - 4-level RecoveryManager
+
+**What v2 Actually Delivered:**
+- AutopilotRunner with real orchestrator integration
+- 6-trigger CheckpointSystem (UX_CHANGE, COST_SINGLE, COST_CUMULATIVE, ARCHITECTURE, SCOPE_CHANGE, HICCUP)
+- EpisodeStore with basic save/load operations
+- PreferenceLearner with signal recording and approval rate tracking
+- RecoveryManager with 4-level hierarchy
+
+**What v3 Needs (Added as Phase 9.5 below):**
+- EpisodeStore.find_similar() for similarity-based risk assessment
+- PreferenceLearner.find_similar_decisions() for checkpoint recommendations
+- ProgressTracker for real-time execution monitoring
 
 v3 adds strategic capability on top of v2's autonomous foundation.
 
@@ -34,10 +44,10 @@ v3 adds strategic capability on top of v2's autonomous foundation.
 ### What v2 Delivered
 Chief of Staff v2 provides the **autonomous foundation**:
 - Real orchestrator integration (no more stubs)
-- 4-level automatic recovery
-- Episode memory + Reflexion + Preference Learning
-- Human-in-the-loop checkpoint system (P0)
-- Discovery phase, interval checkpoints, progress tracking
+- 4-level automatic recovery (RecoveryManager)
+- Basic episode memory (EpisodeStore with save/load)
+- Basic preference learning (PreferenceLearner with approval rate)
+- Human-in-the-loop checkpoint system (6 triggers)
 
 ### What v3 Adds
 v3 adds **strategic capability** for multi-day planning and reduced human oversight:
@@ -50,14 +60,381 @@ v3 adds **strategic capability** for multi-day planning and reduced human oversi
 | Execution | Stop on failure | **Continue-on-block strategy** |
 | Q&A Format | Simple options | **Enhanced format with tradeoffs + recommendations** |
 
-### v3 Scope (20 Issues)
+### v3 Scope (24 Issues)
 
 | Phase | Issues | Description |
 |-------|--------|-------------|
+| Phase 9.5 | 9.5.1-9.5.4 (4) | Foundation Completion (v2 gaps) |
 | Phase 10 | 10.1-10.8 (8) | Multi-Day Campaigns + Weekly Planning |
 | Phase 11 | 11.1-11.6 (6) | Internal Validation Critics |
 | Phase 12 (Remaining) | 12.1, 12.2, 12.5, 12.7, 12.8, 12.9 (6) | Advanced World-Class Enhancements |
 
+
+---
+
+## 4. Phase 9.5: Foundation Completion (Prerequisite)
+
+### Consensus Decision
+
+These issues complete the foundation that v2 intended but didn't fully implement. They are prerequisites for the advanced features in Phases 10-12.
+
+### 9.5.1 Add find_similar() to EpisodeStore
+
+**Rationale:** Risk scoring (12.1) needs to find similar past episodes to assess precedent.
+
+```python
+# In swarm_attack/chief_of_staff/episodes.py
+
+class EpisodeStore:
+    # ... existing methods ...
+
+    def find_similar(self, content: str, k: int = 5) -> list[Episode]:
+        """Find k most similar episodes based on content.
+
+        Uses simple keyword matching for now. Can be upgraded to embeddings later.
+
+        Args:
+            content: Goal or action description to match against
+            k: Maximum number of similar episodes to return
+
+        Returns:
+            List of similar episodes, sorted by relevance
+        """
+        all_episodes = self.load_all()
+
+        # Simple keyword-based similarity
+        content_words = set(content.lower().split())
+
+        scored = []
+        for episode in all_episodes:
+            episode_words = set(episode.goal_id.lower().split())
+            # Jaccard similarity
+            if content_words or episode_words:
+                intersection = len(content_words & episode_words)
+                union = len(content_words | episode_words)
+                score = intersection / union if union > 0 else 0
+                scored.append((score, episode))
+
+        # Sort by score descending, return top k
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [episode for score, episode in scored[:k] if score > 0]
+```
+
+**Tests:**
+```python
+class TestFindSimilar:
+    def test_finds_similar_by_keywords(self):
+        store = EpisodeStore(tmp_path)
+        store.save(Episode(goal_id="implement user auth", success=True, ...))
+        store.save(Episode(goal_id="implement user login", success=True, ...))
+        store.save(Episode(goal_id="fix database bug", success=False, ...))
+
+        similar = store.find_similar("user authentication", k=2)
+        assert len(similar) == 2
+        assert "user" in similar[0].goal_id
+
+    def test_returns_empty_for_no_matches(self):
+        store = EpisodeStore(tmp_path)
+        store.save(Episode(goal_id="database migration", ...))
+
+        similar = store.find_similar("completely unrelated xyz", k=5)
+        assert similar == []
+
+    def test_respects_k_limit(self):
+        store = EpisodeStore(tmp_path)
+        for i in range(10):
+            store.save(Episode(goal_id=f"feature task {i}", ...))
+
+        similar = store.find_similar("feature", k=3)
+        assert len(similar) == 3
+```
+
+---
+
+### 9.5.2 Add find_similar_decisions() to PreferenceLearner
+
+**Rationale:** Enhanced checkpoints (12.8) need to show similar past decisions for context.
+
+```python
+# In swarm_attack/chief_of_staff/episodes.py
+
+class PreferenceLearner:
+    # ... existing methods ...
+
+    def find_similar_decisions(
+        self,
+        goal: "DailyGoal",
+        k: int = 3
+    ) -> list[dict]:
+        """Find similar past checkpoint decisions for a goal.
+
+        Args:
+            goal: The goal to find similar decisions for
+            k: Maximum number of decisions to return
+
+        Returns:
+            List of dicts with keys: trigger, context_summary, was_accepted, chosen_option
+        """
+        # Get signals that match the goal's tags
+        goal_tags = set(getattr(goal, 'tags', []))
+
+        relevant_signals = []
+        for signal in self.signals:
+            # Check if trigger matches expected patterns for goal tags
+            trigger_matches = False
+            if 'ui' in goal_tags or 'ux' in goal_tags:
+                trigger_matches = signal.trigger == "UX_CHANGE"
+            elif 'architecture' in goal_tags or 'refactor' in goal_tags:
+                trigger_matches = signal.trigger == "ARCHITECTURE"
+            elif signal.trigger in ["COST_SINGLE", "COST_CUMULATIVE"]:
+                trigger_matches = True  # Cost triggers are always relevant
+
+            if trigger_matches:
+                was_accepted = signal.signal_type.startswith("approved_")
+                relevant_signals.append({
+                    "trigger": signal.trigger,
+                    "context_summary": signal.context_summary,
+                    "was_accepted": was_accepted,
+                    "chosen_option": signal.chosen_option,
+                    "timestamp": signal.timestamp,
+                })
+
+        # Sort by recency, return top k
+        relevant_signals.sort(key=lambda x: x["timestamp"], reverse=True)
+        return relevant_signals[:k]
+```
+
+**Tests:**
+```python
+class TestFindSimilarDecisions:
+    def test_finds_decisions_matching_goal_tags(self):
+        learner = PreferenceLearner()
+        # Record some checkpoint decisions
+        learner.record_decision(checkpoint_with_trigger=UX_CHANGE, chosen="proceed")
+        learner.record_decision(checkpoint_with_trigger=ARCHITECTURE, chosen="skip")
+
+        goal = DailyGoal(description="Update UI", tags=["ui", "frontend"])
+        similar = learner.find_similar_decisions(goal, k=2)
+
+        assert len(similar) >= 1
+        assert similar[0]["trigger"] == "UX_CHANGE"
+
+    def test_returns_was_accepted_flag(self):
+        learner = PreferenceLearner()
+        learner.record_decision(checkpoint_with_trigger=COST_SINGLE, chosen="proceed")
+
+        goal = DailyGoal(description="expensive task", tags=[])
+        similar = learner.find_similar_decisions(goal, k=1)
+
+        assert similar[0]["was_accepted"] == True
+```
+
+---
+
+### 9.5.3 Create ProgressTracker class
+
+**Rationale:** Campaigns (Phase 10) and CLI commands (12.9) need real-time progress tracking.
+
+```python
+# New file: swarm_attack/chief_of_staff/progress.py
+
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from typing import Optional
+from pathlib import Path
+import json
+
+
+@dataclass
+class ProgressSnapshot:
+    """Point-in-time progress state."""
+    timestamp: str
+    goals_completed: int
+    goals_total: int
+    cost_usd: float
+    duration_seconds: int
+    current_goal: Optional[str] = None
+    blockers: list[str] = field(default_factory=list)
+
+    @property
+    def completion_percent(self) -> float:
+        if self.goals_total == 0:
+            return 0.0
+        return (self.goals_completed / self.goals_total) * 100
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ProgressSnapshot":
+        return cls(**data)
+
+
+class ProgressTracker:
+    """Tracks execution progress in real-time."""
+
+    def __init__(self, base_path: Path):
+        self.base_path = base_path
+        self.progress_file = base_path / "progress.json"
+        self.snapshots: list[ProgressSnapshot] = []
+        self._current_snapshot: Optional[ProgressSnapshot] = None
+
+    def start_session(self, total_goals: int) -> None:
+        """Start tracking a new session."""
+        self._current_snapshot = ProgressSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            goals_completed=0,
+            goals_total=total_goals,
+            cost_usd=0.0,
+            duration_seconds=0,
+        )
+        self.snapshots = [self._current_snapshot]
+        self._save()
+
+    def update(
+        self,
+        goals_completed: int = None,
+        cost_usd: float = None,
+        duration_seconds: int = None,
+        current_goal: str = None,
+        blocker: str = None,
+    ) -> ProgressSnapshot:
+        """Update progress and create new snapshot."""
+        if self._current_snapshot is None:
+            raise RuntimeError("No active session. Call start_session() first.")
+
+        new_snapshot = ProgressSnapshot(
+            timestamp=datetime.utcnow().isoformat(),
+            goals_completed=goals_completed if goals_completed is not None
+                else self._current_snapshot.goals_completed,
+            goals_total=self._current_snapshot.goals_total,
+            cost_usd=cost_usd if cost_usd is not None
+                else self._current_snapshot.cost_usd,
+            duration_seconds=duration_seconds if duration_seconds is not None
+                else self._current_snapshot.duration_seconds,
+            current_goal=current_goal,
+            blockers=self._current_snapshot.blockers + ([blocker] if blocker else []),
+        )
+
+        self._current_snapshot = new_snapshot
+        self.snapshots.append(new_snapshot)
+        self._save()
+        return new_snapshot
+
+    def get_current(self) -> Optional[ProgressSnapshot]:
+        """Get current progress snapshot."""
+        return self._current_snapshot
+
+    def get_history(self) -> list[ProgressSnapshot]:
+        """Get all progress snapshots."""
+        return self.snapshots
+
+    def _save(self) -> None:
+        """Persist progress to disk."""
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        data = [s.to_dict() for s in self.snapshots]
+        self.progress_file.write_text(json.dumps(data, indent=2))
+
+    def load(self) -> None:
+        """Load progress from disk."""
+        if self.progress_file.exists():
+            data = json.loads(self.progress_file.read_text())
+            self.snapshots = [ProgressSnapshot.from_dict(s) for s in data]
+            if self.snapshots:
+                self._current_snapshot = self.snapshots[-1]
+```
+
+**Tests:**
+```python
+class TestProgressTracker:
+    def test_start_session_creates_initial_snapshot(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=5)
+
+        current = tracker.get_current()
+        assert current.goals_total == 5
+        assert current.goals_completed == 0
+        assert current.completion_percent == 0.0
+
+    def test_update_increments_progress(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=4)
+
+        tracker.update(goals_completed=1, cost_usd=2.50)
+        tracker.update(goals_completed=2, cost_usd=5.00)
+
+        current = tracker.get_current()
+        assert current.goals_completed == 2
+        assert current.completion_percent == 50.0
+
+    def test_persists_to_disk(self):
+        tracker = ProgressTracker(tmp_path)
+        tracker.start_session(total_goals=3)
+        tracker.update(goals_completed=1)
+
+        # Load in new instance
+        tracker2 = ProgressTracker(tmp_path)
+        tracker2.load()
+
+        assert tracker2.get_current().goals_completed == 1
+```
+
+---
+
+### 9.5.4 Integrate ProgressTracker with AutopilotRunner
+
+**Rationale:** Progress tracking needs to be wired into the execution loop.
+
+```python
+# Modifications to swarm_attack/chief_of_staff/autopilot_runner.py
+
+class AutopilotRunner:
+    def __init__(self, ...):
+        # ... existing init ...
+        self.progress_tracker = ProgressTracker(
+            self.base_path / "progress"
+        )
+
+    async def start(self, goals: list[DailyGoal], ...):
+        # Start progress tracking
+        self.progress_tracker.start_session(total_goals=len(goals))
+
+        # ... existing start logic ...
+
+    async def _execute_goal(self, goal: DailyGoal, session: AutopilotSession):
+        # Update current goal in progress
+        self.progress_tracker.update(current_goal=goal.description)
+
+        # ... existing execution logic ...
+
+        # Update progress after completion
+        self.progress_tracker.update(
+            goals_completed=session.current_goal_index + 1,
+            cost_usd=session.total_cost_usd,
+        )
+```
+
+**Tests:**
+```python
+class TestAutopilotRunnerProgressIntegration:
+    def test_starts_progress_tracking(self):
+        runner = AutopilotRunner(...)
+        goals = [DailyGoal(...), DailyGoal(...)]
+
+        await runner.start(goals, budget_usd=50.0)
+
+        progress = runner.progress_tracker.get_current()
+        assert progress.goals_total == 2
+
+    def test_updates_progress_after_each_goal(self):
+        runner = AutopilotRunner(...)
+        # Mock execution to succeed
+
+        await runner.start([goal1, goal2], budget_usd=50.0)
+
+        history = runner.progress_tracker.get_history()
+        assert len(history) >= 3  # start + 2 goals
+```
 
 ---
 
@@ -1737,25 +2114,37 @@ Industry-leading patterns:
 
 ---
 
-## 12. Dependencies on v2
+## 12. Dependencies
 
-v3 explicitly depends on v2 completion:
+### v2 Foundation (Complete)
 
-| v3 Issue | Depends on v2 |
+v3 builds on the v2 foundation (23 issues across 2 features):
+- **chief-of-staff-v2** (15 issues): AutopilotRunner, CheckpointSystem, basic EpisodeStore/PreferenceLearner
+- **cos-phase8-recovery** (8 issues): 4-level RecoveryManager, error classification
+
+### Phase 9.5 → v3 Dependencies
+
+Phase 9.5 (this spec) fills gaps needed by later phases:
+
+| v3 Issue | Depends on Phase 9.5 |
+|----------|----------------------|
+| 12.1 (Risk Scoring) | 9.5.1 (EpisodeStore.find_similar) |
+| 12.8 (Enhanced Checkpoint) | 9.5.2 (PreferenceLearner.find_similar_decisions) |
+| 12.9 (CLI Commands) | 9.5.3 (ProgressTracker) |
+| Phase 10 (Campaigns) | 9.5.3, 9.5.4 (ProgressTracker integration) |
+
+### v3 Internal Dependencies
+
+| v3 Issue | Depends on v3 |
 |----------|---------------|
-| 12.1 (Risk Scoring) | 9.2 (EpisodeStore), 9.3 (ReflexionEngine) |
-| 12.5 (Feedback) | 7.6 (CheckpointStore) |
-| 12.7 (Continue-on-Block) | 7.2 (Execution paths) |
-| 12.8 (Enhanced Checkpoint) | 7.6 (CheckpointStore), 12.1 |
-| 12.9 (CLI Commands) | 12.6 (ProgressTracker) |
-| Phase 10 (Campaigns) | Phase 7 (Execution), Phase 9 (Memory) |
-| Phase 11 (Critics) | Phase 7 (Pipeline integration) |
+| 12.2 (Pre-flight) | 12.1 (Risk Scoring) |
+| 12.8 (Enhanced Checkpoint) | 12.1 (Risk Scoring) |
 
 ---
 
-*v3 Spec finalized: December 2025*
+*v3 Spec updated: December 2025*
 *Expert Panel: LangChain, LlamaIndex, Imbue, Anthropic, Princeton*
-*Prerequisites: v2 complete (24 issues)*
-*Phases: 10 (Campaigns), 11 (Critics), 12-remaining (World-Class)*
-*Issues: 20*
-*Ready for implementation after v2*
+*Prerequisites: v2 complete (23 issues)*
+*Phases: 9.5 (Foundation), 10 (Campaigns), 11 (Critics), 12-remaining (World-Class)*
+*Issues: 24*
+*Ready for implementation*

@@ -9,7 +9,6 @@ This module provides:
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +58,39 @@ class Episode:
             retry_count=data.get("retry_count", 0),
             recovery_level=data.get("recovery_level"),
         )
+
+
+def _tokenize(text: str) -> set[str]:
+    """Tokenize text into lowercase words for Jaccard similarity.
+    
+    Args:
+        text: Text to tokenize.
+        
+    Returns:
+        Set of lowercase word tokens.
+    """
+    # Convert to lowercase and split on whitespace/punctuation
+    words = text.lower().split()
+    return set(words)
+
+
+def _jaccard_similarity(set1: set[str], set2: set[str]) -> float:
+    """Calculate Jaccard similarity between two sets.
+    
+    Args:
+        set1: First set of tokens.
+        set2: Second set of tokens.
+        
+    Returns:
+        Jaccard similarity coefficient (0.0 to 1.0).
+    """
+    if not set1 or not set2:
+        return 0.0
+    intersection = len(set1 & set2)
+    union = len(set1 | set2)
+    if union == 0:
+        return 0.0
+    return intersection / union
 
 
 class EpisodeStore:
@@ -139,73 +171,40 @@ class EpisodeStore:
 
         return episodes
 
-    def _tokenize(self, text: str) -> set[str]:
-        """Tokenize text into lowercase words for similarity matching.
-
-        Args:
-            text: Text to tokenize.
-
-        Returns:
-            Set of lowercase word tokens.
-        """
-        # Extract words (alphanumeric sequences), convert to lowercase
-        words = re.findall(r'\w+', text.lower())
-        return set(words)
-
-    def _jaccard_similarity(self, set_a: set[str], set_b: set[str]) -> float:
-        """Calculate Jaccard similarity between two sets.
-
-        Args:
-            set_a: First set of tokens.
-            set_b: Second set of tokens.
-
-        Returns:
-            Jaccard similarity coefficient (0.0 to 1.0).
-        """
-        if not set_a or not set_b:
-            return 0.0
-        intersection = len(set_a & set_b)
-        union = len(set_a | set_b)
-        if union == 0:
-            return 0.0
-        return intersection / union
-
     def find_similar(self, content: str, k: int = 5) -> list[Episode]:
-        """Find similar past episodes based on keyword matching.
-
-        Uses Jaccard similarity on tokenized goal_id text to find
-        episodes that are similar to the given content.
-
+        """Find similar past episodes based on content matching.
+        
+        Uses keyword-based Jaccard similarity for matching episodes
+        by comparing the search content against episode goal_id fields.
+        
         Args:
-            content: Content string to match against episode goal_ids.
-            k: Maximum number of similar episodes to return. Defaults to 5.
-
+            content: Search content to match against episodes.
+            k: Maximum number of episodes to return. Defaults to 5.
+            
         Returns:
-            List of Episode objects sorted by relevance (highest first).
-            Returns empty list if no matches are found.
+            List of Episode objects sorted by relevance (highest first),
+            limited to k results. Returns empty list when no matches found.
         """
         episodes = self.load_all()
         if not episodes:
             return []
-
-        query_tokens = self._tokenize(content)
+        
+        # Tokenize the search content
+        query_tokens = _tokenize(content)
         if not query_tokens:
             return []
-
-        # Calculate similarity for each episode
+        
+        # Calculate similarity scores for all episodes
         scored_episodes: list[tuple[float, Episode]] = []
         for episode in episodes:
-            episode_tokens = self._tokenize(episode.goal_id)
-            similarity = self._jaccard_similarity(query_tokens, episode_tokens)
+            episode_tokens = _tokenize(episode.goal_id)
+            similarity = _jaccard_similarity(query_tokens, episode_tokens)
             if similarity > 0:
                 scored_episodes.append((similarity, episode))
-
-        if not scored_episodes:
-            return []
-
+        
         # Sort by similarity (highest first)
         scored_episodes.sort(key=lambda x: x[0], reverse=True)
-
+        
         # Return top k episodes
         return [episode for _, episode in scored_episodes[:k]]
 
@@ -236,20 +235,19 @@ class PreferenceLearner:
         """Extract a preference signal from a resolved checkpoint.
 
         Args:
-            checkpoint: A resolved checkpoint with a decision.
+            checkpoint: A resolved checkpoint with decision info.
 
         Returns:
-            PreferenceSignal if the checkpoint contains learnable info,
-            None otherwise.
+            PreferenceSignal if extractable, None otherwise.
         """
-        if checkpoint.resolution is None:
+        if not hasattr(checkpoint, "resolution") or not checkpoint.resolution:
             return None
 
         signal = PreferenceSignal(
             signal_type=f"{checkpoint.resolution}_{checkpoint.trigger}",
             trigger=checkpoint.trigger,
             chosen_option=checkpoint.resolution,
-            context_summary=checkpoint.context.get("summary", ""),
+            context_summary=checkpoint.description[:100] if checkpoint.description else "",
             timestamp=datetime.now().isoformat(),
         )
         self.signals.append(signal)

@@ -1,0 +1,407 @@
+{
+  "feature_id": "chief-of-staff-v3",
+  "phase": "IMPLEMENTING",
+  "tasks": [
+    {
+      "issue_number": 1,
+      "stage": "READY",
+      "title": "Add find_similar() method to EpisodeStore",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": "Max retries exceeded: Issue tests failed: 7 failed, 0 passed",
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/episodes.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/episodes.py": [
+            "Episode",
+            "EpisodeStore",
+            "PreferenceSignal",
+            "PreferenceLearner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 1 file(s): swarm_attack/chief_of_staff/episodes.py; Defined: Episode, EpisodeStore, PreferenceSignal, PreferenceLearner",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 2,
+      "stage": "READY",
+      "title": "Add find_similar_decisions() method to PreferenceLearner",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 3,
+      "stage": "READY",
+      "title": "Create ProgressTracker class for real-time execution monitoring",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 4,
+      "stage": "BACKLOG",
+      "title": "Integrate ProgressTracker with AutopilotRunner",
+      "dependencies": [
+        3
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 5,
+      "stage": "READY",
+      "title": "Create Campaign, Milestone, and DayPlan dataclasses",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 6,
+      "stage": "BACKLOG",
+      "title": "Implement CampaignStore for campaign persistence",
+      "dependencies": [
+        5
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 7,
+      "stage": "BACKLOG",
+      "title": "Implement CampaignPlanner.plan() with backward planning",
+      "dependencies": [
+        5
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 8,
+      "stage": "BACKLOG",
+      "title": "Implement CampaignPlanner.replan() for campaign adjustment",
+      "dependencies": [
+        7
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 9,
+      "stage": "BACKLOG",
+      "title": "Implement CampaignExecutor.execute_day()",
+      "dependencies": [
+        5,
+        6,
+        8
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 10,
+      "stage": "BACKLOG",
+      "title": "Add campaign CLI commands",
+      "dependencies": [
+        6,
+        9
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 11,
+      "stage": "BACKLOG",
+      "title": "Add campaign progress to standup command",
+      "dependencies": [
+        6
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 12,
+      "stage": "BACKLOG",
+      "title": "Implement WeeklyPlanner and weekly CLI command",
+      "dependencies": [
+        6,
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 13,
+      "stage": "READY",
+      "title": "Create Critic base class and CriticScore dataclass",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 14,
+      "stage": "BACKLOG",
+      "title": "Implement SpecCritic variants",
+      "dependencies": [
+        13
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 15,
+      "stage": "BACKLOG",
+      "title": "Implement CodeCritic variants",
+      "dependencies": [
+        13
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 16,
+      "stage": "BACKLOG",
+      "title": "Implement TestCritic variants",
+      "dependencies": [
+        13
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 17,
+      "stage": "BACKLOG",
+      "title": "Implement ValidationLayer consensus mechanism",
+      "dependencies": [
+        14,
+        15,
+        16
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 18,
+      "stage": "BACKLOG",
+      "title": "Integrate validation gates into pipelines",
+      "dependencies": [
+        17
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 19,
+      "stage": "BACKLOG",
+      "title": "Implement RiskScoringEngine",
+      "dependencies": [
+        1,
+        2
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 20,
+      "stage": "BACKLOG",
+      "title": "Implement PreFlightChecker for early validation",
+      "dependencies": [
+        19
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 21,
+      "stage": "READY",
+      "title": "Implement FeedbackIncorporator for learning from checkpoints",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 22,
+      "stage": "READY",
+      "title": "Implement continue-on-block execution strategy",
+      "dependencies": [],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 23,
+      "stage": "BACKLOG",
+      "title": "Implement EnhancedCheckpoint format with tradeoffs",
+      "dependencies": [
+        19,
+        4,
+        2
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 24,
+      "stage": "BACKLOG",
+      "title": "Add progress and feedback CLI commands",
+      "dependencies": [
+        4,
+        21
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    }
+  ],
+  "current_session": "sess_20251219_060328_914995",
+  "created_at": "2025-12-19T05:36:34.147250Z",
+  "updated_at": "2025-12-19T06:02:13.493915Z",
+  "cost_total_usd": 2.0417383,
+  "cost_by_phase": {
+    "ISSUES": 0.5134642500000001,
+    "IMPLEMENTATION": 1.52827405
+  }
+}
