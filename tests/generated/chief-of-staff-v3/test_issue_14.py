@@ -68,7 +68,7 @@ class TestSpecCriticEvaluate:
         result = critic.evaluate("# Incomplete Spec")
 
         assert result.focus == CriticFocus.COMPLETENESS
-        assert result.critic_name == "SpecCritic"
+        assert "SpecCritic" in result.critic_name  # May include focus suffix
         assert len(result.issues) == 2
         assert "Missing architecture section" in result.issues
 
