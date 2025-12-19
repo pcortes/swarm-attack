@@ -1709,12 +1709,101 @@ class Orchestrator:
         # Save state
         self._state_store.save(state)
 
+        # CRITICAL: Also write sub-issues to issues.json so coder can find them
+        self._write_sub_issues_to_spec(
+            feature_id=feature_id,
+            parent_issue_number=parent_issue_number,
+            child_nums=child_nums,
+            sub_issues=sub_issues,
+        )
+
         self._log("split_applied", {
             "feature_id": feature_id,
             "parent_issue": parent_issue_number,
             "child_issues": child_nums,
             "child_titles": [s.get("title", "") for s in sub_issues],
         })
+
+    def _write_sub_issues_to_spec(
+        self,
+        feature_id: str,
+        parent_issue_number: int,
+        child_nums: list[int],
+        sub_issues: list[dict[str, Any]],
+    ) -> None:
+        """
+        Write sub-issues to issues.json so coder can find them.
+
+        Bug fix: When issues are split, the sub-issues were only added to state
+        but not to issues.json. The coder agent loads issue bodies from issues.json,
+        so it would fail with "Issue N not found in issues.json".
+        """
+        issues_path = self.config.specs_path / feature_id / "issues.json"
+        if not issues_path.exists():
+            self._log("write_sub_issues_no_spec", {
+                "feature_id": feature_id,
+                "issues_path": str(issues_path),
+            }, level="error")
+            return
+
+        try:
+            with open(issues_path) as f:
+                issues_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self._log("write_sub_issues_load_error", {
+                "feature_id": feature_id,
+                "error": str(e),
+            }, level="error")
+            return
+
+        if "issues" not in issues_data:
+            issues_data["issues"] = []
+
+        # Find parent issue for labels
+        parent_labels = ["enhancement", "backend"]
+        for issue in issues_data["issues"]:
+            if issue.get("order") == parent_issue_number:
+                parent_labels = issue.get("labels", parent_labels)
+                break
+
+        # Add sub-issues to issues array
+        for i, (num, sub) in enumerate(zip(child_nums, sub_issues)):
+            # First child inherits parent deps, others chain sequentially
+            if i == 0:
+                deps = []  # Will be resolved from state
+                for issue in issues_data["issues"]:
+                    if issue.get("order") == parent_issue_number:
+                        deps = issue.get("dependencies", [])
+                        break
+            else:
+                deps = [child_nums[i - 1]]
+
+            new_issue = {
+                "title": sub.get("title", f"Sub-issue {i + 1} of #{parent_issue_number}"),
+                "body": sub.get("body", ""),
+                "labels": parent_labels,
+                "estimated_size": sub.get("estimated_size", "small"),
+                "dependencies": deps,
+                "order": num,
+                "automation_type": "automated",
+                "parent_issue": parent_issue_number,
+            }
+            issues_data["issues"].append(new_issue)
+
+        # Write back
+        try:
+            with open(issues_path, "w") as f:
+                json.dump(issues_data, f, indent=2)
+            self._log("write_sub_issues_success", {
+                "feature_id": feature_id,
+                "parent_issue": parent_issue_number,
+                "child_issues": child_nums,
+            })
+        except OSError as e:
+            self._log("write_sub_issues_write_error", {
+                "feature_id": feature_id,
+                "error": str(e),
+            }, level="error")
 
     def _generate_completion_summary(
         self,
