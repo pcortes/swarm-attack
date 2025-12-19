@@ -17,3 +17,5 @@
 {"ts": "2025-12-19T06:08:19.976800Z", "event": "issue_blocked", "issue": 2, "reason": "Max retries exceeded: Regression detected: 7 tests failed in full suite", "retries": 3}
 {"ts": "2025-12-19T06:23:23.024862Z", "event": "issue_started", "issue": 13, "session": "sess_20251219_062323_023558"}
 {"ts": "2025-12-19T06:25:25.493362Z", "event": "issue_started", "issue": 13, "session": "sess_20251219_062525_492545"}
+{"ts": "2025-12-19T06:27:05.408795Z", "event": "issue_done", "issue": 13, "commit": "d0844064b4f8e365d2d9088d26409fabb310a3a1", "cost_usd": 0.22206755}
+{"ts": "2025-12-19T06:27:29.328945Z", "event": "issue_started", "issue": 3, "session": "sess_20251219_062729_328103"}
