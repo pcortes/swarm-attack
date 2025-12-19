@@ -5,6 +5,7 @@ This module provides:
 - RetryStrategy enum for defining retry approaches
 - ErrorCategory enum for classifying errors
 - RecoveryManager class with exponential backoff retry logic
+- classify_error() function for mapping exceptions to error categories
 - Integration with CheckpointSystem for escalation
 """
 
@@ -60,6 +61,78 @@ class ErrorCategory(Enum):
 # Constants for retry logic
 MAX_RETRIES = 3
 BACKOFF_SECONDS = 5
+
+
+# Error classification mappings using LLMErrorType from errors.py
+# Import at module level for classify_error function
+from swarm_attack.errors import LLMErrorType
+
+# Transient errors: temporary failures that are worth retrying
+TRANSIENT_ERRORS = {
+    LLMErrorType.RATE_LIMIT,
+    LLMErrorType.RATE_LIMIT_TIMED,
+    LLMErrorType.SERVER_OVERLOADED,
+    LLMErrorType.SERVER_ERROR,
+    LLMErrorType.TIMEOUT,
+}
+
+# Systematic errors: approach failures that fall through to escalation
+SYSTEMATIC_ERRORS = {
+    LLMErrorType.CLI_CRASH,
+    LLMErrorType.JSON_PARSE_ERROR,
+}
+
+# Fatal errors: unrecoverable failures requiring immediate escalation
+FATAL_ERRORS = {
+    LLMErrorType.AUTH_REQUIRED,
+    LLMErrorType.AUTH_EXPIRED,
+    LLMErrorType.CLI_NOT_FOUND,
+}
+
+
+def classify_error(error: Exception) -> ErrorCategory:
+    """Classify an error to determine recovery strategy.
+    
+    Maps exceptions to ErrorCategory based on their error_type attribute
+    (for LLMError instances) or defaults to FATAL for unknown/generic exceptions.
+    
+    Args:
+        error: The exception to classify.
+        
+    Returns:
+        ErrorCategory indicating the type of failure:
+        - TRANSIENT: For rate limits, timeouts, server errors (Level 1 retry)
+        - SYSTEMATIC: For CLI crashes, JSON parse errors (falls through to Level 4)
+        - FATAL: For auth errors, CLI not found, or unknown errors (immediate Level 4)
+    
+    Examples:
+        >>> from swarm_attack.errors import LLMError, LLMErrorType
+        >>> error = LLMError("timeout", error_type=LLMErrorType.TIMEOUT)
+        >>> classify_error(error)
+        <ErrorCategory.TRANSIENT: 'transient'>
+        
+        >>> classify_error(ValueError("unknown"))
+        <ErrorCategory.FATAL: 'fatal'>
+    """
+    # Check if the exception has an error_type attribute (LLMError instances)
+    error_type = getattr(error, "error_type", None)
+    
+    # If no error_type attribute or it's None, default to FATAL (fail-safe)
+    if error_type is None:
+        return ErrorCategory.FATAL
+    
+    # Classify based on error type mappings
+    if error_type in TRANSIENT_ERRORS:
+        return ErrorCategory.TRANSIENT
+    
+    if error_type in SYSTEMATIC_ERRORS:
+        return ErrorCategory.SYSTEMATIC
+    
+    if error_type in FATAL_ERRORS:
+        return ErrorCategory.FATAL
+    
+    # Unknown error types default to FATAL (fail-safe behavior)
+    return ErrorCategory.FATAL
 
 
 @dataclass

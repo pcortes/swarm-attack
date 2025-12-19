@@ -3,7 +3,7 @@
   "feature_id": "cos-phase8-recovery",
   "issue_number": 1,
   "started_at": "2025-12-19T03:43:10.430497Z",
-  "status": "active",
+  "status": "complete",
   "checkpoints": [
     {
       "agent": "coder",
@@ -20,9 +20,11 @@
       "cost_usd": 0.0
     }
   ],
-  "ended_at": null,
-  "end_status": null,
+  "ended_at": "2025-12-19T03:44:21.024385Z",
+  "end_status": "success",
   "cost_usd": 0.19219295000000003,
   "worktree_path": null,
-  "commits": []
+  "commits": [
+    "6e27b6ae56dc66f26efd4209be095c622625e3cc"
+  ]
 }

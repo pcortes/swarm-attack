@@ -20,3 +20,5 @@
 {"ts": "2025-12-19T03:37:07.723573Z", "event": "retry_started", "issue": 1, "attempt": 3}
 {"ts": "2025-12-19T03:37:36.426600Z", "event": "issue_blocked", "issue": 1, "reason": "Max retries exceeded: Collection error: cannot import 'RetryStrategy' from 'swarm_attack.chief_of_staff.recovery' - implementation may be incomplete (missing class/function definition)", "retries": 3}
 {"ts": "2025-12-19T03:43:10.431193Z", "event": "issue_started", "issue": 1, "session": "sess_20251219_034310_430476"}
+{"ts": "2025-12-19T03:44:16.555445Z", "event": "issue_done", "issue": 1, "commit": "6e27b6ae56dc66f26efd4209be095c622625e3cc", "cost_usd": 0.19219295000000003}
+{"ts": "2025-12-19T03:44:41.753123Z", "event": "issue_started", "issue": 2, "session": "sess_20251219_034441_752214"}
