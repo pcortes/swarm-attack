@@ -385,3 +385,139 @@ Return ONLY the JSON object.""",
                 suggestions=[],
                 reasoning=f"Failed to parse response: {response[:100]}...",
             )
+
+
+class TestCritic(Critic):
+    """Critic for evaluating test files.
+    
+    Supports COVERAGE and EDGE_CASES focus areas.
+    """
+
+    # Maximum characters to include in prompt
+    MAX_TEST_CHARS = 4000
+
+    # Focus-specific prompts
+    PROMPTS = {
+        CriticFocus.COVERAGE: """You are a test coverage critic. Evaluate the following test file for:
+- Are all major code paths tested?
+- Are all public methods/functions tested?
+- Are return values and side effects verified?
+- Are different input combinations tested?
+- Are success and failure scenarios both covered?
+- Are there missing test scenarios?
+
+Test content (truncated if long):
+{test_content}
+
+Respond with a JSON object containing:
+{{
+    "score": <float 0-1, where 1 is excellent coverage>,
+    "approved": <boolean, true if score >= 0.7>,
+    "issues": [<list of missing test coverage areas>],
+    "suggestions": [<list of additional tests to add>],
+    "reasoning": "<brief explanation of your evaluation>"
+}}
+
+Return ONLY the JSON object.""",
+
+        CriticFocus.EDGE_CASES: """You are an edge case testing critic. Evaluate the following test file for:
+- Boundary conditions (empty, zero, max values)
+- Null/None input handling
+- Error scenarios and exception handling
+- Invalid input types
+- Empty collections and strings
+- Off-by-one scenarios
+- Concurrent/race condition tests
+- Resource exhaustion scenarios
+
+Test content (truncated if long):
+{test_content}
+
+Respond with a JSON object containing:
+{{
+    "score": <float 0-1, where 1 is comprehensive edge case coverage>,
+    "approved": <boolean, true if score >= 0.7>,
+    "issues": [<list of missing edge case tests>],
+    "suggestions": [<list of edge cases to add tests for>],
+    "reasoning": "<brief explanation of your evaluation>"
+}}
+
+Return ONLY the JSON object.""",
+    }
+
+    def evaluate(self, artifact: str) -> CriticScore:
+        """Evaluate a test file and return a score.
+
+        Args:
+            artifact: The test content to evaluate
+
+        Returns:
+            CriticScore with evaluation results
+        """
+        # Truncate test content if too long
+        test_content = artifact[:self.MAX_TEST_CHARS]
+        if len(artifact) > self.MAX_TEST_CHARS:
+            test_content += "\n... [truncated]"
+
+        # Get the focus-specific prompt
+        prompt_template = self.PROMPTS.get(self.focus)
+        if not prompt_template:
+            return CriticScore(
+                critic_name=f"TestCritic-{self.focus.name}",
+                focus=self.focus,
+                score=0.0,
+                approved=False,
+                issues=[f"Unsupported focus: {self.focus.name}"],
+                suggestions=[],
+                reasoning=f"TestCritic does not support {self.focus.name} focus",
+            )
+
+        prompt = prompt_template.format(test_content=test_content)
+
+        # Call LLM
+        response = self.llm(prompt)
+
+        # Parse response
+        return self._parse_response(response)
+
+    def _parse_response(self, response: str) -> CriticScore:
+        """Parse LLM response into CriticScore.
+
+        Args:
+            response: Raw LLM response
+
+        Returns:
+            CriticScore parsed from response
+        """
+        critic_name = f"TestCritic-{self.focus.name}"
+
+        # Try to extract JSON from response
+        try:
+            # Remove code fences if present
+            json_str = response
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+
+            data = json.loads(json_str.strip())
+
+            return CriticScore(
+                critic_name=critic_name,
+                focus=self.focus,
+                score=float(data.get("score", 0.0)),
+                approved=bool(data.get("approved", False)),
+                issues=data.get("issues", []),
+                suggestions=data.get("suggestions", []),
+                reasoning=data.get("reasoning", ""),
+            )
+        except (json.JSONDecodeError, KeyError, ValueError):
+            return CriticScore(
+                critic_name=critic_name,
+                focus=self.focus,
+                score=0.0,
+                approved=False,
+                issues=["Failed to parse LLM response"],
+                suggestions=[],
+                reasoning=f"Failed to parse response: {response[:100]}...",
+            )
