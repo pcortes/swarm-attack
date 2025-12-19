@@ -491,7 +491,7 @@
     },
     {
       "issue_number": 25,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "FeedbackIncorporator: Core data models and FeedbackStore",
       "dependencies": [],
       "estimated_size": "small",
@@ -561,8 +561,31 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_28.py",
+          "swarm_attack/chief_of_staff/autopilot_runner.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_28.py": [
+            "TestExecutionStrategy",
+            "TestDependencyGraph",
+            "TestDependencyGraphGetReadyGoals",
+            "TestDependencyGraphFromGoals",
+            "TestFileExists"
+          ],
+          "swarm_attack/chief_of_staff/autopilot_runner.py": [
+            "ExecutionStrategy",
+            "DependencyGraph",
+            "GoalExecutionResult",
+            "AutopilotRunResult",
+            "SessionContext",
+            "AutopilotRunner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_28.py, swarm_attack/chief_of_staff/autopilot_runner.py; Defined: TestExecutionStrategy, TestDependencyGraph, TestDependencyGraphGetReadyGoals, TestDependencyGraphFromGoals, TestFileExists",
       "parent_issue": 22,
       "child_issues": []
     },
@@ -615,12 +638,12 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_071829_317234",
+  "current_session": "sess_20251219_071958_088426",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T07:14:19.219433Z",
-  "cost_total_usd": 5.4022022000000005,
+  "updated_at": "2025-12-19T07:19:53.948486Z",
+  "cost_total_usd": 5.64607245,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 4.88873795
+    "IMPLEMENTATION": 5.1326082
   }
 }

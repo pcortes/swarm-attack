@@ -28,6 +28,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -44,6 +45,86 @@ if TYPE_CHECKING:
     from swarm_attack.orchestrator import Orchestrator
     from swarm_attack.bug_orchestrator import BugOrchestrator
     from swarm_attack.chief_of_staff.episodes import EpisodeStore
+
+
+class ExecutionStrategy(Enum):
+    """Strategy for executing goals in autopilot.
+
+    Determines how goals are processed when some are blocked or fail.
+
+    Values:
+        SEQUENTIAL: Execute goals in order, stop on any block/failure.
+        CONTINUE_ON_BLOCK: Skip blocked goals and continue with ready ones.
+        PARALLEL_SAFE: Execute independent goals in parallel when safe.
+    """
+
+    SEQUENTIAL = "sequential"
+    CONTINUE_ON_BLOCK = "continue_on_block"
+    PARALLEL_SAFE = "parallel_safe"
+
+
+@dataclass
+class DependencyGraph:
+    """Tracks goal dependencies for execution ordering.
+
+    Used with CONTINUE_ON_BLOCK and PARALLEL_SAFE strategies to determine
+    which goals can be executed when others are blocked.
+
+    Attributes:
+        issues: List of DailyGoal objects to track.
+        dependencies: Mapping of goal_id to list of dependency goal_ids.
+                      A goal can only execute when all its dependencies are complete.
+    """
+
+    issues: list[DailyGoal]
+    dependencies: dict[str, list[str]] = field(default_factory=dict)
+
+    def get_ready_goals(
+        self, completed: set[str], blocked: set[str]
+    ) -> list[DailyGoal]:
+        """Get goals that are ready to execute.
+
+        A goal is ready when:
+        - It is not already completed
+        - It is not blocked
+        - All its dependencies are completed
+
+        Args:
+            completed: Set of goal_ids that have been completed.
+            blocked: Set of goal_ids that are blocked.
+
+        Returns:
+            List of DailyGoal objects that are ready to execute.
+        """
+        ready = []
+        for goal in self.issues:
+            goal_id = goal.goal_id
+
+            # Skip if already completed or blocked
+            if goal_id in completed or goal_id in blocked:
+                continue
+
+            # Check if all dependencies are met
+            deps = self.dependencies.get(goal_id, [])
+            if all(dep in completed for dep in deps):
+                ready.append(goal)
+
+        return ready
+
+    @classmethod
+    def from_goals(cls, goals: list[DailyGoal]) -> "DependencyGraph":
+        """Create a DependencyGraph from a list of goals.
+
+        Creates a graph with no dependencies (all goals are independent).
+        Dependencies can be added manually after creation.
+
+        Args:
+            goals: List of DailyGoal objects.
+
+        Returns:
+            A DependencyGraph with the given goals and empty dependencies.
+        """
+        return cls(issues=list(goals), dependencies={})
 
 
 @dataclass
