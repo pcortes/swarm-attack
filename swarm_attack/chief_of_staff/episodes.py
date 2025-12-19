@@ -248,20 +248,28 @@ class PreferenceLearner:
             PreferenceSignal if the checkpoint contains learnable info,
             None otherwise.
         """
-        if checkpoint.resolution is None:
+        if checkpoint.chosen_option is None:
             return None
 
         # Determine if this was an acceptance (proceed, approve, etc)
-        resolution_lower = checkpoint.resolution.lower() if checkpoint.resolution else ""
+        chosen_lower = checkpoint.chosen_option.lower() if checkpoint.chosen_option else ""
         was_accepted = any(
-            kw in resolution_lower
+            kw in chosen_lower
             for kw in ["proceed", "approve", "accept", "continue", "yes"]
         )
+
+        # Get trigger value as string for signal_type
+        trigger_value = (
+            checkpoint.trigger.value
+            if hasattr(checkpoint.trigger, 'value')
+            else str(checkpoint.trigger)
+        )
+
         signal = PreferenceSignal(
-            signal_type=f"{checkpoint.resolution}_{checkpoint.trigger}",
-            trigger=checkpoint.trigger,
-            chosen_option=checkpoint.resolution,
-            context_summary=checkpoint.context.get("summary", ""),
+            signal_type=f"{checkpoint.chosen_option}_{trigger_value}",
+            trigger=trigger_value,
+            chosen_option=checkpoint.chosen_option,
+            context_summary=checkpoint.context[:200] if checkpoint.context else "",
             timestamp=datetime.now().isoformat(),
             was_accepted=was_accepted,
         )
