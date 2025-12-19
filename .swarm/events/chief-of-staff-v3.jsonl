@@ -44,3 +44,4 @@
 {"ts": "2025-12-19T07:25:27.216196Z", "event": "retry_started", "issue": 12, "attempt": 1}
 {"ts": "2025-12-19T07:27:18.192126Z", "event": "retry_started", "issue": 12, "attempt": 2}
 {"ts": "2025-12-19T07:28:40.018653Z", "event": "issue_started", "issue": 12, "session": "sess_20251219_072840_017682"}
+{"ts": "2025-12-19T07:30:29.937904Z", "event": "issue_started", "issue": 14, "session": "sess_20251219_073029_937075"}
