@@ -908,7 +908,7 @@
     },
     {
       "issue_number": 37,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement goal state tracking and hiccup detection for continue-on-block",
       "dependencies": [
         36
@@ -952,18 +952,35 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "/Users/philipjcortes/Desktop/swarm-attack/tests/generated/chief-of-staff-v3/test_issue_38.py"
+        ],
+        "classes_defined": {
+          "/Users/philipjcortes/Desktop/swarm-attack/tests/generated/chief-of-staff-v3/test_issue_38.py": [
+            "TestBudgetCheckBeforeExecution",
+            "TestBudgetBreakCondition",
+            "TestOnGoalStartCallback",
+            "TestOnGoalCompleteCallback",
+            "TestSessionTotalCostUpdate",
+            "TestCheckpointSystemDailyCostUpdate",
+            "TestCallbackOrderAndIntegration",
+            "TestFileExists"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 1 file(s): /Users/philipjcortes/Desktop/swarm-attack/tests/generated/chief-of-staff-v3/test_issue_38.py; Defined: TestBudgetCheckBeforeExecution, TestBudgetBreakCondition, TestOnGoalStartCallback, TestOnGoalCompleteCallback, TestSessionTotalCostUpdate",
       "parent_issue": 29,
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_195826_778447",
+  "current_session": "sess_20251219_200042_303953",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T19:57:48.638005Z",
-  "cost_total_usd": 11.039906249999998,
+  "updated_at": "2025-12-19T20:00:33.245345Z",
+  "cost_total_usd": 11.558552999999998,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 10.526442
+    "IMPLEMENTATION": 11.04508875
   }
 }
