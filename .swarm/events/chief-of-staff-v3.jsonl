@@ -69,3 +69,7 @@
 {"ts": "2025-12-19T16:24:11.258547Z", "event": "issue_started", "issue": 26, "session": "sess_20251219_162411_257285"}
 {"ts": "2025-12-19T16:34:27.282838Z", "event": "issue_started", "issue": 26, "session": "sess_20251219_163427_281737"}
 {"ts": "2025-12-19T17:20:05.744111Z", "event": "issue_started", "issue": 27, "session": "sess_20251219_172005_743264"}
+{"ts": "2025-12-19T17:21:55.057741Z", "event": "issue_done", "issue": 27, "commit": "edc0b89019d7947403b83e05cf334782b9450514", "cost_usd": 0.4536059499999999}
+{"ts": "2025-12-19T17:28:32.500327Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_172832_499322"}
+{"ts": "2025-12-19T17:35:23.162602Z", "event": "issue_started", "issue": 24, "session": "sess_20251219_173523_161591"}
+{"ts": "2025-12-19T17:41:34.020739Z", "event": "issue_started", "issue": 11, "session": "sess_20251219_174134_019393"}

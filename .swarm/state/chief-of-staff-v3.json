@@ -239,7 +239,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "BLOCKED",
+      "stage": "READY",
       "title": "Add campaign progress to standup command",
       "dependencies": [
         6
@@ -248,8 +248,29 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": "Coder keeps writing tests without implementing the module - needs investigation",
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_11.py",
+          "swarm_attack/chief_of_staff/standup_campaigns.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_11.py": [
+            "TestCampaignStandupSection",
+            "TestCampaignNeedsAttention",
+            "TestGetActiveCampaigns",
+            "TestStandupCampaignDisplay",
+            "TestStandupCampaignAttentionFlags",
+            "TestNoCampaignsHandling",
+            "TestCampaignStoreIntegration",
+            "TestStandupModuleExists",
+            "TestCalculateBudgetRemaining",
+            "TestCountCompletedMilestones",
+            "TestGetTodaysGoals"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_11.py, swarm_attack/chief_of_staff/standup_campaigns.py; Defined: TestCampaignStandupSection, TestCampaignNeedsAttention, TestGetActiveCampaigns, TestStandupCampaignDisplay, TestStandupCampaignAttentionFlags",
       "parent_issue": null,
       "child_issues": []
     },
@@ -341,7 +362,7 @@
     },
     {
       "issue_number": 15,
-      "stage": "BLOCKED",
+      "stage": "READY",
       "title": "Implement CodeCritic variants",
       "dependencies": [
         13
@@ -547,7 +568,7 @@
     },
     {
       "issue_number": 24,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Add progress and feedback CLI commands",
       "dependencies": [
         4,
@@ -633,7 +654,7 @@
     },
     {
       "issue_number": 27,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "FeedbackIncorporator: Retrieval and context building",
       "dependencies": [
         26
@@ -745,12 +766,12 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_172005_743264",
+  "current_session": "sess_20251219_174134_019393",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T16:13:08.062956Z",
-  "cost_total_usd": 7.80307225,
+  "updated_at": "2025-12-19T17:21:59.541179Z",
+  "cost_total_usd": 8.2566782,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 7.289607999999999
+    "IMPLEMENTATION": 7.7432139499999995
   }
 }

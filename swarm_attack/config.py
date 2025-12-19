@@ -45,8 +45,8 @@ class GitHubConfig:
 class ClaudeConfig:
     """Claude Code CLI configuration."""
     binary: str = "claude"                     # Path to claude binary
-    max_turns: int = 6                         # Maximum conversation turns
-    timeout_seconds: int = 300                 # Command timeout in seconds
+    max_turns: int = 10                        # Maximum conversation turns
+    timeout_seconds: int = 600                 # Command timeout in seconds (10 min)
 
 
 @dataclass
