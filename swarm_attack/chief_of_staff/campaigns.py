@@ -3,7 +3,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime, date
 from enum import Enum
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
+import json
+import aiofiles
+import aiofiles.os
 
 
 class CampaignState(Enum):
@@ -151,10 +155,9 @@ class Campaign:
         
         # Calculate percentage behind
         behind = expected_day - self.current_day
-        percent_behind = behind / expected_day
+        percentage_behind = behind / expected_day
         
-        # Need replan if MORE than 30% behind
-        return percent_behind > 0.30
+        return percentage_behind > 0.3
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize campaign to dictionary."""
@@ -168,7 +171,7 @@ class Campaign:
             "state": self.state.value,
             "current_day": self.current_day,
             "milestones": [m.to_dict() for m in self.milestones],
-            "day_plans": [dp.to_dict() for dp in self.day_plans],
+            "day_plans": [d.to_dict() for d in self.day_plans],
             "spent_usd": self.spent_usd,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -181,23 +184,20 @@ class Campaign:
         if isinstance(start_date, str):
             start_date = date.fromisoformat(start_date)
         
-        state_value = data.get("state", "planning")
-        state = CampaignState(state_value)
-        
-        milestones = [Milestone.from_dict(m) for m in data.get("milestones", [])]
-        day_plans = [DayPlan.from_dict(dp) for dp in data.get("day_plans", [])]
-        
         created_at = data.get("created_at")
-        if created_at and isinstance(created_at, str):
+        if isinstance(created_at, str):
             created_at = datetime.fromisoformat(created_at)
-        else:
+        elif created_at is None:
             created_at = datetime.now()
         
         updated_at = data.get("updated_at")
-        if updated_at and isinstance(updated_at, str):
+        if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(updated_at)
-        else:
+        elif updated_at is None:
             updated_at = datetime.now()
+        
+        milestones = [Milestone.from_dict(m) for m in data.get("milestones", [])]
+        day_plans = [DayPlan.from_dict(d) for d in data.get("day_plans", [])]
         
         return cls(
             campaign_id=data["campaign_id"],
@@ -206,7 +206,7 @@ class Campaign:
             start_date=start_date,
             planned_days=data["planned_days"],
             total_budget_usd=data["total_budget_usd"],
-            state=state,
+            state=CampaignState(data.get("state", "planning")),
             current_day=data.get("current_day", 0),
             milestones=milestones,
             day_plans=day_plans,
@@ -214,3 +214,84 @@ class Campaign:
             created_at=created_at,
             updated_at=updated_at,
         )
+
+
+class CampaignStore:
+    """Persistent storage for campaigns using JSON files."""
+
+    def __init__(self, base_path: Path) -> None:
+        """Initialize CampaignStore with base path.
+        
+        Creates campaigns/ subdirectory if it doesn't exist.
+        
+        Args:
+            base_path: Base directory for storage
+        """
+        self._base_path = base_path
+        self._campaigns_dir = base_path / "campaigns"
+        self._campaigns_dir.mkdir(parents=True, exist_ok=True)
+
+    def _campaign_path(self, campaign_id: str) -> Path:
+        """Get the file path for a campaign.
+        
+        Args:
+            campaign_id: The campaign ID
+            
+        Returns:
+            Path to the campaign JSON file
+        """
+        return self._campaigns_dir / f"{campaign_id}.json"
+
+    async def save(self, campaign: Campaign) -> None:
+        """Save a campaign to JSON file.
+        
+        Args:
+            campaign: The campaign to save
+        """
+        file_path = self._campaign_path(campaign.campaign_id)
+        campaign.updated_at = datetime.now()
+        data = campaign.to_dict()
+        content = json.dumps(data, indent=2)
+        
+        async with aiofiles.open(file_path, "w") as f:
+            await f.write(content)
+
+    async def load(self, campaign_id: str) -> Optional[Campaign]:
+        """Load a campaign from JSON file.
+        
+        Args:
+            campaign_id: The campaign ID to load
+            
+        Returns:
+            The loaded campaign, or None if not found
+        """
+        file_path = self._campaign_path(campaign_id)
+        
+        if not file_path.exists():
+            return None
+        
+        async with aiofiles.open(file_path, "r") as f:
+            content = await f.read()
+        
+        data = json.loads(content)
+        return Campaign.from_dict(data)
+
+    async def list_all(self) -> list[Campaign]:
+        """List all campaigns.
+        
+        Returns:
+            List of all stored campaigns
+        """
+        campaigns: list[Campaign] = []
+        
+        if not self._campaigns_dir.exists():
+            return campaigns
+        
+        for file_path in self._campaigns_dir.iterdir():
+            if file_path.suffix == ".json":
+                campaign_id = file_path.stem
+                campaign = await self.load(campaign_id)
+                if campaign is not None:
+                    campaigns.append(campaign)
+        
+        return campaigns
