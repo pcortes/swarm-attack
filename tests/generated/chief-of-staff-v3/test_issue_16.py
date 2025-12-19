@@ -63,26 +63,28 @@ class TestTestCriticEvaluate:
 
     def test_evaluate_returns_critic_score(self):
         """Evaluate should return a CriticScore instance."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good coverage",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         assert isinstance(result, CriticScore)
 
     def test_evaluate_coverage_calls_llm_with_test_content(self):
         """Evaluate should call LLM with test content."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         test_content = "def test_example(): assert True"
         critic.evaluate(test_content)
@@ -92,13 +94,14 @@ class TestTestCriticEvaluate:
 
     def test_evaluate_edge_cases_calls_llm_with_test_content(self):
         """Evaluate should call LLM with test content for EDGE_CASES."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.7,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.EDGE_CASES, llm=mock_llm)
         test_content = "def test_boundary(): assert func(0) == 0"
         critic.evaluate(test_content)
@@ -108,13 +111,14 @@ class TestTestCriticEvaluate:
 
     def test_evaluate_returns_correct_focus(self):
         """Evaluate should return CriticScore with correct focus."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         assert result.focus == CriticFocus.COVERAGE
@@ -167,13 +171,14 @@ class TestTestCriticTruncation:
 
     def test_truncates_long_test_content(self):
         """Long test content should be truncated."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         
         # Create test content longer than MAX_TEST_CHARS
@@ -190,13 +195,14 @@ class TestTestCriticTruncation:
 
     def test_short_content_not_truncated(self):
         """Short test content should not be truncated."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         
         short_content = "def test_foo(): pass"
@@ -211,13 +217,14 @@ class TestTestCriticLLMParsing:
 
     def test_parses_valid_json_response(self):
         """Should parse valid JSON response correctly."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.85,
             "approved": True,
             "issues": ["Missing edge case for null input"],
             "suggestions": ["Add test for None values"],
             "reasoning": "Good coverage but missing null tests",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         
@@ -229,7 +236,8 @@ class TestTestCriticLLMParsing:
 
     def test_parses_json_with_code_fences(self):
         """Should parse JSON wrapped in code fences."""
-        mock_llm = Mock(return_value='```json\n{"score": 0.9, "approved": true, "issues": [], "suggestions": [], "reasoning": "Excellent"}\n```')
+        mock_llm = Mock()
+        mock_llm.generate.return_value = '```json\n{"score": 0.9, "approved": true, "issues": [], "suggestions": [], "reasoning": "Excellent"}\n```'
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         
@@ -238,7 +246,8 @@ class TestTestCriticLLMParsing:
 
     def test_handles_invalid_json_response(self):
         """Should handle invalid JSON gracefully."""
-        mock_llm = Mock(return_value="This is not valid JSON")
+        mock_llm = Mock()
+        mock_llm.generate.return_value = "This is not valid JSON"
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         
@@ -248,13 +257,14 @@ class TestTestCriticLLMParsing:
 
     def test_critic_name_includes_focus(self):
         """Critic name should include the focus."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         
@@ -263,13 +273,14 @@ class TestTestCriticLLMParsing:
 
     def test_edge_cases_critic_name(self):
         """Critic name should include EDGE_CASES for that focus."""
-        mock_llm = Mock(return_value=json.dumps({
+        mock_llm = Mock()
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.7,
             "approved": True,
             "issues": [],
             "suggestions": [],
             "reasoning": "Good",
-        }))
+        })
         critic = TestCritic(focus=CriticFocus.EDGE_CASES, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
         

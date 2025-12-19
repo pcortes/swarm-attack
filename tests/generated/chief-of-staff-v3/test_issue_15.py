@@ -63,7 +63,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_returns_critic_score(self):
         """evaluate() should return a CriticScore."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -79,7 +79,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_style_sets_correct_critic_name(self):
         """STYLE critic should set critic_name to 'CodeCritic-STYLE'."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.9,
             "approved": True,
             "issues": [],
@@ -95,7 +95,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_security_sets_correct_critic_name(self):
         """SECURITY critic should set critic_name to 'CodeCritic-SECURITY'."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.95,
             "approved": True,
             "issues": [],
@@ -111,7 +111,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_sets_correct_focus(self):
         """evaluate() should set the correct focus in result."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -127,7 +127,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_parses_issues(self):
         """evaluate() should parse issues from LLM response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.5,
             "approved": False,
             "issues": ["Missing docstring", "Variable name too short"],
@@ -143,7 +143,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_parses_suggestions(self):
         """evaluate() should parse suggestions from LLM response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.7,
             "approved": True,
             "issues": [],
@@ -159,7 +159,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_parses_score(self):
         """evaluate() should parse score from LLM response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.85,
             "approved": True,
             "issues": [],
@@ -175,7 +175,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_parses_approved(self):
         """evaluate() should parse approved from LLM response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.6,
             "approved": False,
             "issues": ["Security vulnerability"],
@@ -191,7 +191,7 @@ class TestCodeCriticEvaluate:
     def test_evaluate_parses_reasoning(self):
         """evaluate() should parse reasoning from LLM response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.9,
             "approved": True,
             "issues": [],
@@ -248,7 +248,7 @@ class TestCodeCriticLLMParsing:
     def test_handles_json_with_code_fence(self):
         """Should handle JSON wrapped in code fence."""
         mock_llm = MagicMock()
-        mock_llm.return_value = """```json
+        mock_llm.generate.return_value = """```json
 {
     "score": 0.75,
     "approved": true,
@@ -266,7 +266,7 @@ class TestCodeCriticLLMParsing:
     def test_handles_malformed_json_gracefully(self):
         """Should return low score on malformed JSON."""
         mock_llm = MagicMock()
-        mock_llm.return_value = "This is not JSON at all"
+        mock_llm.generate.return_value = "This is not JSON at all"
         
         critic = CodeCritic(focus=CriticFocus.STYLE, llm=mock_llm)
         result = critic.evaluate("def foo(): pass")
@@ -278,7 +278,7 @@ class TestCodeCriticLLMParsing:
     def test_handles_missing_fields_with_defaults(self):
         """Should use defaults for missing fields."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True
             # Missing issues, suggestions, reasoning
@@ -298,7 +298,7 @@ class TestCodeCriticTruncation:
     def test_truncates_long_code_diff(self):
         """Should truncate code_diff to MAX_CODE_DIFF_CHARS."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],

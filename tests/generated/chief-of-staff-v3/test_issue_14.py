@@ -37,7 +37,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_returns_critic_score(self):
         """evaluate() should return a CriticScore."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -56,7 +56,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_with_completeness_focus(self):
         """COMPLETENESS critic should check for missing sections."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.6,
             "approved": False,
             "issues": ["Missing architecture section", "No error handling defined"],
@@ -75,7 +75,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_with_feasibility_focus(self):
         """FEASIBILITY critic should check for implementation clarity."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.7,
             "approved": True,
             "issues": ["Unclear database schema"],
@@ -92,7 +92,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_with_security_focus(self):
         """SECURITY critic should check for security issues."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.3,
             "approved": False,
             "issues": ["SQL injection risk", "No auth defined", "Data exposure in logs"],
@@ -111,7 +111,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_truncates_long_spec(self):
         """evaluate() should truncate spec_content to 4000 chars."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.9,
             "approved": True,
             "issues": [],
@@ -132,7 +132,7 @@ class TestSpecCriticEvaluate:
     def test_evaluate_handles_empty_lists_in_response(self):
         """evaluate() should handle empty issues/suggestions lists."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 1.0,
             "approved": True,
             "issues": [],
@@ -153,7 +153,7 @@ class TestSpecCriticFocusPrompts:
     def test_completeness_prompt_mentions_gaps(self):
         """COMPLETENESS focus should use prompt about missing sections."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -171,7 +171,7 @@ class TestSpecCriticFocusPrompts:
     def test_feasibility_prompt_mentions_implementation(self):
         """FEASIBILITY focus should use prompt about implementation."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -188,7 +188,7 @@ class TestSpecCriticFocusPrompts:
     def test_security_prompt_mentions_security_concerns(self):
         """SECURITY focus should use prompt about security issues."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -209,7 +209,7 @@ class TestSpecCriticLLMParsing:
     def test_parses_valid_json_response(self):
         """Should parse valid JSON response from LLM."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.75,
             "approved": True,
             "issues": ["Issue 1"],
@@ -229,7 +229,7 @@ class TestSpecCriticLLMParsing:
     def test_handles_json_with_extra_fields(self):
         """Should ignore extra fields in JSON response."""
         mock_llm = MagicMock()
-        mock_llm.return_value = json.dumps({
+        mock_llm.generate.return_value = json.dumps({
             "score": 0.8,
             "approved": True,
             "issues": [],
@@ -246,7 +246,7 @@ class TestSpecCriticLLMParsing:
     def test_handles_json_embedded_in_text(self):
         """Should extract JSON from LLM response with surrounding text."""
         mock_llm = MagicMock()
-        mock_llm.return_value = """Here is my evaluation:
+        mock_llm.generate.return_value = """Here is my evaluation:
         
 ```json
 {

@@ -3,7 +3,7 @@
 import json
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -54,6 +54,44 @@ class CriticScore:
             issues=data.get("issues", []),
             suggestions=data.get("suggestions", []),
             reasoning=data.get("reasoning", ""),
+        )
+
+
+@dataclass
+class ValidationResult:
+    """Result from ValidationLayer consensus mechanism."""
+
+    artifact_type: str
+    artifact_id: str
+    approved: bool
+    scores: list[CriticScore]
+    blocking_issues: list[str]
+    consensus_summary: str
+    human_review_required: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary."""
+        return {
+            "artifact_type": self.artifact_type,
+            "artifact_id": self.artifact_id,
+            "approved": self.approved,
+            "scores": [s.to_dict() for s in self.scores],
+            "blocking_issues": self.blocking_issues,
+            "consensus_summary": self.consensus_summary,
+            "human_review_required": self.human_review_required,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ValidationResult":
+        """Deserialize from dictionary."""
+        return cls(
+            artifact_type=data["artifact_type"],
+            artifact_id=data["artifact_id"],
+            approved=data["approved"],
+            scores=[CriticScore.from_dict(s) for s in data.get("scores", [])],
+            blocking_issues=data.get("blocking_issues", []),
+            consensus_summary=data.get("consensus_summary", ""),
+            human_review_required=data.get("human_review_required", False),
         )
 
 
@@ -174,8 +212,26 @@ Respond with a JSON object containing:
 Return ONLY the JSON object.""",
     }
 
+    def __init__(self, focus: CriticFocus, llm: Any, weight: float = 1.0) -> None:
+        """Initialize SpecCritic.
+
+        Args:
+            focus: Must be COMPLETENESS, FEASIBILITY, or SECURITY
+            llm: The LLM instance to use for evaluation
+            weight: Weight for this critic's score (default 1.0)
+
+        Raises:
+            ValueError: If focus is not supported for spec evaluation
+        """
+        if focus not in self.PROMPTS:
+            raise ValueError(
+                f"SpecCritic does not support focus {focus}. "
+                f"Supported: {list(self.PROMPTS.keys())}"
+            )
+        super().__init__(focus, llm, weight)
+
     def evaluate(self, artifact: str) -> CriticScore:
-        """Evaluate a spec and return a score.
+        """Evaluate a spec artifact.
 
         Args:
             artifact: The spec content to evaluate
@@ -183,56 +239,28 @@ Return ONLY the JSON object.""",
         Returns:
             CriticScore with evaluation results
         """
-        # Truncate spec if too long
-        spec_content = artifact[:self.MAX_SPEC_CHARS]
-        if len(artifact) > self.MAX_SPEC_CHARS:
-            spec_content += "\n... [truncated]"
+        # Truncate if too long
+        spec_content = artifact
+        if len(spec_content) > self.MAX_SPEC_CHARS:
+            spec_content = spec_content[: self.MAX_SPEC_CHARS] + "\n\n[TRUNCATED]"
 
-        # Get the focus-specific prompt
-        prompt_template = self.PROMPTS.get(self.focus)
-        if not prompt_template:
-            return CriticScore(
-                critic_name=f"SpecCritic-{self.focus.name}",
-                focus=self.focus,
-                score=0.0,
-                approved=False,
-                issues=[f"Unsupported focus: {self.focus.name}"],
-                suggestions=[],
-                reasoning=f"SpecCritic does not support {self.focus.name} focus",
-            )
-
-        prompt = prompt_template.format(spec_content=spec_content)
+        # Get the prompt for this focus
+        prompt = self.PROMPTS[self.focus].format(spec_content=spec_content)
 
         # Call LLM
-        response = self.llm(prompt)
+        response = self.llm.generate(prompt)
 
-        # Parse response
-        return self._parse_response(response)
-
-    def _parse_response(self, response: str) -> CriticScore:
-        """Parse LLM response into CriticScore.
-
-        Args:
-            response: Raw LLM response
-
-        Returns:
-            CriticScore parsed from response
-        """
-        critic_name = f"SpecCritic-{self.focus.name}"
-
-        # Try to extract JSON from response
+        # Parse JSON response
         try:
-            # Remove code fences if present
-            json_str = response
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
-
-            data = json.loads(json_str.strip())
+            # Try to extract JSON from response
+            json_match = re.search(r"\{[\s\S]*\}", response)
+            if json_match:
+                data = json.loads(json_match.group())
+            else:
+                data = json.loads(response)
 
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"SpecCritic-{self.focus.value}",
                 focus=self.focus,
                 score=float(data.get("score", 0.0)),
                 approved=bool(data.get("approved", False)),
@@ -240,134 +268,124 @@ Return ONLY the JSON object.""",
                 suggestions=data.get("suggestions", []),
                 reasoning=data.get("reasoning", ""),
             )
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, ValueError) as e:
+            # Return a failed score if parsing fails
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"SpecCritic-{self.focus.value}",
                 focus=self.focus,
                 score=0.0,
                 approved=False,
-                issues=["Failed to parse LLM response"],
-                suggestions=[],
-                reasoning=f"Failed to parse response: {response[:100]}...",
+                issues=[f"Failed to parse LLM response: {e}"],
+                suggestions=["Retry evaluation"],
+                reasoning=f"Parse error: {response[:200]}",
             )
 
 
 class CodeCritic(Critic):
-    """Critic for evaluating code changes.
+    """Critic for evaluating code quality.
     
     Supports STYLE and SECURITY focus areas.
     """
 
     # Maximum characters to include in prompt
-    MAX_CODE_DIFF_CHARS = 4000
+    MAX_CODE_CHARS = 6000
 
     # Focus-specific prompts
     PROMPTS = {
-        CriticFocus.STYLE: """You are a code style critic. Evaluate the following code diff for:
+        CriticFocus.STYLE: """You are a code style critic. Evaluate the following code for:
+- Code readability and clarity
 - Naming conventions (variables, functions, classes)
-- Code structure and organization
-- Readability and clarity
-- Consistent formatting
-- Appropriate comments and documentation
-- Code complexity and maintainability
+- Code organization and structure
+- Comments and documentation
+- Consistency with common patterns
+- DRY principle adherence
 
-Code diff (truncated if long):
-{code_diff}
+Code content (truncated if long):
+{code_content}
 
 Respond with a JSON object containing:
 {{
     "score": <float 0-1, where 1 is excellent style>,
     "approved": <boolean, true if score >= 0.7>,
-    "issues": [<list of style issues found>],
-    "suggestions": [<list of improvements for better style>],
+    "issues": [<list of style violations or concerns>],
+    "suggestions": [<list of style improvements>],
     "reasoning": "<brief explanation of your evaluation>"
 }}
 
 Return ONLY the JSON object.""",
 
-        CriticFocus.SECURITY: """You are a security-focused code critic. Evaluate the following code diff for:
-- Security vulnerabilities (SQL injection, XSS, command injection, etc.)
-- Injection attacks and unsafe string operations
-- Unsafe operations (eval, exec, shell commands with user input)
-- Hardcoded secrets, API keys, or credentials
-- Insecure data handling
-- Missing input validation or sanitization
+        CriticFocus.SECURITY: """You are a security-focused code critic. Evaluate the following code for:
+- SQL injection vulnerabilities
+- Command injection risks
+- Path traversal issues
+- Hardcoded secrets or credentials
 - Unsafe deserialization
+- Input validation gaps
+- Authentication/authorization flaws
 
-Code diff (truncated if long):
-{code_diff}
+Code content (truncated if long):
+{code_content}
 
 Respond with a JSON object containing:
 {{
     "score": <float 0-1, where 1 is fully secure>,
     "approved": <boolean, true if no critical security issues>,
-    "issues": [<list of security vulnerabilities or risks>],
-    "suggestions": [<list of security improvements>],
+    "issues": [<list of security vulnerabilities>],
+    "suggestions": [<list of security fixes>],
     "reasoning": "<brief explanation of your evaluation>"
 }}
 
 Return ONLY the JSON object.""",
     }
 
-    def evaluate(self, artifact: str) -> CriticScore:
-        """Evaluate a code diff and return a score.
+    def __init__(self, focus: CriticFocus, llm: Any, weight: float = 1.0) -> None:
+        """Initialize CodeCritic.
 
         Args:
-            artifact: The code diff to evaluate
+            focus: Must be STYLE or SECURITY
+            llm: The LLM instance to use for evaluation
+            weight: Weight for this critic's score (default 1.0)
+
+        Raises:
+            ValueError: If focus is not supported for code evaluation
+        """
+        if focus not in self.PROMPTS:
+            raise ValueError(
+                f"CodeCritic does not support focus {focus}. "
+                f"Supported: {list(self.PROMPTS.keys())}"
+            )
+        super().__init__(focus, llm, weight)
+
+    def evaluate(self, artifact: str) -> CriticScore:
+        """Evaluate a code artifact.
+
+        Args:
+            artifact: The code content to evaluate
 
         Returns:
             CriticScore with evaluation results
         """
-        # Truncate code diff if too long
-        code_diff = artifact[:self.MAX_CODE_DIFF_CHARS]
-        if len(artifact) > self.MAX_CODE_DIFF_CHARS:
-            code_diff += "\n... [truncated]"
+        # Truncate if too long
+        code_content = artifact
+        if len(code_content) > self.MAX_CODE_CHARS:
+            code_content = code_content[: self.MAX_CODE_CHARS] + "\n\n# [TRUNCATED]"
 
-        # Get the focus-specific prompt
-        prompt_template = self.PROMPTS.get(self.focus)
-        if not prompt_template:
-            return CriticScore(
-                critic_name=f"CodeCritic-{self.focus.name}",
-                focus=self.focus,
-                score=0.0,
-                approved=False,
-                issues=[f"Unsupported focus: {self.focus.name}"],
-                suggestions=[],
-                reasoning=f"CodeCritic does not support {self.focus.name} focus",
-            )
-
-        prompt = prompt_template.format(code_diff=code_diff)
+        # Get the prompt for this focus
+        prompt = self.PROMPTS[self.focus].format(code_content=code_content)
 
         # Call LLM
-        response = self.llm(prompt)
+        response = self.llm.generate(prompt)
 
-        # Parse response
-        return self._parse_response(response)
-
-    def _parse_response(self, response: str) -> CriticScore:
-        """Parse LLM response into CriticScore.
-
-        Args:
-            response: Raw LLM response
-
-        Returns:
-            CriticScore parsed from response
-        """
-        critic_name = f"CodeCritic-{self.focus.name}"
-
-        # Try to extract JSON from response
+        # Parse JSON response
         try:
-            # Remove code fences if present
-            json_str = response
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
-
-            data = json.loads(json_str.strip())
+            json_match = re.search(r"\{[\s\S]*\}", response)
+            if json_match:
+                data = json.loads(json_match.group())
+            else:
+                data = json.loads(response)
 
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"CodeCritic-{self.focus.value}",
                 focus=self.focus,
                 score=float(data.get("score", 0.0)),
                 approved=bool(data.get("approved", False)),
@@ -375,78 +393,92 @@ Return ONLY the JSON object.""",
                 suggestions=data.get("suggestions", []),
                 reasoning=data.get("reasoning", ""),
             )
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, ValueError) as e:
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"CodeCritic-{self.focus.value}",
                 focus=self.focus,
                 score=0.0,
                 approved=False,
-                issues=["Failed to parse LLM response"],
-                suggestions=[],
-                reasoning=f"Failed to parse response: {response[:100]}...",
+                issues=[f"Failed to parse LLM response: {e}"],
+                suggestions=["Retry evaluation"],
+                reasoning=f"Parse error: {response[:200]}",
             )
 
 
 class TestCritic(Critic):
-    """Critic for evaluating test files.
+    """Critic for evaluating test quality.
     
     Supports COVERAGE and EDGE_CASES focus areas.
     """
 
     # Maximum characters to include in prompt
-    MAX_TEST_CHARS = 4000
+    MAX_TEST_CHARS = 6000
 
     # Focus-specific prompts
     PROMPTS = {
-        CriticFocus.COVERAGE: """You are a test coverage critic. Evaluate the following test file for:
+        CriticFocus.COVERAGE: """You are a test coverage critic. Evaluate the following test code for:
 - Are all major code paths tested?
+- Are both success and failure cases covered?
 - Are all public methods/functions tested?
-- Are return values and side effects verified?
-- Are different input combinations tested?
-- Are success and failure scenarios both covered?
-- Are there missing test scenarios?
+- Are boundary conditions tested?
+- Is the test suite comprehensive?
 
 Test content (truncated if long):
 {test_content}
 
 Respond with a JSON object containing:
 {{
-    "score": <float 0-1, where 1 is excellent coverage>,
+    "score": <float 0-1, where 1 is complete coverage>,
     "approved": <boolean, true if score >= 0.7>,
-    "issues": [<list of missing test coverage areas>],
-    "suggestions": [<list of additional tests to add>],
+    "issues": [<list of coverage gaps>],
+    "suggestions": [<list of additional tests needed>],
     "reasoning": "<brief explanation of your evaluation>"
 }}
 
 Return ONLY the JSON object.""",
 
-        CriticFocus.EDGE_CASES: """You are an edge case testing critic. Evaluate the following test file for:
-- Boundary conditions (empty, zero, max values)
-- Null/None input handling
-- Error scenarios and exception handling
-- Invalid input types
-- Empty collections and strings
-- Off-by-one scenarios
-- Concurrent/race condition tests
-- Resource exhaustion scenarios
+        CriticFocus.EDGE_CASES: """You are a test edge cases critic. Evaluate the following test code for:
+- Are edge cases covered (empty inputs, nulls, max values)?
+- Are error conditions tested?
+- Are race conditions considered?
+- Are timeout scenarios tested?
+- Are malformed inputs tested?
 
 Test content (truncated if long):
 {test_content}
 
 Respond with a JSON object containing:
 {{
-    "score": <float 0-1, where 1 is comprehensive edge case coverage>,
+    "score": <float 0-1, where 1 is excellent edge case coverage>,
     "approved": <boolean, true if score >= 0.7>,
-    "issues": [<list of missing edge case tests>],
-    "suggestions": [<list of edge cases to add tests for>],
+    "issues": [<list of missing edge cases>],
+    "suggestions": [<list of edge case tests to add>],
     "reasoning": "<brief explanation of your evaluation>"
 }}
 
 Return ONLY the JSON object.""",
     }
 
+    def __init__(self, focus: CriticFocus, llm: Any, weight: float = 1.0) -> None:
+        """Initialize TestCritic.
+
+        Args:
+            focus: Must be COVERAGE or EDGE_CASES
+            llm: The LLM instance to use for evaluation
+            weight: Weight for this critic's score (default 1.0)
+
+        Raises:
+            ValueError: If focus is not supported for test evaluation
+        """
+        if focus not in self.PROMPTS:
+            raise ValueError(
+                f"TestCritic does not support focus {focus}. "
+                f"Supported: {list(self.PROMPTS.keys())}"
+            )
+        super().__init__(focus, llm, weight)
+
     def evaluate(self, artifact: str) -> CriticScore:
-        """Evaluate a test file and return a score.
+        """Evaluate a test artifact.
 
         Args:
             artifact: The test content to evaluate
@@ -454,56 +486,27 @@ Return ONLY the JSON object.""",
         Returns:
             CriticScore with evaluation results
         """
-        # Truncate test content if too long
-        test_content = artifact[:self.MAX_TEST_CHARS]
-        if len(artifact) > self.MAX_TEST_CHARS:
-            test_content += "\n... [truncated]"
+        # Truncate if too long
+        test_content = artifact
+        if len(test_content) > self.MAX_TEST_CHARS:
+            test_content = test_content[: self.MAX_TEST_CHARS] + "\n\n# [TRUNCATED]"
 
-        # Get the focus-specific prompt
-        prompt_template = self.PROMPTS.get(self.focus)
-        if not prompt_template:
-            return CriticScore(
-                critic_name=f"TestCritic-{self.focus.name}",
-                focus=self.focus,
-                score=0.0,
-                approved=False,
-                issues=[f"Unsupported focus: {self.focus.name}"],
-                suggestions=[],
-                reasoning=f"TestCritic does not support {self.focus.name} focus",
-            )
-
-        prompt = prompt_template.format(test_content=test_content)
+        # Get the prompt for this focus
+        prompt = self.PROMPTS[self.focus].format(test_content=test_content)
 
         # Call LLM
-        response = self.llm(prompt)
+        response = self.llm.generate(prompt)
 
-        # Parse response
-        return self._parse_response(response)
-
-    def _parse_response(self, response: str) -> CriticScore:
-        """Parse LLM response into CriticScore.
-
-        Args:
-            response: Raw LLM response
-
-        Returns:
-            CriticScore parsed from response
-        """
-        critic_name = f"TestCritic-{self.focus.name}"
-
-        # Try to extract JSON from response
+        # Parse JSON response
         try:
-            # Remove code fences if present
-            json_str = response
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
-
-            data = json.loads(json_str.strip())
+            json_match = re.search(r"\{[\s\S]*\}", response)
+            if json_match:
+                data = json.loads(json_match.group())
+            else:
+                data = json.loads(response)
 
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"TestCritic-{self.focus.value}",
                 focus=self.focus,
                 score=float(data.get("score", 0.0)),
                 approved=bool(data.get("approved", False)),
@@ -511,13 +514,130 @@ Return ONLY the JSON object.""",
                 suggestions=data.get("suggestions", []),
                 reasoning=data.get("reasoning", ""),
             )
-        except (json.JSONDecodeError, KeyError, ValueError):
+        except (json.JSONDecodeError, ValueError) as e:
             return CriticScore(
-                critic_name=critic_name,
+                critic_name=f"TestCritic-{self.focus.value}",
                 focus=self.focus,
                 score=0.0,
                 approved=False,
-                issues=["Failed to parse LLM response"],
-                suggestions=[],
-                reasoning=f"Failed to parse response: {response[:100]}...",
+                issues=[f"Failed to parse LLM response: {e}"],
+                suggestions=["Retry evaluation"],
+                reasoning=f"Parse error: {response[:200]}",
             )
+
+
+class ValidationLayer:
+    """Orchestrates multiple critics and builds consensus for artifact validation.
+    
+    Security is NOT a democracy - any security veto blocks approval.
+    Majority vote: 60% weighted approval threshold for non-security critics.
+    """
+
+    APPROVAL_THRESHOLD = 0.6  # 60% weighted approval required
+
+    def __init__(self, llm: Any) -> None:
+        """Initialize ValidationLayer with critic sets.
+
+        Args:
+            llm: The LLM instance to use for all critics
+        """
+        self.llm = llm
+
+        # Initialize critic sets for each artifact type
+        self.spec_critics: list[Critic] = [
+            SpecCritic(CriticFocus.COMPLETENESS, llm, weight=1.0),
+            SpecCritic(CriticFocus.FEASIBILITY, llm, weight=1.0),
+            SpecCritic(CriticFocus.SECURITY, llm, weight=1.5),  # Security weighted higher
+        ]
+
+        self.code_critics: list[Critic] = [
+            CodeCritic(CriticFocus.STYLE, llm, weight=1.0),
+            CodeCritic(CriticFocus.SECURITY, llm, weight=1.5),  # Security weighted higher
+        ]
+
+        self.test_critics: list[Critic] = [
+            TestCritic(CriticFocus.COVERAGE, llm, weight=1.0),
+            TestCritic(CriticFocus.EDGE_CASES, llm, weight=1.0),
+        ]
+
+    def _get_critics_for_type(self, artifact_type: str) -> list[Critic]:
+        """Get the appropriate critic set for an artifact type.
+
+        Args:
+            artifact_type: One of "spec", "code", or "test"
+
+        Returns:
+            List of critics for that artifact type
+        """
+        critic_map = {
+            "spec": self.spec_critics,
+            "code": self.code_critics,
+            "test": self.test_critics,
+        }
+        return critic_map.get(artifact_type, self.spec_critics)
+
+    def validate(
+        self,
+        artifact: str,
+        artifact_type: str,
+        artifact_id: str,
+    ) -> ValidationResult:
+        """Validate an artifact using consensus from multiple critics.
+
+        Args:
+            artifact: The artifact content to validate
+            artifact_type: Type of artifact ("spec", "code", or "test")
+            artifact_id: Unique identifier for the artifact
+
+        Returns:
+            ValidationResult with consensus decision
+        """
+        critics = self._get_critics_for_type(artifact_type)
+        scores: list[CriticScore] = []
+        blocking_issues: list[str] = []
+        security_blocked = False
+
+        # Evaluate with all critics
+        for critic in critics:
+            score = critic.evaluate(artifact)
+            scores.append(score)
+
+            # Check for security veto
+            if critic.has_veto and not score.approved:
+                security_blocked = True
+                blocking_issues.extend(score.issues)
+
+        # Calculate weighted approval
+        total_weight = sum(c.weight for c in critics)
+        weighted_approval = sum(
+            c.weight for c, s in zip(critics, scores) if s.approved
+        ) / total_weight if total_weight > 0 else 0.0
+
+        # Calculate average score
+        avg_score = sum(s.score * c.weight for c, s in zip(critics, scores)) / total_weight if total_weight > 0 else 0.0
+
+        # Determine approval
+        # Security veto blocks everything
+        # Otherwise, need 60% weighted approval
+        approved = not security_blocked and weighted_approval >= self.APPROVAL_THRESHOLD
+
+        # Build consensus summary
+        if security_blocked:
+            consensus_summary = f"Blocked by security critic. Average score: {avg_score:.2f}"
+        elif approved:
+            consensus_summary = f"Approved with {weighted_approval:.0%} consensus. Average score: {avg_score:.2f}"
+        else:
+            consensus_summary = f"Rejected with {weighted_approval:.0%} approval (needs 60%). Average score: {avg_score:.2f}"
+
+        # Determine if human review is required
+        human_review_required = security_blocked or not approved
+
+        return ValidationResult(
+            artifact_type=artifact_type,
+            artifact_id=artifact_id,
+            approved=approved,
+            scores=scores,
+            blocking_issues=blocking_issues,
+            consensus_summary=consensus_summary,
+            human_review_required=human_review_required,
+        )
