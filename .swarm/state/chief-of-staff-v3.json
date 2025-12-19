@@ -135,7 +135,7 @@
     },
     {
       "issue_number": 6,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement CampaignStore for campaign persistence",
       "dependencies": [
         5
@@ -239,7 +239,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "BACKLOG",
+      "stage": "READY",
       "title": "Add campaign progress to standup command",
       "dependencies": [
         6
@@ -419,17 +419,21 @@
     },
     {
       "issue_number": 21,
-      "stage": "READY",
+      "stage": "SPLIT",
       "title": "Implement FeedbackIncorporator for learning from checkpoints",
       "dependencies": [],
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Split into 3 sub-issues: [25, 26, 27]",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
-      "child_issues": []
+      "child_issues": [
+        25,
+        26,
+        27
+      ]
     },
     {
       "issue_number": 22,
@@ -469,7 +473,7 @@
       "title": "Add progress and feedback CLI commands",
       "dependencies": [
         4,
-        21
+        27
       ],
       "estimated_size": "small",
       "business_value_score": 0.5,
@@ -479,14 +483,60 @@
       "completion_summary": null,
       "parent_issue": null,
       "child_issues": []
+    },
+    {
+      "issue_number": 25,
+      "stage": "READY",
+      "title": "FeedbackIncorporator: Core data models and FeedbackStore",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 21,
+      "child_issues": []
+    },
+    {
+      "issue_number": 26,
+      "stage": "BACKLOG",
+      "title": "FeedbackIncorporator: Record feedback with classification",
+      "dependencies": [
+        25
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 21,
+      "child_issues": []
+    },
+    {
+      "issue_number": 27,
+      "stage": "BACKLOG",
+      "title": "FeedbackIncorporator: Retrieval and context building",
+      "dependencies": [
+        26
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 21,
+      "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_065628_337574",
+  "current_session": "sess_20251219_071226_632105",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T06:56:23.056256Z",
-  "cost_total_usd": 4.7226173000000005,
+  "updated_at": "2025-12-19T06:58:33.145979Z",
+  "cost_total_usd": 4.9869119500000005,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 4.20915305
+    "IMPLEMENTATION": 4.4734477
   }
 }

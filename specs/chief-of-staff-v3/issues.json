@@ -362,6 +362,52 @@
       ],
       "order": 24,
       "automation_type": "automated"
+    },
+    {
+      "title": "FeedbackIncorporator: Core data models and FeedbackStore",
+      "body": "## Description\n\nCreate the foundational data models and persistence layer for the FeedbackIncorporator system. This establishes the `HumanFeedback` dataclass and `FeedbackStore` for persisting feedback to JSON files.\n\n## Acceptance Criteria\n\n- [ ] New file: `swarm_attack/chief_of_staff/feedback.py`\n- [ ] `HumanFeedback` dataclass with: checkpoint_id, timestamp, feedback_type, content, applies_to, expires_at\n- [ ] `FeedbackStore` class with `save()`, `load()`, `add_feedback()`, and `get_all()` methods\n- [ ] JSON persistence to `.swarm/feedback/` directory\n- [ ] Unit tests for HumanFeedback serialization and FeedbackStore CRUD operations\n\n## Technical Notes\n\n- Pattern Reference: Follow existing dataclass patterns in `swarm_attack/models/`\n- Use `to_dict()` and `from_dict()` pattern for serialization",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 25,
+      "automation_type": "automated",
+      "parent_issue": 21
+    },
+    {
+      "title": "FeedbackIncorporator: Record feedback with classification",
+      "body": "## Description\n\nImplement the `FeedbackIncorporator` class with the ability to record human feedback from checkpoints, including automatic classification and tag extraction.\n\n## Acceptance Criteria\n\n- [ ] `FeedbackIncorporator` class with constructor that takes `feedback_store`\n- [ ] `record_feedback(checkpoint: Checkpoint, notes: str) -> HumanFeedback` method\n- [ ] `_classify_feedback(notes: str) -> str` - classifies as guidance/correction/preference\n- [ ] `_extract_tags(checkpoint, notes) -> list[str]` - extracts relevant tags\n- [ ] `_calculate_expiry(feedback_type) -> Optional[str]` - sets expiry based on type\n- [ ] Unit tests for feedback recording and classification logic\n\n## Technical Notes\n\n- Builds on FeedbackStore from previous issue\n- Classification can use simple keyword matching initially",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        25
+      ],
+      "order": 26,
+      "automation_type": "automated",
+      "parent_issue": 21
+    },
+    {
+      "title": "FeedbackIncorporator: Retrieval and context building",
+      "body": "## Description\n\nImplement feedback retrieval and prompt context building functionality. This enables agents to receive relevant human feedback when executing goals.\n\n## Acceptance Criteria\n\n- [ ] `get_relevant_feedback(goal: DailyGoal) -> list[HumanFeedback]` - filters by tags and expiry\n- [ ] `build_feedback_context(goal: DailyGoal) -> str` - builds prompt section for agents\n- [ ] Feedback context format: \"## Human Feedback from Recent Checkpoints\\n...\"\n- [ ] Handle expired feedback (exclude from results)\n- [ ] Unit tests for retrieval filtering and context string generation\n\n## Technical Notes\n\n- Builds on FeedbackIncorporator from previous issue\n- Pattern Reference: See spec section 7.5 for context format\n- Context string should be ready for injection into agent prompts",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        26
+      ],
+      "order": 27,
+      "automation_type": "automated",
+      "parent_issue": 21
     }
   ]
 }
