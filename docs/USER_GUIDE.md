@@ -49,9 +49,9 @@ BUG REPORT → REPRODUCE → ANALYZE → FIX PLAN → APPROVE → FIX → VERIFY
 
 ### How It Works
 
-Swarm Attack uses **multiple specialized AI agents** with debate validation:
+Swarm Attack uses **multiple specialized AI agents** powered by Claude:
 - **Claude** (via Claude Code CLI) - Writes specs, code, and analyzes bugs
-- **Codex/GPT** (via Codex CLI) - Reviews and critiques Claude's work
+- **Claude Agents** - Different Claude instances review and critique work
 - **Debate System** - Author-Critic rounds ensure quality analysis
 
 This multi-agent approach ensures independent validation of all AI-generated content.
@@ -62,13 +62,13 @@ This multi-agent approach ensures independent validation of all AI-generated con
 
 ### 2.1 Required Software
 
-Before using Feature Swarm, ensure you have:
+Before using Swarm Attack, ensure you have:
 
 | Software | Purpose | How to Get It |
 |----------|---------|---------------|
-| Python 3.10+ | Runs Feature Swarm | `brew install python` or python.org |
+| Python 3.10+ | Runs Swarm Attack | `brew install python` or python.org |
 | Git | Version control | `brew install git` |
-| Claude Code CLI | AI spec writing & coding | `npm install -g @anthropic/claude-code` |
+| Claude Code CLI | AI spec writing & coding | `npx -y @anthropic/claude-cli@latest bootstrap` |
 | GitHub CLI (gh) | GitHub integration | `brew install gh` |
 
 ### 2.2 Required Subscriptions
@@ -95,7 +95,7 @@ Before using Feature Swarm, ensure you have:
    export ANTHROPIC_API_KEY="your-api-key-here"
    ```
 
-3. **Install Feature Swarm:**
+3. **Install Swarm Attack:**
    ```bash
    # From the repo root
    pip install -e .
@@ -106,11 +106,11 @@ Before using Feature Swarm, ensure you have:
 Create a `config.yaml` file in your repository root:
 
 ```yaml
-# Feature Swarm Configuration
+# Swarm Attack Configuration
 
 # Paths
 repo_root: .
-specs_dir: specs
+specs_dir: .claude/specs
 swarm_dir: .swarm
 
 # GitHub configuration (required)
@@ -191,7 +191,7 @@ Every feature goes through these phases:
 
 ```bash
 # Create a new feature called "user-notifications"
-feature-swarm init user-notifications
+swarm-attack feature init user-notifications
 ```
 
 This creates:
@@ -231,13 +231,13 @@ Users currently have no way to know when actions they care about happen
 ### Step 3: Run the Spec Pipeline
 
 ```bash
-# Run Feature Swarm - it will automatically start the spec pipeline
-feature-swarm run user-notifications
+# Run Swarm Attack - it will automatically start the spec pipeline
+swarm-attack feature run user-notifications
 ```
 
 **What happens:**
 1. **SpecAuthor** (Claude) reads your PRD and writes an engineering spec
-2. **SpecCritic** (Codex) reviews the spec and scores it on:
+2. **SpecCritic** (Claude) reviews the spec and scores it on:
    - Clarity (0-1)
    - Coverage (0-1)
    - Architecture (0-1)
@@ -268,25 +268,25 @@ Cost: $0.12
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Next step: Review the spec at:
-  specs/user-notifications/spec-draft.md
+  .claude/specs/user-notifications/spec-draft.md
 
 Then approve with:
-  feature-swarm approve user-notifications
+  swarm-attack feature approve user-notifications
 ```
 
 ### Step 4: Review and Approve the Spec
 
-Open and review `specs/user-notifications/spec-draft.md`. When satisfied:
+Open and review `.claude/specs/user-notifications/spec-draft.md`. When satisfied:
 
 ```bash
-feature-swarm approve user-notifications
+swarm-attack feature approve user-notifications
 ```
 
 ### Step 5: Let Implementation Run
 
 ```bash
 # Continue running - it will create issues and implement them
-feature-swarm smart user-notifications
+swarm-attack feature smart user-notifications
 ```
 
 The system will:
@@ -307,7 +307,7 @@ When all issues are done, review the feature branch and merge:
 
 ```bash
 # See what was done
-feature-swarm status user-notifications
+swarm-attack feature status user-notifications
 
 # Review the commits
 git log feature/user-notifications
@@ -321,22 +321,53 @@ git merge feature/user-notifications
 
 ## 5. Command Reference
 
-### Primary Commands
+### Feature Commands
 
 | Command | Description |
 |---------|-------------|
-| `feature-swarm` | Show dashboard of all features |
-| `feature-swarm status` | Same as above - show all features |
-| `feature-swarm status <feature>` | Show detailed status of one feature |
-| `feature-swarm init <feature>` | Create a new feature |
-| `feature-swarm run <feature>` | Run the spec pipeline |
-| `feature-swarm approve <feature>` | Approve a spec |
-| `feature-swarm reject <feature>` | Reject a spec (optionally re-run) |
-| `feature-swarm smart <feature>` | Smart mode - auto-detect next action |
-| `feature-swarm next <feature>` | Show what would happen next |
-| `feature-swarm recover <feature>` | Handle interrupted sessions |
+| `swarm-attack feature` | Show dashboard of all features |
+| `swarm-attack feature status` | Same as above - show all features |
+| `swarm-attack feature status <feature>` | Show detailed status of one feature |
+| `swarm-attack feature init <feature>` | Create a new feature |
+| `swarm-attack feature run <feature>` | Run the spec pipeline |
+| `swarm-attack feature approve <feature>` | Approve a spec |
+| `swarm-attack feature reject <feature>` | Reject a spec (optionally re-run) |
+| `swarm-attack feature smart <feature>` | Smart mode - auto-detect next action |
+| `swarm-attack feature next <feature>` | Show what would happen next |
+| `swarm-attack feature recover <feature>` | Handle interrupted sessions |
 
-### Smart Mode (`feature-swarm smart`)
+### Chief of Staff (CoS) Commands
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack cos standup` | Morning standup - review status and plan day |
+| `swarm-attack cos checkin` | Mid-day check-in - review progress |
+| `swarm-attack cos wrapup` | End of day wrap-up - summarize work |
+| `swarm-attack cos autopilot` | Run full autonomous development cycle |
+| `swarm-attack cos status` | Show current CoS status and metrics |
+
+### Bug Commands
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack bug list` | List all bug investigations |
+| `swarm-attack bug init "desc" --id ID --test PATH -e "error"` | Create bug |
+| `swarm-attack bug analyze <bug-id>` | Run full analysis pipeline |
+| `swarm-attack bug status <bug-id>` | Show detailed bug status |
+| `swarm-attack bug approve <bug-id>` | Approve fix plan |
+| `swarm-attack bug fix <bug-id>` | Execute approved fix |
+| `swarm-attack bug reject <bug-id>` | Reject (won't fix) |
+| `swarm-attack bug unblock <bug-id>` | Unblock stuck bug |
+
+### Admin Commands
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack admin config` | Show current configuration |
+| `swarm-attack admin validate` | Validate environment and setup |
+| `swarm-attack admin clean` | Clean up stale state files |
+
+### Smart Mode (`swarm-attack feature smart`)
 
 The `smart` command is the primary way to use Feature Swarm. It:
 1. Checks for interrupted sessions → offers recovery options
@@ -346,33 +377,36 @@ The `smart` command is the primary way to use Feature Swarm. It:
 
 ```bash
 # Just run this repeatedly until your feature is done
-feature-swarm smart user-notifications
+swarm-attack feature smart user-notifications
 ```
 
 ### Examples
 
 ```bash
 # See all your features
-feature-swarm status
+swarm-attack feature status
 
 # Start working on a feature (does the right thing)
-feature-swarm smart user-auth
+swarm-attack feature smart user-auth
 
 # Check what would happen next without doing it
-feature-swarm next user-auth
+swarm-attack feature next user-auth
 
 # Recover from a crash/interruption
-feature-swarm recover user-auth
+swarm-attack feature recover user-auth
 
 # Re-run spec generation after rejection
-feature-swarm reject user-auth --rerun
+swarm-attack feature reject user-auth --rerun
+
+# Run CoS autopilot for autonomous development
+swarm-attack cos autopilot
 ```
 
 ---
 
 ## 6. Understanding the Dashboard
 
-When you run `feature-swarm status`, you see:
+When you run `swarm-attack feature status`, you see:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -430,16 +464,16 @@ The PRD should include:
 ### Checkpoint 2: Spec Approval
 
 **When:** Spec pipeline complete, phase is `SPEC_NEEDS_APPROVAL`
-**Action:** Review `specs/<feature>/spec-draft.md` and either:
+**Action:** Review `.claude/specs/<feature>/spec-draft.md` and either:
 
 ```bash
 # If the spec looks good
-feature-swarm approve <feature>
+swarm-attack feature approve <feature>
 
 # If changes are needed
 # Option A: Edit the spec manually, then approve
 # Option B: Re-run the pipeline
-feature-swarm reject <feature> --rerun
+swarm-attack feature reject <feature> --rerun
 ```
 
 **What to look for in the spec:**
@@ -459,7 +493,7 @@ feature-swarm reject <feature> --rerun
 gh issue list --label "feature:<feature-slug>"
 
 # When ready to proceed
-feature-swarm greenlight <feature>
+swarm-attack feature greenlight <feature>
 ```
 
 **What to check:**
@@ -477,7 +511,7 @@ If Feature Swarm crashes or you close your terminal mid-session:
 
 ```bash
 # Check for interrupted work
-feature-swarm recover <feature>
+swarm-attack feature recover <feature>
 ```
 
 You'll see options:
@@ -491,10 +525,10 @@ An issue becomes "blocked" after 3 failed implementation attempts.
 
 ```bash
 # See blocked issues
-feature-swarm status <feature>
+swarm-attack feature status <feature>
 
 # Offers to retry blocked issues
-feature-swarm smart <feature>
+swarm-attack feature smart <feature>
 ```
 
 **When an issue is blocked:**
@@ -512,7 +546,7 @@ If something went wrong and you need to undo:
 git log feature/<feature-slug>
 
 # Revert the last session's commits
-feature-swarm rollback <feature>
+swarm-attack feature rollback <feature>
 ```
 
 ---
@@ -537,7 +571,7 @@ Use kebab-case slugs that are:
 ### Workflow Tips
 
 1. **Run `smart` repeatedly** - It always knows what to do next
-2. **Check status often** - `feature-swarm status <feature>`
+2. **Check status often** - `swarm-attack feature status <feature>`
 3. **Don't ignore blocked issues** - They indicate real problems
 4. **Review specs carefully** - Garbage in, garbage out
 5. **Start small** - Your first feature should be simple
@@ -547,7 +581,7 @@ Use kebab-case slugs that are:
 - Each spec pipeline costs ~$0.10-0.20
 - Each issue implementation costs ~$0.05-0.15
 - A typical feature costs $0.50-2.00 total
-- Check `feature-swarm status` to see cumulative costs
+- Check `swarm-attack feature status` to see cumulative costs
 
 ---
 
@@ -560,7 +594,7 @@ Use kebab-case slugs that are:
 which claude
 
 # If not found, install it
-npm install -g @anthropic/claude-code
+npx -y @anthropic/claude-cli@latest bootstrap
 
 # Verify it works
 claude --version
@@ -590,10 +624,10 @@ export GITHUB_TOKEN=$(gh auth token)
 
 ```bash
 # List all features
-feature-swarm status
+swarm-attack feature status
 
 # If the feature doesn't exist, create it
-feature-swarm init <feature-name>
+swarm-attack feature init <feature-name>
 ```
 
 ### "Spec pipeline keeps failing"
@@ -614,7 +648,7 @@ feature-swarm init <feature-name>
 
 ```bash
 # Force recovery mode
-feature-swarm recover <feature>
+swarm-attack feature recover <feature>
 
 # Or manually clean up
 rm -rf .swarm/locks/<feature>/
@@ -626,38 +660,47 @@ rm -rf .swarm/locks/<feature>/
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    FEATURE SWARM QUICK REFERENCE                     │
+│                    SWARM ATTACK QUICK REFERENCE                      │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  START A FEATURE                                                     │
 │  ───────────────                                                     │
-│  feature-swarm init my-feature     # Create feature                 │
-│  # Edit .claude/prds/my-feature.md # Write your PRD                 │
-│  feature-swarm run my-feature      # Generate spec                  │
+│  swarm-attack feature init my-feature     # Create feature          │
+│  # Edit .claude/prds/my-feature.md        # Write your PRD          │
+│  swarm-attack feature run my-feature      # Generate spec           │
 │                                                                      │
 │  DAILY WORKFLOW                                                      │
 │  ──────────────                                                      │
-│  feature-swarm status              # See all features               │
-│  feature-swarm smart my-feature    # Do the next thing              │
+│  swarm-attack feature status              # See all features        │
+│  swarm-attack feature smart my-feature    # Do the next thing       │
+│  swarm-attack cos autopilot               # Autonomous development  │
 │                                                                      │
 │  HUMAN CHECKPOINTS                                                   │
 │  ─────────────────                                                   │
-│  feature-swarm approve my-feature  # Approve spec                   │
-│  feature-swarm reject my-feature   # Reject spec                    │
-│  feature-swarm greenlight my-feat  # Start implementation           │
+│  swarm-attack feature approve my-feature  # Approve spec            │
+│  swarm-attack feature reject my-feature   # Reject spec             │
+│  swarm-attack feature greenlight my-feat  # Start implementation    │
+│                                                                      │
+│  BUG FIXING                                                          │
+│  ──────────                                                          │
+│  swarm-attack bug init "desc" --id ID --test PATH -e "error"        │
+│  swarm-attack bug analyze my-bug-id       # Analyze bug             │
+│  swarm-attack bug approve my-bug-id       # Approve fix plan        │
+│  swarm-attack bug fix my-bug-id           # Apply fix               │
 │                                                                      │
 │  RECOVERY                                                            │
 │  ────────                                                            │
-│  feature-swarm recover my-feature  # Handle interruptions           │
-│  feature-swarm rollback my-feature # Undo last session              │
+│  swarm-attack feature recover my-feature  # Handle interruptions    │
+│  swarm-attack feature rollback my-feature # Undo last session       │
 │                                                                      │
 │  KEY FILES                                                           │
 │  ─────────                                                           │
-│  .claude/prds/<feature>.md         # Your PRD                       │
-│  specs/<feature>/spec-draft.md     # Generated spec                 │
-│  .swarm/state/<feature>.json       # Feature state                  │
-│  .swarm/sessions/                  # Session history                │
-│  config.yaml                       # Project configuration          │
+│  .claude/prds/<feature>.md            # Your PRD                    │
+│  .claude/specs/<feature>/spec-draft.md # Generated spec             │
+│  .swarm/state/<feature>.json          # Feature state               │
+│  .swarm/bugs/<bug-id>/                # Bug investigation           │
+│  .swarm/sessions/                     # Session history             │
+│  config.yaml                          # Project configuration       │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```

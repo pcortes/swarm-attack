@@ -6,17 +6,14 @@ A step-by-step guide for PMs using Swarm Attack to automate feature development.
 
 ## 1. Prerequisites (One-Time Setup)
 
-### Install the AI CLIs
+### Install the Claude CLI
 
 ```bash
 # Claude CLI - Install from https://docs.anthropic.com/claude-code
 # (Requires Anthropic Max subscription)
-
-# Codex CLI - Install via npm
-npm install -g @openai/codex
 ```
 
-### Authenticate Both CLIs
+### Authenticate Claude
 
 ```bash
 # Authenticate Claude
@@ -24,12 +21,6 @@ claude auth login
 
 # Verify Claude is working
 claude doctor
-
-# Authenticate Codex
-codex auth
-
-# Verify Codex is working
-codex --version
 ```
 
 ### Install Swarm Attack
@@ -74,9 +65,6 @@ tests:
 claude:
   max_turns: 6
   timeout_seconds: 300
-
-codex:
-  model: "gpt-5.1-codex"
 
 spec_debate:
   max_rounds: 5
@@ -172,7 +160,7 @@ swarm-attack run user-authentication
 
 This starts the **spec debate loop**:
 1. **SpecAuthor** (Claude) generates initial engineering spec
-2. **SpecCritic** (Codex) reviews and scores it
+2. **SpecCritic** (Claude) reviews and scores it
 3. **SpecModerator** (Claude) improves based on feedback
 4. Loop continues until scores pass thresholds
 
@@ -200,7 +188,7 @@ Scores:
 
 Look at the generated spec:
 ```bash
-cat .claude/specs/user-authentication/spec-draft.md
+cat specs/user-authentication/spec-draft.md
 ```
 
 If it looks good:
@@ -250,7 +238,7 @@ swarm-attack reject user-authentication --reason "Need more detail on token refr
 │  │  SPEC DEBATE (automatic)                                 │   │
 │  │  ┌──────────┐    ┌──────────┐    ┌────────────┐        │   │
 │  │  │  Author  │ →  │  Critic  │ →  │ Moderator  │        │   │
-│  │  │ (Claude) │    │ (Codex)  │    │  (Claude)  │        │   │
+│  │  │ (Claude) │    │ (Claude) │    │  (Claude)  │        │   │
 │  │  └──────────┘    └──────────┘    └─────┬──────┘        │   │
 │  │                                        │               │   │
 │  │                    Score < 0.85? ──────┘               │   │
@@ -332,12 +320,12 @@ your-project/
 ├── .claude/
 │   ├── prds/                      # Your PRDs
 │   │   └── user-authentication.md
-│   ├── specs/                     # Generated specs
-│   │   └── user-authentication/
-│   │       ├── spec-draft.md      # The engineering spec
-│   │       ├── spec-review.json   # Critic's review
-│   │       └── spec-rubric.json   # Scoring rubric
 │   └── skills/                    # Agent instructions
+├── specs/                         # Generated specs
+│   └── user-authentication/
+│       ├── spec-draft.md          # The engineering spec
+│       ├── spec-review.json       # Critic's review
+│       └── spec-rubric.json       # Scoring rubric
 └── .swarm/
     └── state.json                 # Feature tracking state
 ```
@@ -360,15 +348,6 @@ ls config.yaml
 claude doctor
 
 # If not, install from https://docs.anthropic.com/claude-code
-```
-
-### "Codex CLI not found"
-```bash
-# Install Codex
-npm install -g @openai/codex
-
-# Authenticate
-codex auth
 ```
 
 ### "Skills not found"
@@ -481,12 +460,142 @@ swarm-attack bug fix my-bug-id
 
 ---
 
+## 11. Chief of Staff - Daily Workflow Management
+
+The Chief of Staff (CoS) provides daily workflow management and automation features.
+
+### Morning Standup
+
+Start your day with an interactive standup briefing:
+
+```bash
+swarm-attack cos standup
+```
+
+This provides:
+- Yesterday's plan vs actual comparison
+- Repository health summary (branch, tests, features, bugs, costs)
+- Items needing attention (specs pending approval, blocked features, interrupted sessions)
+- Recommended tasks for today
+- Interactive goal setting for the day
+
+### Mid-Day Check-in
+
+Quick status check during the day:
+
+```bash
+swarm-attack cos checkin
+```
+
+Shows:
+- Current goal progress and completion percentage
+- Cost spent today and this week
+- Blocked goals
+- Interrupted sessions
+
+### End-of-Day Wrap-up
+
+Summarize your day:
+
+```bash
+swarm-attack cos wrapup
+```
+
+Displays:
+- Goal completion rate
+- Key accomplishments with time spent
+- Blockers for tomorrow
+- Carryover goals
+- Total cost for the day
+
+### See Recommendations
+
+View recommended next actions:
+
+```bash
+# Show pending goals for today
+swarm-attack cos next
+
+# Show cross-feature recommendations (specs, bugs, features)
+swarm-attack cos next --all
+```
+
+### Review History
+
+View past daily logs and decisions:
+
+```bash
+# Show last 7 days
+swarm-attack cos history
+
+# Show last 14 days
+swarm-attack cos history --days 14
+
+# Show weekly summary
+swarm-attack cos history --weekly
+
+# Show decision log
+swarm-attack cos history --decisions
+
+# Filter decisions by type
+swarm-attack cos history --decisions --type approval
+```
+
+### Autopilot Mode
+
+Run autopilot to execute today's goals automatically with budget/time limits:
+
+```bash
+# Run with defaults (budget: $10, duration: 2h)
+swarm-attack cos autopilot
+
+# Custom budget and duration
+swarm-attack cos autopilot --budget 5.0 --duration 1h
+
+# Stop at first approval needed
+swarm-attack cos autopilot --until approval
+
+# List paused sessions
+swarm-attack cos autopilot --list
+
+# Resume a paused session
+swarm-attack cos autopilot --resume <session-id>
+
+# Cancel a session
+swarm-attack cos autopilot --cancel <session-id>
+```
+
+Autopilot executes goals with:
+- Budget and time limit enforcement
+- Checkpoint gates for approvals and high-risk actions
+- Automatic pause/resume capability
+
+### Checkpoint Management
+
+Manage pending checkpoints that require approval:
+
+```bash
+# List all pending checkpoints
+swarm-attack cos checkpoints
+
+# Approve a checkpoint
+swarm-attack cos approve <checkpoint-id>
+swarm-attack cos approve <checkpoint-id> --notes "Reviewed and approved"
+
+# Reject a checkpoint
+swarm-attack cos reject <checkpoint-id>
+swarm-attack cos reject <checkpoint-id> --notes "Too risky, need more review"
+```
+
+---
+
 ## Need Help?
 
 ```bash
 swarm-attack --help
 swarm-attack run --help
 swarm-attack bug --help
+swarm-attack cos --help
 ```
 
 GitHub: https://github.com/pcortes/swarm-attack
