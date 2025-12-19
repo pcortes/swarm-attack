@@ -1598,7 +1598,7 @@ class Orchestrator:
         splitter = IssueSplitterAgent(
             config=self.config,
             logger=self.logger,
-            llm_runner=self._llm,
+            llm_runner=None,  # Agent will create its own via base class
             state_store=self._state_store,
         )
 

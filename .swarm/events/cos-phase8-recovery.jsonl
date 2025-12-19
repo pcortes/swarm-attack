@@ -36,3 +36,14 @@
 {"ts": "2025-12-19T04:00:13.574903Z", "event": "retry_started", "issue": 6, "attempt": 3}
 {"ts": "2025-12-19T04:02:02.301771Z", "event": "issue_blocked", "issue": 6, "reason": "Max retries exceeded: Issue tests failed: 2 failed, 15 passed", "retries": 3}
 {"ts": "2025-12-19T05:00:17.295836Z", "event": "issue_started", "issue": 7, "session": "sess_20251219_050017_295081"}
+{"ts": "2025-12-19T05:04:19.603310Z", "event": "issue_done", "issue": 7, "commit": "88c37ab6c064dba089afe4ff70a28b7050516b24", "cost_usd": 0.8219446}
+{"ts": "2025-12-19T05:04:31.147301Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_050431_146556"}
+{"ts": "2025-12-19T05:04:40.568730Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_050440_567966"}
+{"ts": "2025-12-19T05:06:01.163000Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_050601_162232"}
+{"ts": "2025-12-19T05:09:19.285654Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_050919_284820"}
+{"ts": "2025-12-19T05:13:15.830835Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_051315_829803"}
+{"ts": "2025-12-19T05:16:00.525796Z", "event": "issue_started", "issue": 8, "session": ""}
+{"ts": "2025-12-19T05:19:49.878612Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_051949_877734"}
+{"ts": "2025-12-19T05:22:12.902609Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_052212_901691"}
+{"ts": "2025-12-19T05:24:30.999419Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_052430_998490"}
+{"ts": "2025-12-19T05:25:43.309496Z", "event": "issue_started", "issue": 8, "session": "sess_20251219_052543_308336"}

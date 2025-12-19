@@ -47,6 +47,11 @@ class AgentResult:
     errors: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
 
+    @property
+    def error(self) -> Optional[str]:
+        """Get the first error message, or None if no errors."""
+        return self.errors[0] if self.errors else None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
@@ -67,12 +72,17 @@ class AgentResult:
         )
 
     @classmethod
-    def success_result(cls, output: Any = None, cost_usd: float = 0.0) -> AgentResult:
+    def success_result(cls, output: Any = None, cost_usd: float = 0.0, **kwargs) -> AgentResult:
         """Create a successful result."""
+        if kwargs:
+            import traceback
+            import sys
+            print(f"UNEXPECTED KWARGS TO success_result: {kwargs}", file=sys.stderr)
+            traceback.print_stack()
         return cls(success=True, output=output, cost_usd=cost_usd)
 
     @classmethod
-    def failure_result(cls, error: str, cost_usd: float = 0.0) -> AgentResult:
+    def failure_result(cls, error: str, cost_usd: float = 0.0) -> "AgentResult":
         """Create a failed result with a single error."""
         return cls(success=False, errors=[error], cost_usd=cost_usd)
 

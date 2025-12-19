@@ -1,0 +1,13 @@
+{
+  "session_id": "sess_20251219_052212_901691",
+  "feature_id": "cos-phase8-recovery",
+  "issue_number": 8,
+  "started_at": "2025-12-19T05:22:12.901740Z",
+  "status": "complete",
+  "checkpoints": [],
+  "ended_at": "2025-12-19T05:22:51.659283Z",
+  "end_status": "failed",
+  "cost_usd": 0.0,
+  "worktree_path": null,
+  "commits": []
+}

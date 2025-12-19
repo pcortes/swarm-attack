@@ -91,8 +91,8 @@ def get_config_or_default() -> "SwarmConfig":
         github=GitHubConfig(repo=""),
         claude=ClaudeConfig(),
         spec_debate=SpecDebateConfig(),
-        session=SessionConfig(),
-        tests=TestRunnerConfig(),
+        sessions=SessionConfig(),
+        tests=TestRunnerConfig(command="pytest"),
         git=GitConfig(),
     )
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 from swarm_attack.agents.base import AgentResult, BaseAgent
+from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -127,30 +128,29 @@ class IssueSplitterAgent(BaseAgent):
                 allowed_tools=["Read", "Glob"],  # Read-only for context
                 max_turns=8,
             )
+            cost = result.total_cost_usd
+        except ClaudeTimeoutError as e:
+            error = f"Claude timed out: {e}"
+            self._log("split_llm_failed", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
+        except ClaudeInvocationError as e:
+            error = f"Claude invocation failed: {e}"
+            self._log("split_llm_failed", {"error": error}, level="error")
+            return AgentResult.failure_result(error)
 
-            if not result.success:
-                self._log("split_llm_failed", {"error": result.error})
-                return AgentResult.failure_result(
-                    agent=self.name,
-                    error=f"LLM failed: {result.error}",
-                )
-
+        try:
             # Parse response
             sub_issues = self._parse_response(result.text)
 
             if not sub_issues:
                 self._log("split_parse_failed", {"response": result.text[:500]})
-                return AgentResult.failure_result(
-                    agent=self.name,
-                    error="Failed to parse sub-issues from LLM response",
-                )
+                return AgentResult.failure_result("Failed to parse sub-issues from LLM response")
 
             # Validate sub-issues
             if len(sub_issues) < self.MIN_SUB_ISSUES:
                 self._log("split_too_few", {"count": len(sub_issues)})
                 return AgentResult.failure_result(
-                    agent=self.name,
-                    error=f"Only {len(sub_issues)} sub-issues created, need at least {self.MIN_SUB_ISSUES}",
+                    f"Only {len(sub_issues)} sub-issues created, need at least {self.MIN_SUB_ISSUES}"
                 )
 
             if len(sub_issues) > self.MAX_SUB_ISSUES:
@@ -162,26 +162,22 @@ class IssueSplitterAgent(BaseAgent):
                 "issue_number": issue_number,
                 "sub_issue_count": len(sub_issues),
                 "sub_issue_titles": [s["title"] for s in sub_issues],
-                "cost_usd": result.cost_usd,
+                "cost_usd": cost,
             })
 
             return AgentResult.success_result(
-                agent=self.name,
                 output={
                     "sub_issues": sub_issues,
                     "count": len(sub_issues),
                     "split_strategy": self._detect_strategy(split_suggestions),
-                    "cost_usd": result.cost_usd,
+                    "cost_usd": cost,
                 },
-                cost_usd=result.cost_usd,
+                cost_usd=cost,
             )
 
         except Exception as e:
             self._log("split_exception", {"error": str(e)})
-            return AgentResult.failure_result(
-                agent=self.name,
-                error=f"Exception during split: {e}",
-            )
+            return AgentResult.failure_result(f"Exception during split: {e}")
 
     def _build_prompt(
         self,
