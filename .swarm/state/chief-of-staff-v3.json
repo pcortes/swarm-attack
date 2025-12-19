@@ -753,8 +753,31 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "swarm_attack/chief_of_staff/autopilot_runner.py",
+          "swarm_attack/chief_of_staff/config.py"
+        ],
+        "classes_defined": {
+          "swarm_attack/chief_of_staff/autopilot_runner.py": [
+            "ExecutionStrategy",
+            "DependencyGraph",
+            "GoalExecutionResult",
+            "AutopilotRunResult",
+            "SessionContext",
+            "AutopilotRunner"
+          ],
+          "swarm_attack/chief_of_staff/config.py": [
+            "CheckpointConfig",
+            "PriorityConfig",
+            "StandupConfig",
+            "AutopilotConfig",
+            "ChiefOfStaffConfig"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): swarm_attack/chief_of_staff/autopilot_runner.py, swarm_attack/chief_of_staff/config.py; Defined: ExecutionStrategy, DependencyGraph, GoalExecutionResult, AutopilotRunResult, SessionContext",
       "parent_issue": 22,
       "child_issues": []
     },
@@ -943,7 +966,7 @@
     },
     {
       "issue_number": 38,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Implement budget checking and callbacks for continue-on-block",
       "dependencies": [
         37
@@ -975,12 +998,12 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_200042_303953",
+  "current_session": "sess_20251219_200622_311261",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T20:00:33.245345Z",
-  "cost_total_usd": 11.558552999999998,
+  "updated_at": "2025-12-19T20:03:05.305603Z",
+  "cost_total_usd": 12.133575749999999,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 11.04508875
+    "IMPLEMENTATION": 11.6201115
   }
 }

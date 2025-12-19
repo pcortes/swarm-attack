@@ -24,6 +24,7 @@ Implementation: Real Execution (v3)
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -35,7 +36,6 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
 from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
 from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger
-from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalStatus
 from swarm_attack.chief_of_staff.budget import check_budget, get_effective_cost
 from swarm_attack.chief_of_staff.recovery import RecoveryManager
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     from swarm_attack.orchestrator import Orchestrator
     from swarm_attack.bug_orchestrator import BugOrchestrator
     from swarm_attack.chief_of_staff.episodes import EpisodeStore
+    from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 
 
 class ExecutionStrategy(Enum):
@@ -207,7 +208,7 @@ class AutopilotRunner:
 
     def __init__(
         self,
-        config: ChiefOfStaffConfig,
+        config: "ChiefOfStaffConfig",
         checkpoint_system: CheckpointSystem,
         session_store: AutopilotSessionStore,
         orchestrator: Optional["Orchestrator"] = None,
@@ -741,6 +742,32 @@ class AutopilotRunner:
 
         return (goals_completed, total_cost, blocked)
 
+    def _run_checkpoint_check(self, goal: DailyGoal) -> Any:
+        """Run checkpoint check, handling both sync and async implementations.
+
+        Args:
+            goal: DailyGoal to check
+
+        Returns:
+            CheckpointResult from the checkpoint system
+        """
+        # Get the result from check_before_execution
+        check_result = self.checkpoint_system.check_before_execution(goal)
+
+        # If it's a coroutine, we need to await it
+        if inspect.iscoroutine(check_result):
+            try:
+                loop = asyncio.get_running_loop()
+                import nest_asyncio
+                nest_asyncio.apply()
+                return loop.run_until_complete(check_result)
+            except RuntimeError:
+                # No running loop - create a new one
+                return asyncio.run(check_result)
+        else:
+            # It's already a result (e.g., from a mock)
+            return check_result
+
     def start(
         self,
         goals: list[DailyGoal],
@@ -764,7 +791,6 @@ class AutopilotRunner:
         # Store stop trigger for checkpoint handling
         self._stop_trigger = stop_trigger
         self._dry_run = dry_run
-        import asyncio
 
         start_time = time.time()
 
@@ -793,7 +819,36 @@ class AutopilotRunner:
             duration_minutes=duration_minutes,
         )
 
-        # Execute goals
+        # Check execution strategy from config
+        execution_strategy = self.config.autopilot.execution_strategy
+
+        # Import ExecutionStrategy for comparison if needed
+        from swarm_attack.chief_of_staff.autopilot_runner import ExecutionStrategy as ES
+
+        # Use continue-on-block strategy if configured
+        if execution_strategy == ES.CONTINUE_ON_BLOCK:
+            goals_completed, total_cost, blocked = self._execute_goals_continue_on_block(
+                goals, budget_usd, session
+            )
+
+            # Finalize session
+            duration = int(time.time() - start_time)
+            session.state = AutopilotState.COMPLETED
+            session.completed_at = datetime.now(timezone.utc).isoformat()
+            session.total_cost_usd = total_cost
+
+            # Save session
+            self.session_store.save(session)
+
+            return AutopilotRunResult(
+                session=session,
+                goals_completed=goals_completed,
+                goals_total=len(goals),
+                total_cost_usd=total_cost,
+                duration_seconds=duration,
+            )
+
+        # Default: Sequential execution
         goals_completed = 0
         total_cost = 0.0
         checkpoint_pending = False
@@ -803,19 +858,7 @@ class AutopilotRunner:
 
             # Check checkpoint before execution (Issue #12 requirement)
             # This checks for triggers like COST, UX_CHANGE, ARCHITECTURE, etc.
-            try:
-                loop = asyncio.get_running_loop()
-                # If we're in an async context, use nest_asyncio or create task
-                import nest_asyncio
-                nest_asyncio.apply()
-                checkpoint_result = loop.run_until_complete(
-                    self.checkpoint_system.check_before_execution(goal)
-                )
-            except RuntimeError:
-                # No running loop - create a new one
-                checkpoint_result = asyncio.run(
-                    self.checkpoint_system.check_before_execution(goal)
-                )
+            checkpoint_result = self._run_checkpoint_check(goal)
 
             if checkpoint_result.requires_approval and not checkpoint_result.approved:
                 # Checkpoint requires approval - pause execution

@@ -7,7 +7,18 @@ This module provides configuration for the Chief of Staff autonomous orchestrati
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from enum import Enum
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from swarm_attack.chief_of_staff.autopilot_runner import ExecutionStrategy as ES
+
+
+# Import ExecutionStrategy at runtime to avoid circular imports
+def _get_execution_strategy_enum():
+    """Get ExecutionStrategy enum lazily to avoid circular imports."""
+    from swarm_attack.chief_of_staff.autopilot_runner import ExecutionStrategy
+    return ExecutionStrategy
 
 
 @dataclass
@@ -47,6 +58,13 @@ class AutopilotConfig:
     pause_on_approval: bool = True
     pause_on_high_risk: bool = True
     persist_on_checkpoint: bool = True
+    execution_strategy: Any = None  # ExecutionStrategy enum, defaults to SEQUENTIAL
+
+    def __post_init__(self) -> None:
+        """Set default execution_strategy if not provided."""
+        if self.execution_strategy is None:
+            ExecutionStrategy = _get_execution_strategy_enum()
+            self.execution_strategy = ExecutionStrategy.SEQUENTIAL
 
 
 @dataclass
@@ -84,6 +102,14 @@ class ChiefOfStaffConfig:
         standup_data = data.get("standup", {})
         autopilot_data = data.get("autopilot", {})
 
+        # Parse execution_strategy from string to enum
+        ExecutionStrategy = _get_execution_strategy_enum()
+        execution_strategy_str = autopilot_data.get("execution_strategy", "sequential")
+        try:
+            execution_strategy = ExecutionStrategy(execution_strategy_str)
+        except ValueError:
+            execution_strategy = ExecutionStrategy.SEQUENTIAL
+
         return cls(
             checkpoints=CheckpointConfig(
                 budget_usd=checkpoints_data.get("budget_usd", 10.0),
@@ -111,6 +137,7 @@ class ChiefOfStaffConfig:
                 pause_on_approval=autopilot_data.get("pause_on_approval", True),
                 pause_on_high_risk=autopilot_data.get("pause_on_high_risk", True),
                 persist_on_checkpoint=autopilot_data.get("persist_on_checkpoint", True),
+                execution_strategy=execution_strategy,
             ),
             storage_path=data.get("storage_path", ".swarm/chief-of-staff"),
             budget_usd=data.get("budget_usd"),
@@ -123,6 +150,13 @@ class ChiefOfStaffConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
+        # Get execution_strategy value (handle enum or string)
+        exec_strategy = self.autopilot.execution_strategy
+        if hasattr(exec_strategy, 'value'):
+            exec_strategy_value = exec_strategy.value
+        else:
+            exec_strategy_value = str(exec_strategy)
+
         return {
             "checkpoints": {
                 "budget_usd": self.checkpoints.budget_usd,
@@ -150,6 +184,7 @@ class ChiefOfStaffConfig:
                 "pause_on_approval": self.autopilot.pause_on_approval,
                 "pause_on_high_risk": self.autopilot.pause_on_high_risk,
                 "persist_on_checkpoint": self.autopilot.persist_on_checkpoint,
+                "execution_strategy": exec_strategy_value,
             },
             "storage_path": self.storage_path,
             "budget_usd": self.budget_usd,
