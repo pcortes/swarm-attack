@@ -4,7 +4,7 @@
   "tasks": [
     {
       "issue_number": 1,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Add find_similar() method to EpisodeStore",
       "dependencies": [],
       "estimated_size": "small",
@@ -31,13 +31,13 @@
     },
     {
       "issue_number": 2,
-      "stage": "READY",
+      "stage": "BLOCKED",
       "title": "Add find_similar_decisions() method to PreferenceLearner",
       "dependencies": [],
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Max retries exceeded: Regression detected: 7 tests failed in full suite",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
@@ -212,8 +212,26 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_13.py",
+          "swarm_attack/chief_of_staff/critics.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_13.py": [
+            "TestCriticFocus",
+            "TestCriticScore",
+            "TestCritic"
+          ],
+          "swarm_attack/chief_of_staff/critics.py": [
+            "CriticFocus",
+            "CriticScore",
+            "Critic"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_13.py, swarm_attack/chief_of_staff/critics.py; Defined: TestCriticFocus, TestCriticScore, TestCritic, CriticFocus, CriticScore",
       "parent_issue": null,
       "child_issues": []
     },
@@ -301,7 +319,7 @@
     },
     {
       "issue_number": 19,
-      "stage": "BACKLOG",
+      "stage": "SKIPPED",
       "title": "Implement RiskScoringEngine",
       "dependencies": [
         1,
@@ -396,12 +414,12 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_060328_914995",
+  "current_session": "sess_20251219_062525_492545",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T06:02:13.493915Z",
-  "cost_total_usd": 2.0417383,
+  "updated_at": "2025-12-19T06:08:23.640049Z",
+  "cost_total_usd": 3.0581913,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 1.52827405
+    "IMPLEMENTATION": 2.54472705
   }
 }

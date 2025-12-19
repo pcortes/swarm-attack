@@ -9,3 +9,11 @@
 {"ts": "2025-12-19T06:01:32.397125Z", "event": "retry_started", "issue": 1, "attempt": 3}
 {"ts": "2025-12-19T06:02:09.824446Z", "event": "issue_blocked", "issue": 1, "reason": "Max retries exceeded: Issue tests failed: 7 failed, 0 passed", "retries": 3}
 {"ts": "2025-12-19T06:03:28.915978Z", "event": "issue_started", "issue": 1, "session": "sess_20251219_060328_914995"}
+{"ts": "2025-12-19T06:04:42.392060Z", "event": "issue_done", "issue": 1, "commit": "056db565e4c4d73c06e34d98d31be41206a459e2", "cost_usd": 0.18167704999999998}
+{"ts": "2025-12-19T06:04:59.169564Z", "event": "issue_started", "issue": 2, "session": "sess_20251219_060459_168775"}
+{"ts": "2025-12-19T06:06:24.619665Z", "event": "retry_started", "issue": 2, "attempt": 1}
+{"ts": "2025-12-19T06:07:02.963617Z", "event": "retry_started", "issue": 2, "attempt": 2}
+{"ts": "2025-12-19T06:07:40.984283Z", "event": "retry_started", "issue": 2, "attempt": 3}
+{"ts": "2025-12-19T06:08:19.976800Z", "event": "issue_blocked", "issue": 2, "reason": "Max retries exceeded: Regression detected: 7 tests failed in full suite", "retries": 3}
+{"ts": "2025-12-19T06:23:23.024862Z", "event": "issue_started", "issue": 13, "session": "sess_20251219_062323_023558"}
+{"ts": "2025-12-19T06:25:25.493362Z", "event": "issue_started", "issue": 13, "session": "sess_20251219_062525_492545"}
