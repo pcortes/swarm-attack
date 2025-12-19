@@ -424,8 +424,36 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_18.py",
+          "swarm_attack/chief_of_staff/validation_gates.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_18.py": [
+            "TestArtifactType",
+            "TestValidationGateResult",
+            "TestSpecValidationGate",
+            "TestCodeValidationGate",
+            "TestTestValidationGate",
+            "TestValidationGateIntegration",
+            "TestValidationGateSummaryFormat",
+            "TestValidationGateFromPath",
+            "TestValidationGateCLIFormat",
+            "TestValidationGateFileExists"
+          ],
+          "swarm_attack/chief_of_staff/validation_gates.py": [
+            "ArtifactType",
+            "ValidationGateResult",
+            "ValidationGate",
+            "SpecValidationGate",
+            "CodeValidationGate",
+            "TestValidationGate"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_18.py, swarm_attack/chief_of_staff/validation_gates.py; Defined: TestArtifactType, TestValidationGateResult, TestSpecValidationGate, TestCodeValidationGate, TestTestValidationGate",
       "parent_issue": null,
       "child_issues": []
     },
@@ -683,7 +711,7 @@
       "child_issues": []
     }
   ],
-  "current_session": null,
+  "current_session": "sess_20251219_161041_547306",
   "created_at": "2025-12-19T05:36:34.147250Z",
   "updated_at": "2025-12-19T07:38:48.297187Z",
   "cost_total_usd": 6.8765648,
