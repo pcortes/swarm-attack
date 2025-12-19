@@ -3,7 +3,7 @@
   "feature_id": "chief-of-staff-v3",
   "issue_number": 4,
   "started_at": "2025-12-19T06:31:44.612452Z",
-  "status": "active",
+  "status": "complete",
   "checkpoints": [
     {
       "agent": "coder",
@@ -20,9 +20,11 @@
       "cost_usd": 0.0
     }
   ],
-  "ended_at": null,
-  "end_status": null,
+  "ended_at": "2025-12-19T06:36:21.100505Z",
+  "end_status": "success",
   "cost_usd": 0.9629344499999999,
   "worktree_path": null,
-  "commits": []
+  "commits": [
+    "a725832d86aa926370bbd3d00c62cd6a32e86c9a"
+  ]
 }

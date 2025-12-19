@@ -22,3 +22,6 @@
 {"ts": "2025-12-19T06:28:20.988531Z", "event": "issue_done", "issue": 3, "commit": "e718989113746752eec68e3743dcdb20508b2e19", "cost_usd": 0.1267425}
 {"ts": "2025-12-19T06:28:28.483083Z", "event": "issue_started", "issue": 25, "session": "sess_20251219_062828_482204"}
 {"ts": "2025-12-19T06:31:44.613546Z", "event": "issue_started", "issue": 4, "session": "sess_20251219_063144_612427"}
+{"ts": "2025-12-19T06:36:17.488247Z", "event": "issue_done", "issue": 4, "commit": "a725832d86aa926370bbd3d00c62cd6a32e86c9a", "cost_usd": 0.9629344499999999}
+{"ts": "2025-12-19T06:37:02.519351Z", "event": "issue_started", "issue": 5, "session": "sess_20251219_063702_518430"}
+{"ts": "2025-12-19T06:54:08.108326Z", "event": "issue_started", "issue": 5, "session": "sess_20251219_065408_107509"}
