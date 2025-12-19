@@ -1529,7 +1529,7 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 })
             result = self.llm.run(
                 prompt,
-                allowed_tools=[],
+                allowed_tools=["Read", "Glob", "Grep"],  # Enable codebase exploration
                 max_turns=max_turns,
             )
             cost = result.total_cost_usd

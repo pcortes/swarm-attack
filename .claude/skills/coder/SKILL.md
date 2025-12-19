@@ -3,7 +3,7 @@ name: coder
 description: >
   Implementation Agent: Full TDD workflow in a single context window.
   Writes tests, implements code, and iterates until all tests pass.
-allowed-tools: Read,Glob,Bash,Write,Edit
+allowed-tools: Read,Glob,Grep
 ---
 
 # Implementation Agent (Unified TDD)
@@ -29,6 +29,50 @@ You see EVERYTHING. Use that advantage.
 ---
 
 ## TDD Workflow (MANDATORY)
+
+### Phase 0: Dependency Exploration (DO THIS FIRST)
+
+**Before writing ANY code, use your tools to explore the codebase:**
+
+You have access to `Read`, `Glob`, and `Grep` tools. USE THEM to understand existing code before implementing.
+
+**1. Find Pattern References**
+```
+# Find similar implementations to follow
+Glob "swarm_attack/**/config.py"
+Glob "swarm_attack/**/*_store.py"
+```
+
+**2. Read Existing Code**
+```
+# Read files from completed issues (listed in Completed Issues Context)
+Read swarm_attack/chief_of_staff/feedback.py
+Read swarm_attack/config.py
+```
+
+**3. Verify APIs Before Using Them**
+```
+# Before importing a class, verify it exists and check its signature
+Grep "class HumanFeedback" swarm_attack/
+Read swarm_attack/chief_of_staff/feedback.py
+```
+
+**4. Find Usage Examples**
+```
+# See how existing code uses a class/function
+Grep "from_dict" swarm_attack/config.py
+Grep "FeedbackStore" swarm_attack/
+```
+
+**Why This Matters:**
+- Prevents API hallucination (guessing wrong method signatures)
+- Ensures imports reference real code that exists
+- Follows established patterns in the codebase
+- Reduces failures from mismatched interfaces
+
+**Spend 2-4 tool calls exploring, then implement with confidence.**
+
+---
 
 ### Phase 1: Read Context First
 
@@ -153,7 +197,13 @@ If regressions occur:
 
 ## CRITICAL: Output Format
 
-You MUST output implementation files using text markers. DO NOT use Write or Edit tools.
+**Tools for EXPLORATION (use freely):**
+- `Read` - Read existing files to understand patterns and APIs
+- `Glob` - Find files by pattern
+- `Grep` - Search for code patterns
+
+**Output via TEXT MARKERS (not tools):**
+You MUST output implementation files using text markers. Do NOT use Write or Edit tools for output.
 
 Each file MUST be preceded by exactly:
 
