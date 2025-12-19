@@ -12,13 +12,19 @@ This module provides:
 from __future__ import annotations
 
 import asyncio
+import logging
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Awaitable, Optional
 
 if TYPE_CHECKING:
     from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem
     from swarm_attack.chief_of_staff.goal_tracker import DailyGoal
+    from swarm_attack.chief_of_staff.episodes import EpisodeStore
+
+logger = logging.getLogger(__name__)
 
 
 class RecoveryLevel(Enum):
@@ -60,7 +66,8 @@ class ErrorCategory(Enum):
 
 # Constants for retry logic
 MAX_RETRIES = 3
-BACKOFF_SECONDS = 5
+DEFAULT_BACKOFF_BASE_SECONDS = 5
+DEFAULT_BACKOFF_MULTIPLIER = 2
 
 
 # Error classification mappings using LLMErrorType from errors.py
@@ -149,79 +156,170 @@ class RecoveryResult:
 class RecoveryManager:
     """Manager for handling goal execution with retry and escalation logic.
 
-    Provides exponential backoff retry (5s, 10s, 20s) with escalation
-    to human-in-the-loop checkpoints after MAX_RETRIES failures.
+    Implements a 4-level hierarchical recovery system:
+    - Level 1 (SAME): Transient errors retry up to 3 times with exponential backoff
+    - Level 2 (ALTERNATIVE): Systematic errors log fallthrough and proceed to Level 4
+    - Level 3 (CLARIFY): Not auto-triggered - extension point for human-triggered retries
+    - Level 4 (ESCALATE): Fatal errors + fallthrough create HICCUP checkpoint
 
     Usage:
         recovery = RecoveryManager(checkpoint_system)
 
         async def execute_goal():
             # goal execution logic
-            return result
+            return GoalExecutionResult(...)
 
         result = await recovery.execute_with_recovery(goal, execute_goal)
     """
 
-    def __init__(self, checkpoint_system: "CheckpointSystem") -> None:
+    def __init__(
+        self,
+        checkpoint_system: "CheckpointSystem",
+        backoff_base_seconds: int = DEFAULT_BACKOFF_BASE_SECONDS,
+        backoff_multiplier: int = DEFAULT_BACKOFF_MULTIPLIER,
+    ) -> None:
         """Initialize RecoveryManager.
 
         Args:
             checkpoint_system: CheckpointSystem for creating escalation checkpoints.
+            backoff_base_seconds: Base delay for exponential backoff (default: 5).
+            backoff_multiplier: Multiplier for exponential backoff (default: 2).
         """
         self.checkpoint_system = checkpoint_system
+        self.backoff_base_seconds = backoff_base_seconds
+        self.backoff_multiplier = backoff_multiplier
 
     async def execute_with_recovery(
         self,
         goal: "DailyGoal",
-        action: Callable[[], Awaitable[Any]],
-    ) -> RecoveryResult:
-        """Execute an action with retry logic and escalation.
+        execute_fn: Callable[[], Awaitable[Any]],
+        episode_store: Optional["EpisodeStore"] = None,
+    ) -> "GoalExecutionResult":
+        """Execute goal with hierarchical recovery.
 
-        Retries the action up to MAX_RETRIES times with exponential backoff:
-        - First retry: 5 seconds
-        - Second retry: 10 seconds
-        - Third retry: 20 seconds
-
-        Increments goal.error_count on each failure.
-        Returns immediately on success.
+        Routes errors through the 4-level recovery hierarchy:
+        - Level 1 (SAME): Transient errors retry up to 3 times with exponential backoff
+        - Level 2 (ALTERNATIVE): Systematic errors log fallthrough and proceed to Level 4
+        - Level 3 (CLARIFY): Not auto-triggered - extension point for human-triggered retries
+        - Level 4 (ESCALATE): Fatal errors + fallthrough create HICCUP checkpoint
 
         Args:
             goal: The DailyGoal being executed (error_count is incremented on failure).
-            action: Async callable that performs the goal execution.
+            execute_fn: Async callable that performs the goal execution.
+            episode_store: Optional EpisodeStore for logging recovery episodes.
 
         Returns:
-            RecoveryResult with success status, result/error, and retry count.
+            GoalExecutionResult with success status, cost, duration, and error info.
         """
-        last_error: Optional[str] = None
-        backoff = BACKOFF_SECONDS
+        # Import here to avoid circular imports
+        from swarm_attack.chief_of_staff.autopilot_runner import GoalExecutionResult
+        from swarm_attack.chief_of_staff.episodes import Episode
 
-        for attempt in range(MAX_RETRIES):
+        last_error: Optional[str] = None
+        last_exception: Optional[Exception] = None
+        retry_count = 0
+        recovery_level = RetryStrategy.SAME.value
+        start_time = datetime.now()
+
+        # Attempt execution with retry logic for transient errors
+        backoff = self.backoff_base_seconds
+        attempt = 0
+
+        while attempt < MAX_RETRIES:
             try:
-                result = await action()
-                # Success - return immediately
-                return RecoveryResult(
-                    success=True,
-                    action_result=result,
-                    retry_count=attempt,
-                    escalated=False,
-                )
+                result = await execute_fn()
+                
+                # Log successful episode if store provided
+                if episode_store is not None:
+                    duration = int((datetime.now() - start_time).total_seconds())
+                    episode = Episode(
+                        episode_id=f"ep-{uuid.uuid4().hex[:8]}",
+                        timestamp=datetime.now().isoformat(),
+                        goal_id=goal.goal_id,
+                        success=True,
+                        cost_usd=getattr(result, "cost_usd", 0.0),
+                        duration_seconds=duration,
+                        retry_count=retry_count,
+                        recovery_level=RetryStrategy.SAME.value if retry_count > 0 else None,
+                    )
+                    episode_store.save(episode)
+
+                return result
+
             except Exception as e:
-                # Failure - increment error count and prepare for retry
+                attempt += 1
                 goal.error_count += 1
                 last_error = str(e)
+                last_exception = e
+                retry_count += 1
 
-                # If not last attempt, wait with exponential backoff
-                if attempt < MAX_RETRIES - 1:
-                    await asyncio.sleep(backoff)
-                    backoff *= 2  # Exponential backoff: 5s, 10s, 20s
+                # Classify error to determine recovery level
+                category = classify_error(e)
 
-        # All retries exhausted - escalate to human
-        escalate_result = await self._escalate_to_human(goal, last_error)
-        return RecoveryResult(
+                if category == ErrorCategory.TRANSIENT:
+                    # Level 1: SAME - Retry with exponential backoff
+                    recovery_level = RetryStrategy.SAME.value
+                    
+                    if attempt < MAX_RETRIES:
+                        logger.info(
+                            f"Level 1 (SAME): Transient error, retrying in {backoff}s "
+                            f"(attempt {attempt}/{MAX_RETRIES}): {last_error}"
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff *= self.backoff_multiplier
+                        continue
+                    else:
+                        # Exhausted retries, fall through to escalation
+                        logger.warning(
+                            f"Level 1 exhausted: Transient error persisted after {MAX_RETRIES} "
+                            f"retries, escalating to Level 4"
+                        )
+                        recovery_level = RetryStrategy.ESCALATE.value
+                        break
+
+                elif category == ErrorCategory.SYSTEMATIC:
+                    # Level 2: ALTERNATIVE - Extension point, falls through to Level 4
+                    logger.warning(
+                        f"Level 2 (ALTERNATIVE): Systematic error detected, "
+                        f"falling through to Level 4 (ESCALATE): {last_error}"
+                    )
+                    recovery_level = RetryStrategy.ESCALATE.value
+                    break
+
+                elif category == ErrorCategory.FATAL:
+                    # Level 4: ESCALATE - Immediate escalation
+                    logger.error(
+                        f"Level 4 (ESCALATE): Fatal error detected, "
+                        f"escalating immediately: {last_error}"
+                    )
+                    recovery_level = RetryStrategy.ESCALATE.value
+                    break
+
+        # All attempts exhausted or escalation triggered
+        # Level 4: Create HICCUP checkpoint
+        await self._escalate_to_human(goal, last_error or "Unknown error")
+
+        # Log failed episode if store provided
+        duration = int((datetime.now() - start_time).total_seconds())
+        if episode_store is not None:
+            episode = Episode(
+                episode_id=f"ep-{uuid.uuid4().hex[:8]}",
+                timestamp=datetime.now().isoformat(),
+                goal_id=goal.goal_id,
+                success=False,
+                cost_usd=0.0,
+                duration_seconds=duration,
+                retry_count=retry_count,
+                recovery_level=recovery_level,
+                error=last_error,
+            )
+            episode_store.save(episode)
+
+        return GoalExecutionResult(
             success=False,
+            cost_usd=0.0,
+            duration_seconds=duration,
             error=last_error,
-            retry_count=MAX_RETRIES,
-            escalated=True,
         )
 
     async def _escalate_to_human(
@@ -243,15 +341,13 @@ class RecoveryManager:
             CheckpointOption,
             CheckpointTrigger,
         )
-        from datetime import datetime
-        import uuid
 
         # Mark goal as hiccup
         goal.is_hiccup = True
 
         # Build context with retry info
         context = (
-            f"Goal failed after {MAX_RETRIES} retry attempts.\n\n"
+            f"Goal failed after recovery attempts.\n\n"
             f"Goal: {goal.description}\n"
             f"Error: {failure_reason}\n"
             f"Total errors: {goal.error_count}"
@@ -265,22 +361,21 @@ class RecoveryManager:
             options=[
                 CheckpointOption(
                     label="Skip this goal",
-                    action="skip",
                     description="Mark goal as skipped and continue",
                 ),
                 CheckpointOption(
                     label="Retry with modifications",
-                    action="retry",
                     description="Provide additional context and retry",
                 ),
                 CheckpointOption(
                     label="Handle manually",
-                    action="manual",
                     description="I'll handle this myself",
                 ),
             ],
-            created_at=datetime.now(),
+            recommendation="Review the error and decide how to proceed.",
+            created_at=datetime.now().isoformat(),
+            goal_id=goal.goal_id,
         )
 
         # Store checkpoint for human review
-        await self.checkpoint_system.create_checkpoint(checkpoint)
+        await self.checkpoint_system.store.save(checkpoint)
