@@ -408,6 +408,68 @@
       "order": 27,
       "automation_type": "automated",
       "parent_issue": 21
+    },
+    {
+      "title": "Add ExecutionStrategy enum and DependencyGraph data model",
+      "body": "## Description\n\nCreate the foundational data structures for the continue-on-block execution strategy. This includes an enum to represent different execution strategies and a DependencyGraph class to track goal dependencies.\n\n## Acceptance Criteria\n\n- [ ] `ExecutionStrategy` enum with values: SEQUENTIAL, CONTINUE_ON_BLOCK, PARALLEL_SAFE\n- [ ] `DependencyGraph` dataclass with `issues: list[DailyGoal]` and `dependencies: dict[str, list[str]]` (goal_id to list of dependency goal_ids)\n- [ ] `DependencyGraph.get_ready_goals(completed: set[str], blocked: set[str]) -> list[DailyGoal]` method that returns goals whose dependencies are met and are not blocked\n- [ ] `DependencyGraph.from_goals(goals: list[DailyGoal]) -> DependencyGraph` factory method\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Pattern Reference: See existing dataclasses like `GoalExecutionResult` and `SessionContext` in the same file\n- Use goal_id (str) as keys since DailyGoal uses string goal_ids",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 28,
+      "automation_type": "automated",
+      "parent_issue": 22
+    },
+    {
+      "title": "Implement _execute_goals_continue_on_block method in AutopilotRunner",
+      "body": "## Description\n\nImplement the core continue-on-block execution method in AutopilotRunner that enables execution to continue past blocked goals to independent goals.\n\n## Acceptance Criteria\n\n- [ ] `AutopilotRunner._execute_goals_continue_on_block(goals: list[DailyGoal], budget_usd: float, session: AutopilotSession) -> tuple[int, float, set[str]]` method that returns (goals_completed, total_cost, blocked_goal_ids)\n- [ ] Method builds DependencyGraph from goals and iteratively executes ready goals\n- [ ] Method tracks completed vs blocked goals, creating hiccup checkpoint when goals are blocked\n- [ ] Method continues executing independent goals when some goals are blocked\n- [ ] Method returns when no ready goals remain (all completed or blocked)\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py`\n- Pattern Reference: See existing `start()` method for execution loop pattern\n- Use existing `_execute_goal()` method for individual goal execution\n- Requires `DependencyGraph` from previous sub-issue",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        28
+      ],
+      "order": 29,
+      "automation_type": "automated",
+      "parent_issue": 22
+    },
+    {
+      "title": "Add execution_strategy config option to AutopilotConfig",
+      "body": "## Description\n\nAdd configuration support for the execution strategy and wire it into the AutopilotRunner to enable the continue-on-block behavior.\n\n## Acceptance Criteria\n\n- [ ] Add `execution_strategy: ExecutionStrategy = ExecutionStrategy.SEQUENTIAL` to `AutopilotConfig` dataclass\n- [ ] Update `AutopilotConfig.from_dict()` to parse execution_strategy string to enum\n- [ ] Update `AutopilotConfig.to_dict()` to serialize execution_strategy enum to string\n- [ ] Update `AutopilotRunner.start()` to check config and call `_execute_goals_continue_on_block()` when strategy is CONTINUE_ON_BLOCK\n\n## Technical Notes\n\n- File: `swarm_attack/chief_of_staff/config.py` for config changes\n- File: `swarm_attack/chief_of_staff/autopilot_runner.py` for wiring\n- Pattern Reference: See how other enum configs are handled in `from_dict()`/`to_dict()` methods",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        29
+      ],
+      "order": 30,
+      "automation_type": "automated",
+      "parent_issue": 22
+    },
+    {
+      "title": "Add unit tests for continue-on-block execution strategy",
+      "body": "## Description\n\nAdd comprehensive unit tests for the continue-on-block execution strategy covering the DependencyGraph and AutopilotRunner behavior.\n\n## Acceptance Criteria\n\n- [ ] Test that execution continues past a blocked goal to independent goals\n- [ ] Test that DependencyGraph.get_ready_goals() respects dependencies (only returns goals with met dependencies)\n- [ ] Test that execution stops when no ready goals remain (all blocked or completed)\n- [ ] Test that blocked goals create hiccup checkpoints\n\n## Technical Notes\n\n- File: `tests/chief_of_staff/test_autopilot_runner.py` (or create if needed)\n- Pattern Reference: See existing tests in `tests/chief_of_staff/`\n- Use pytest fixtures and mocking for orchestrator/bug_orchestrator dependencies",
+      "labels": [
+        "enhancement",
+        "backend",
+        "chief-of-staff"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        30
+      ],
+      "order": 31,
+      "automation_type": "automated",
+      "parent_issue": 22
     }
   ]
 }
