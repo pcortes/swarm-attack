@@ -8,6 +8,7 @@ with checkpoint-based pause/resume capability. It integrates with:
 - Orchestrator for feature/spec execution (Chief of Staff v3)
 - BugOrchestrator for bug execution (Chief of Staff v3)
 - RecoveryManager for hierarchical retry/escalation
+- ProgressTracker for real-time execution monitoring
 
 Implementation: Real Execution (v3)
 - Full checkpoint trigger validation with real logic
@@ -17,6 +18,7 @@ Implementation: Real Execution (v3)
 - Real execution via BugOrchestrator.fix() for bugs
 - Real execution via Orchestrator.run_spec_pipeline() for specs
 - Hierarchical recovery with RecoveryManager for automatic retries
+- Real-time progress tracking with ProgressTracker
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
@@ -35,6 +38,7 @@ from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalStatus
 from swarm_attack.chief_of_staff.budget import check_budget, get_effective_cost
 from swarm_attack.chief_of_staff.recovery import RecoveryManager
+from swarm_attack.chief_of_staff.progress import ProgressTracker
 
 if TYPE_CHECKING:
     from swarm_attack.orchestrator import Orchestrator
@@ -89,6 +93,7 @@ class AutopilotRunner:
     3. Goal-by-goal execution with progress tracking
     4. Pause on checkpoint triggers, resume from stored state
     5. Hierarchical recovery via RecoveryManager
+    6. Real-time progress monitoring via ProgressTracker
 
     Implementation (v3 Real Execution):
     - Validates all checkpoint logic
@@ -98,6 +103,7 @@ class AutopilotRunner:
     - Calls BugOrchestrator.fix() for bug goals
     - Calls Orchestrator.run_spec_pipeline() for spec goals
     - Uses RecoveryManager for automatic retry/escalation
+    - Uses ProgressTracker for real-time progress updates
 
     Usage:
         runner = AutopilotRunner(
@@ -113,6 +119,9 @@ class AutopilotRunner:
 
         # Resume paused session
         result = runner.resume(session_id)
+
+        # Access progress
+        current_progress = runner.progress_tracker.get_current()
     """
 
     def __init__(
@@ -158,6 +167,10 @@ class AutopilotRunner:
             self.recovery_manager = recovery_manager
         else:
             self.recovery_manager = RecoveryManager(checkpoint_system)
+
+        # Initialize ProgressTracker with path from config
+        progress_base_path = Path(config.storage_path) / "progress"
+        self.progress_tracker = ProgressTracker(progress_base_path)
 
     @staticmethod
     def _parse_duration(duration: str) -> int:
@@ -518,22 +531,39 @@ class AutopilotRunner:
         3. linked_spec -> _execute_spec_goal
         4. No linked artifact -> _execute_generic_goal
 
+        Also updates progress tracker at start and after completion.
+
         Args:
             goal: DailyGoal to execute
 
         Returns:
             GoalExecutionResult with execution outcome
         """
+        # Update progress tracker with current goal at start
+        self.progress_tracker.update(current_goal=goal.description)
+
         # Route based on linked artifact type
         # Priority: feature > bug > spec > generic
         if goal.linked_feature and goal.linked_issue:
-            return self._execute_feature_goal(goal)
+            result = self._execute_feature_goal(goal)
         elif goal.linked_bug:
-            return self._execute_bug_goal(goal)
+            result = self._execute_bug_goal(goal)
         elif goal.linked_spec:
-            return self._execute_spec_goal(goal)
+            result = self._execute_spec_goal(goal)
         else:
-            return self._execute_generic_goal(goal)
+            result = self._execute_generic_goal(goal)
+
+        # Update progress tracker after completion
+        current = self.progress_tracker.get_current()
+        if current is not None:
+            new_completed = current.goals_completed + (1 if result.success else 0)
+            new_cost = current.cost_usd + result.cost_usd
+            self.progress_tracker.update(
+                goals_completed=new_completed,
+                cost_usd=new_cost,
+            )
+
+        return result
 
     def start(
         self,
@@ -570,6 +600,9 @@ class AutopilotRunner:
 
         # Reset daily cost at session start (Issue #12 requirement)
         self.checkpoint_system.reset_daily_cost()
+
+        # Start progress tracking
+        self.progress_tracker.start_session(total_goals=len(goals))
 
         # Create new session
         session_id = str(uuid.uuid4())[:8]
