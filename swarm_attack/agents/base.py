@@ -72,13 +72,8 @@ class AgentResult:
         )
 
     @classmethod
-    def success_result(cls, output: Any = None, cost_usd: float = 0.0, **kwargs) -> AgentResult:
+    def success_result(cls, output: Any = None, cost_usd: float = 0.0) -> AgentResult:
         """Create a successful result."""
-        if kwargs:
-            import traceback
-            import sys
-            print(f"UNEXPECTED KWARGS TO success_result: {kwargs}", file=sys.stderr)
-            traceback.print_stack()
         return cls(success=True, output=output, cost_usd=cost_usd)
 
     @classmethod

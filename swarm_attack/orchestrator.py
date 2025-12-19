@@ -2080,7 +2080,6 @@ class Orchestrator:
                             True,  # Success - issue was handled (by splitting)
                             None,
                             AgentResult.success_result(
-                                agent="orchestrator",
                                 output={
                                     "action": "split",
                                     "sub_issues": split_result.output.get("sub_issues", []),
