@@ -63,10 +63,11 @@ class CoderAgent(BaseAgent):
     STDLIB_MODULES = frozenset([
         # Python standard library
         '__future__', 'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',
-        'enum', 'functools', 'io', 'itertools', 'json', 'logging', 'math',
+        'enum', 'functools', 'inspect', 'io', 'itertools', 'json', 'logging', 'math',
         'os', 'pathlib', 'pickle', 'random', 're', 'shutil', 'string', 'sys',
-        'tempfile', 'time', 'typing', 'unittest', 'uuid', 'warnings', 'contextlib',
-        'threading', 'multiprocessing', 'subprocess', 'socket', 'struct', 'textwrap',
+        'tempfile', 'time', 'traceback', 'typing', 'unittest', 'uuid', 'warnings',
+        'contextlib', 'threading', 'multiprocessing', 'subprocess', 'socket',
+        'struct', 'textwrap', 'hashlib', 'base64', 'argparse', 'configparser',
         # Test frameworks and testing utilities
         'pytest', 'mock', 'unittest.mock', 'pytest_mock', 'pytest_asyncio',
         'faker', 'factory_boy', 'hypothesis',

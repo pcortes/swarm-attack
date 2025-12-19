@@ -627,7 +627,9 @@ def next_command(
 
 
 @app.command("progress")
-def progress_command() -> None:
+def progress_command(
+    history: bool = typer.Option(False, "--history", "-H", help="Show progress history over time"),
+) -> None:
     """Show current progress snapshot.
 
     Displays the current Chief of Staff execution progress including:
@@ -636,6 +638,8 @@ def progress_command() -> None:
     - Duration
     - Current goal (if any)
     - Blockers (if any)
+
+    Use --history to see timestamped progress history entries.
     """
     console = get_console()
 
@@ -645,45 +649,107 @@ def progress_command() -> None:
         # Try to load progress from disk
         tracker.load()
 
-        current = tracker.get_current()
-
         console.print()
-        console.print(Panel(
-            f"[bold]Progress Snapshot[/bold] - {date.today().isoformat()}",
-            style="cyan",
-        ))
 
-        if current is None:
-            console.print("\n[dim]No progress data available.[/dim]")
-            console.print("[dim]Run 'swarm-attack cos autopilot' to start execution.[/dim]")
+        if history:
+            # Show progress history
+            console.print(Panel(
+                f"[bold]Progress History[/bold] - {date.today().isoformat()}",
+                style="cyan",
+            ))
+
+            history_entries = tracker.get_history()
+
+            if not history_entries:
+                console.print("\n[dim]No progress history available.[/dim]")
+                console.print("[dim]Run 'swarm-attack cos autopilot' to start execution.[/dim]")
+                console.print()
+                return
+
+            # Create a table for history
+            table = Table()
+            table.add_column("Timestamp", style="cyan")
+            table.add_column("Progress", justify="center")
+            table.add_column("Cost", justify="right")
+            table.add_column("Duration", justify="right")
+            table.add_column("Goal/Status")
+
+            for snapshot in history_entries:
+                # Format timestamp (extract just the time portion if same day)
+                try:
+                    ts = datetime.fromisoformat(snapshot.timestamp.replace("Z", "+00:00"))
+                    ts_str = ts.strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, AttributeError):
+                    ts_str = snapshot.timestamp[:19] if snapshot.timestamp else "?"
+
+                # Format progress
+                pct = snapshot.completion_percent
+                pct_color = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
+                progress_str = f"{snapshot.goals_completed}/{snapshot.goals_total} [{pct_color}]({pct:.0f}%)[/{pct_color}]"
+
+                # Format cost
+                cost_str = f"${snapshot.cost_usd:.2f}"
+
+                # Format duration
+                duration_str = _format_duration(snapshot.duration_seconds)
+
+                # Format goal/status
+                status_str = ""
+                if snapshot.current_goal:
+                    status_str = snapshot.current_goal[:30]
+                    if len(snapshot.current_goal) > 30:
+                        status_str += "..."
+                if snapshot.blockers:
+                    if status_str:
+                        status_str += " "
+                    status_str += f"[red]({len(snapshot.blockers)} blocker(s))[/red]"
+
+                table.add_row(ts_str, progress_str, cost_str, duration_str, status_str)
+
             console.print()
-            return
+            console.print(table)
+            console.print(f"\n[dim]Total entries: {len(history_entries)}[/dim]")
 
-        # Goals progress
-        pct = current.completion_percent
-        pct_color = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
-        console.print(f"\n[bold]Goals:[/bold] {current.goals_completed}/{current.goals_total} [{pct_color}]({pct:.0f}%)[/{pct_color}]")
+        else:
+            # Show current progress snapshot (original behavior)
+            console.print(Panel(
+                f"[bold]Progress Snapshot[/bold] - {date.today().isoformat()}",
+                style="cyan",
+            ))
 
-        # Cost spent
-        console.print(f"[bold]Cost Spent:[/bold] ${current.cost_usd:.2f}")
+            current = tracker.get_current()
 
-        # Duration
-        duration_str = _format_duration(current.duration_seconds)
-        console.print(f"[bold]Duration:[/bold] {duration_str}")
+            if current is None:
+                console.print("\n[dim]No progress data available.[/dim]")
+                console.print("[dim]Run 'swarm-attack cos autopilot' to start execution.[/dim]")
+                console.print()
+                return
 
-        # Current goal
-        if current.current_goal:
-            console.print(f"\n[bold]Current Goal:[/bold]")
-            console.print(f"  [blue]{current.current_goal}[/blue]")
+            # Goals progress
+            pct = current.completion_percent
+            pct_color = "green" if pct >= 75 else "yellow" if pct >= 50 else "red"
+            console.print(f"\n[bold]Goals:[/bold] {current.goals_completed}/{current.goals_total} [{pct_color}]({pct:.0f}%)[/{pct_color}]")
 
-        # Blockers
-        if current.blockers:
-            console.print(f"\n[bold red]Blockers ({len(current.blockers)}):[/bold red]")
-            for blocker in current.blockers:
-                console.print(f"  [red]![/red] {blocker}")
+            # Cost spent
+            console.print(f"[bold]Cost Spent:[/bold] ${current.cost_usd:.2f}")
 
-        # Timestamp
-        console.print(f"\n[dim]Last updated: {current.timestamp}[/dim]")
+            # Duration
+            duration_str = _format_duration(current.duration_seconds)
+            console.print(f"[bold]Duration:[/bold] {duration_str}")
+
+            # Current goal
+            if current.current_goal:
+                console.print(f"\n[bold]Current Goal:[/bold]")
+                console.print(f"  [blue]{current.current_goal}[/blue]")
+
+            # Blockers
+            if current.blockers:
+                console.print(f"\n[bold red]Blockers ({len(current.blockers)}):[/bold red]")
+                for blocker in current.blockers:
+                    console.print(f"  [red]![/red] {blocker}")
+
+            # Timestamp
+            console.print(f"\n[dim]Last updated: {current.timestamp}[/dim]")
 
         console.print()
 

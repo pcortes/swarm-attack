@@ -3322,9 +3322,6 @@ class Orchestrator:
                     break
 
                 # Check if it was a coder failure (not verifier)
-                # DEBUG: Trace the flow
-                print(f"[DEBUG] cycle_success={cycle_success}, attempt={attempt}, max_retries={max_retries}")
-                print(f"[DEBUG] verifier_result={verifier_result is not None}, verifier_result.output={verifier_result.output if verifier_result else 'N/A'}")
                 if verifier_result and not verifier_result.output:
                     # Check if this is a timeout that should trigger auto-split
                     error_msg = verifier_result.errors[0] if verifier_result.errors else "Unknown error"
@@ -3365,9 +3362,7 @@ class Orchestrator:
                                 )
 
                     # Use RecoveryAgent to analyze ANY coder failure and determine recovery
-                    print(f"[DEBUG] Checking recovery: attempt={attempt} < max_retries={max_retries} -> {attempt < max_retries}")
                     if attempt < max_retries:
-                        print(f"[DEBUG] Calling RecoveryAgent for error: {error_msg[:100]}")
                         recovery_result = self._attempt_recovery_with_agent(
                             feature_id=feature_id,
                             issue_number=issue_number,
