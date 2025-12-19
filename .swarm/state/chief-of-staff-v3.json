@@ -239,7 +239,7 @@
     },
     {
       "issue_number": 11,
-      "stage": "READY",
+      "stage": "BLOCKED",
       "title": "Add campaign progress to standup command",
       "dependencies": [
         6
@@ -247,7 +247,7 @@
       "estimated_size": "small",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Coder keeps writing tests without implementing the module - needs investigation",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
@@ -437,7 +437,7 @@
     },
     {
       "issue_number": 22,
-      "stage": "SPLIT",
+      "stage": "DONE",
       "title": "Implement continue-on-block execution strategy",
       "dependencies": [],
       "estimated_size": "medium",
@@ -498,8 +498,25 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "tests/generated/chief-of-staff-v3/test_issue_25.py",
+          "swarm_attack/chief_of_staff/feedback.py"
+        ],
+        "classes_defined": {
+          "tests/generated/chief-of-staff-v3/test_issue_25.py": [
+            "TestHumanFeedbackDataclass",
+            "TestFeedbackStore",
+            "TestFeedbackFileExists"
+          ],
+          "swarm_attack/chief_of_staff/feedback.py": [
+            "HumanFeedback",
+            "FeedbackStore"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): tests/generated/chief-of-staff-v3/test_issue_25.py, swarm_attack/chief_of_staff/feedback.py; Defined: TestHumanFeedbackDataclass, TestFeedbackStore, TestFeedbackFileExists, HumanFeedback, FeedbackStore",
       "parent_issue": 21,
       "child_issues": []
     },
@@ -598,12 +615,12 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251219_071319_651634",
+  "current_session": "sess_20251219_071829_317234",
   "created_at": "2025-12-19T05:36:34.147250Z",
-  "updated_at": "2025-12-19T07:13:14.729668Z",
-  "cost_total_usd": 5.1092582,
+  "updated_at": "2025-12-19T07:14:19.219433Z",
+  "cost_total_usd": 5.4022022000000005,
   "cost_by_phase": {
     "ISSUES": 0.5134642500000001,
-    "IMPLEMENTATION": 4.59579395
+    "IMPLEMENTATION": 4.88873795
   }
 }
