@@ -27,6 +27,10 @@ def mock_config(tmp_path: Path) -> SwarmConfig:
     # Add required nested attributes for VerifierAgent
     config.tests = MagicMock()
     config.tests.timeout_seconds = 300
+    # Add required nested attributes for RecoveryAgent
+    config.retry = MagicMock()
+    config.retry.max_retries = 3
+    config.retry.backoff_seconds = 5
     return config
 
 
