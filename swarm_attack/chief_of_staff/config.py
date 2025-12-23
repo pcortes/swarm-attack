@@ -28,6 +28,23 @@ class CheckpointConfig:
     duration_minutes: int = 120
     error_streak: int = 3
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CheckpointConfig":
+        """Create config from dictionary."""
+        return cls(
+            budget_usd=data.get("budget_usd", 10.0),
+            duration_minutes=data.get("duration_minutes", 120),
+            error_streak=data.get("error_streak", 3),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            "budget_usd": self.budget_usd,
+            "duration_minutes": self.duration_minutes,
+            "error_streak": self.error_streak,
+        }
+
 
 @dataclass
 class PriorityConfig:
@@ -39,6 +56,29 @@ class PriorityConfig:
     in_progress_weight: float = 0.7
     new_feature_weight: float = 0.5
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PriorityConfig":
+        """Create config from dictionary."""
+        return cls(
+            blocker_weight=data.get("blocker_weight", 1.0),
+            approval_weight=data.get("approval_weight", 0.9),
+            regression_weight=data.get("regression_weight", 0.85),
+            spec_review_weight=data.get("spec_review_weight", 0.88),
+            in_progress_weight=data.get("in_progress_weight", 0.7),
+            new_feature_weight=data.get("new_feature_weight", 0.5),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            "blocker_weight": self.blocker_weight,
+            "approval_weight": self.approval_weight,
+            "regression_weight": self.regression_weight,
+            "spec_review_weight": self.spec_review_weight,
+            "in_progress_weight": self.in_progress_weight,
+            "new_feature_weight": self.new_feature_weight,
+        }
+
 
 @dataclass
 class StandupConfig:
@@ -49,6 +89,27 @@ class StandupConfig:
     include_specs: bool = True
     history_days: int = 7
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "StandupConfig":
+        """Create config from dictionary."""
+        return cls(
+            auto_run_on_start=data.get("auto_run_on_start", False),
+            include_github=data.get("include_github", True),
+            include_tests=data.get("include_tests", True),
+            include_specs=data.get("include_specs", True),
+            history_days=data.get("history_days", 7),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            "auto_run_on_start": self.auto_run_on_start,
+            "include_github": self.include_github,
+            "include_tests": self.include_tests,
+            "include_specs": self.include_specs,
+            "history_days": self.history_days,
+        }
+
 
 @dataclass
 class AutopilotConfig:
@@ -58,13 +119,76 @@ class AutopilotConfig:
     pause_on_approval: bool = True
     pause_on_high_risk: bool = True
     persist_on_checkpoint: bool = True
-    execution_strategy: Any = None  # ExecutionStrategy enum, defaults to SEQUENTIAL
+    execution_strategy: Any = None  # ExecutionStrategy enum, defaults to CONTINUE_ON_BLOCK
+
+    # Jarvis MVP: Risk thresholds
+    risk_checkpoint_threshold: float = 0.5  # Score > this requires checkpoint
+    risk_block_threshold: float = 0.8  # Score > this blocks execution
+
+    # Jarvis MVP: Auto-approve low-risk
+    auto_approve_low_risk: bool = True  # If True, skip checkpoint for risk < 0.3
+
+    # Jarvis MVP: Checkpoint budget (per session) - limits interruptions
+    checkpoint_budget: int = 3  # Max checkpoints before auto-logging instead of pausing
+
+    # Jarvis MVP: Show similar decisions in checkpoint context
+    show_similar_decisions: bool = True  # Include past similar decisions in checkpoint
 
     def __post_init__(self) -> None:
         """Set default execution_strategy if not provided."""
         if self.execution_strategy is None:
             ExecutionStrategy = _get_execution_strategy_enum()
             self.execution_strategy = ExecutionStrategy.SEQUENTIAL
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AutopilotConfig":
+        """Create config from dictionary."""
+        # Parse execution_strategy from string to enum
+        ExecutionStrategy = _get_execution_strategy_enum()
+        execution_strategy_str = data.get("execution_strategy")
+        execution_strategy = None
+        if execution_strategy_str:
+            try:
+                execution_strategy = ExecutionStrategy(execution_strategy_str)
+            except ValueError:
+                execution_strategy = ExecutionStrategy.SEQUENTIAL
+
+        return cls(
+            default_budget=data.get("default_budget", 10.0),
+            default_duration=data.get("default_duration", "2h"),
+            pause_on_approval=data.get("pause_on_approval", True),
+            pause_on_high_risk=data.get("pause_on_high_risk", True),
+            persist_on_checkpoint=data.get("persist_on_checkpoint", True),
+            execution_strategy=execution_strategy,
+            risk_checkpoint_threshold=data.get("risk_checkpoint_threshold", 0.5),
+            risk_block_threshold=data.get("risk_block_threshold", 0.8),
+            auto_approve_low_risk=data.get("auto_approve_low_risk", True),
+            checkpoint_budget=data.get("checkpoint_budget", 3),
+            show_similar_decisions=data.get("show_similar_decisions", True),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert config to dictionary."""
+        # Get execution_strategy value (handle enum or string)
+        exec_strategy = self.execution_strategy
+        if hasattr(exec_strategy, 'value'):
+            exec_strategy_value = exec_strategy.value
+        else:
+            exec_strategy_value = str(exec_strategy)
+
+        return {
+            "default_budget": self.default_budget,
+            "default_duration": self.default_duration,
+            "pause_on_approval": self.pause_on_approval,
+            "pause_on_high_risk": self.pause_on_high_risk,
+            "persist_on_checkpoint": self.persist_on_checkpoint,
+            "execution_strategy": exec_strategy_value,
+            "risk_checkpoint_threshold": self.risk_checkpoint_threshold,
+            "risk_block_threshold": self.risk_block_threshold,
+            "auto_approve_low_risk": self.auto_approve_low_risk,
+            "checkpoint_budget": self.checkpoint_budget,
+            "show_similar_decisions": self.show_similar_decisions,
+        }
 
 
 @dataclass
@@ -102,43 +226,11 @@ class ChiefOfStaffConfig:
         standup_data = data.get("standup", {})
         autopilot_data = data.get("autopilot", {})
 
-        # Parse execution_strategy from string to enum
-        ExecutionStrategy = _get_execution_strategy_enum()
-        execution_strategy_str = autopilot_data.get("execution_strategy", "sequential")
-        try:
-            execution_strategy = ExecutionStrategy(execution_strategy_str)
-        except ValueError:
-            execution_strategy = ExecutionStrategy.SEQUENTIAL
-
         return cls(
-            checkpoints=CheckpointConfig(
-                budget_usd=checkpoints_data.get("budget_usd", 10.0),
-                duration_minutes=checkpoints_data.get("duration_minutes", 120),
-                error_streak=checkpoints_data.get("error_streak", 3),
-            ),
-            priorities=PriorityConfig(
-                blocker_weight=priorities_data.get("blocker_weight", 1.0),
-                approval_weight=priorities_data.get("approval_weight", 0.9),
-                regression_weight=priorities_data.get("regression_weight", 0.85),
-                spec_review_weight=priorities_data.get("spec_review_weight", 0.88),
-                in_progress_weight=priorities_data.get("in_progress_weight", 0.7),
-                new_feature_weight=priorities_data.get("new_feature_weight", 0.5),
-            ),
-            standup=StandupConfig(
-                auto_run_on_start=standup_data.get("auto_run_on_start", False),
-                include_github=standup_data.get("include_github", True),
-                include_tests=standup_data.get("include_tests", True),
-                include_specs=standup_data.get("include_specs", True),
-                history_days=standup_data.get("history_days", 7),
-            ),
-            autopilot=AutopilotConfig(
-                default_budget=autopilot_data.get("default_budget", 10.0),
-                default_duration=autopilot_data.get("default_duration", "2h"),
-                pause_on_approval=autopilot_data.get("pause_on_approval", True),
-                pause_on_high_risk=autopilot_data.get("pause_on_high_risk", True),
-                persist_on_checkpoint=autopilot_data.get("persist_on_checkpoint", True),
-                execution_strategy=execution_strategy,
-            ),
+            checkpoints=CheckpointConfig.from_dict(checkpoints_data),
+            priorities=PriorityConfig.from_dict(priorities_data),
+            standup=StandupConfig.from_dict(standup_data),
+            autopilot=AutopilotConfig.from_dict(autopilot_data),
             storage_path=data.get("storage_path", ".swarm/chief-of-staff"),
             budget_usd=data.get("budget_usd"),
             duration_minutes=data.get("duration_minutes"),
@@ -150,42 +242,11 @@ class ChiefOfStaffConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert config to dictionary."""
-        # Get execution_strategy value (handle enum or string)
-        exec_strategy = self.autopilot.execution_strategy
-        if hasattr(exec_strategy, 'value'):
-            exec_strategy_value = exec_strategy.value
-        else:
-            exec_strategy_value = str(exec_strategy)
-
         return {
-            "checkpoints": {
-                "budget_usd": self.checkpoints.budget_usd,
-                "duration_minutes": self.checkpoints.duration_minutes,
-                "error_streak": self.checkpoints.error_streak,
-            },
-            "priorities": {
-                "blocker_weight": self.priorities.blocker_weight,
-                "approval_weight": self.priorities.approval_weight,
-                "regression_weight": self.priorities.regression_weight,
-                "spec_review_weight": self.priorities.spec_review_weight,
-                "in_progress_weight": self.priorities.in_progress_weight,
-                "new_feature_weight": self.priorities.new_feature_weight,
-            },
-            "standup": {
-                "auto_run_on_start": self.standup.auto_run_on_start,
-                "include_github": self.standup.include_github,
-                "include_tests": self.standup.include_tests,
-                "include_specs": self.standup.include_specs,
-                "history_days": self.standup.history_days,
-            },
-            "autopilot": {
-                "default_budget": self.autopilot.default_budget,
-                "default_duration": self.autopilot.default_duration,
-                "pause_on_approval": self.autopilot.pause_on_approval,
-                "pause_on_high_risk": self.autopilot.pause_on_high_risk,
-                "persist_on_checkpoint": self.autopilot.persist_on_checkpoint,
-                "execution_strategy": exec_strategy_value,
-            },
+            "checkpoints": self.checkpoints.to_dict(),
+            "priorities": self.priorities.to_dict(),
+            "standup": self.standup.to_dict(),
+            "autopilot": self.autopilot.to_dict(),
             "storage_path": self.storage_path,
             "budget_usd": self.budget_usd,
             "duration_minutes": self.duration_minutes,
