@@ -5,7 +5,7 @@ that require human approval before proceeding.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
@@ -17,9 +17,10 @@ import aiofiles.os
 if TYPE_CHECKING:
     from swarm_attack.chief_of_staff.goal_tracker import DailyGoal
     from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+    from swarm_attack.memory.store import MemoryStore
 
 
-class CheckpointTrigger(Enum):
+class CheckpointTriggerKind(Enum):
     """Triggers that cause a checkpoint to be created."""
 
     UX_CHANGE = "UX_CHANGE"
@@ -30,9 +31,9 @@ class CheckpointTrigger(Enum):
     HICCUP = "HICCUP"
 
 
-# Alias for backwards compatibility
-CheckpointTriggerType = CheckpointTrigger
-CheckpointTriggerEnum = CheckpointTrigger
+# Alias for backwards compatibility (internal code uses these)
+CheckpointTriggerType = CheckpointTriggerKind
+CheckpointTriggerEnum = CheckpointTriggerKind
 
 
 @dataclass
@@ -59,6 +60,10 @@ class TriggerCheckResult:
             reason=data["reason"],
             action=data["action"],
         )
+
+
+# Alias: tests expect CheckpointTrigger to be the dataclass with trigger_type, reason, action
+CheckpointTrigger = TriggerCheckResult
 
 
 @dataclass
@@ -225,24 +230,182 @@ class CheckpointStore:
 
     async def list_pending(self) -> list[Checkpoint]:
         """List all pending checkpoints.
-        
+
         Returns:
             List of all checkpoints with status "pending".
         """
         pending = []
-        
+
         if not self.base_path.exists():
             return pending
-        
+
         for file_path in self.base_path.glob("*.json"):
             async with aiofiles.open(file_path, 'r') as f:
                 content = await f.read()
-            
+
             data = json.loads(content)
             if data.get("status") == "pending":
                 pending.append(Checkpoint.from_dict(data))
 
         return pending
+
+    async def _load_all(self) -> list[Checkpoint]:
+        """Load all checkpoints from disk.
+
+        Returns:
+            List of all checkpoints.
+        """
+        checkpoints = []
+
+        if not self.base_path.exists():
+            return checkpoints
+
+        for file_path in self.base_path.glob("*.json"):
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+
+            try:
+                data = json.loads(content)
+                checkpoints.append(Checkpoint.from_dict(data))
+            except (json.JSONDecodeError, KeyError):
+                # Skip corrupted files
+                continue
+
+        return checkpoints
+
+    async def _delete(self, checkpoint_id: str) -> bool:
+        """Delete a checkpoint from disk.
+
+        Args:
+            checkpoint_id: The ID of the checkpoint to delete.
+
+        Returns:
+            True if deleted, False if not found.
+        """
+        file_path = self.base_path / f"{checkpoint_id}.json"
+
+        if not file_path.exists():
+            return False
+
+        try:
+            await aiofiles.os.remove(file_path)
+            return True
+        except OSError:
+            return False
+
+    async def cleanup_stale_checkpoints(self, max_age_hours: int = 24) -> int:
+        """Remove checkpoints older than max_age_hours (async).
+
+        Args:
+            max_age_hours: Maximum age in hours before a pending checkpoint is stale.
+
+        Returns:
+            Number of checkpoints removed.
+        """
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+        removed = 0
+
+        for checkpoint in await self._load_all():
+            try:
+                created_at = datetime.fromisoformat(checkpoint.created_at.replace("Z", "+00:00"))
+                # Make it naive for comparison if needed
+                if created_at.tzinfo is not None:
+                    created_at = created_at.replace(tzinfo=None)
+            except ValueError:
+                # Skip checkpoints with invalid timestamps
+                continue
+
+            if created_at < cutoff and checkpoint.status == "pending":
+                if await self._delete(checkpoint.checkpoint_id):
+                    removed += 1
+
+        return removed
+
+    def cleanup_stale_checkpoints_sync(self, max_age_days: int = 7) -> list[str]:
+        """Remove checkpoints older than max_age_days (sync version using StateCleanupJob).
+
+        This method uses the StateCleanupJob for cleanup. Note: StateCleanupJob
+        only removes files that have 'lifecycle' metadata. Checkpoints without
+        lifecycle metadata are removed by checking created_at directly.
+
+        Args:
+            max_age_days: Maximum age in days before removal.
+
+        Returns:
+            List of checkpoint IDs that were removed.
+        """
+        from swarm_attack.state.lifecycle import StateCleanupJob
+
+        removed_ids: list[str] = []
+
+        if not self.base_path.exists():
+            return removed_ids
+
+        # First, try StateCleanupJob for files with lifecycle metadata
+        cleanup = StateCleanupJob(self.base_path, max_age_days=max_age_days)
+        removed_files = cleanup.run()
+        removed_ids.extend([f.stem for f in removed_files])
+
+        # Also cleanup checkpoints without lifecycle metadata by checking created_at
+        cutoff = datetime.now() - timedelta(days=max_age_days)
+        for state_file in self.base_path.glob("*.json"):
+            if state_file.stem in removed_ids:
+                continue  # Already removed by StateCleanupJob
+
+            try:
+                data = json.loads(state_file.read_text())
+
+                # Skip if has lifecycle (handled by StateCleanupJob)
+                if "lifecycle" in data:
+                    continue
+
+                # Check created_at directly
+                created_at_str = data.get("created_at", "")
+                if not created_at_str:
+                    continue
+
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                if created_at.tzinfo is not None:
+                    created_at = created_at.replace(tzinfo=None)
+
+                if created_at < cutoff:
+                    state_file.unlink()
+                    removed_ids.append(state_file.stem)
+
+            except (json.JSONDecodeError, KeyError, ValueError, OSError):
+                continue
+
+        return removed_ids
+
+    async def deduplicate_pending(self) -> int:
+        """Remove duplicate pending checkpoints, keeping newest.
+
+        Groups checkpoints by trigger type + goal_id and removes older duplicates.
+
+        Returns:
+            Number of duplicates removed.
+        """
+        pending = [cp for cp in await self._load_all() if cp.status == "pending"]
+
+        # Group by (trigger type, goal_id)
+        groups: dict[tuple[str, str], list[Checkpoint]] = {}
+        for cp in pending:
+            key = (cp.trigger.value, cp.goal_id)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(cp)
+
+        removed = 0
+        for key, cps in groups.items():
+            if len(cps) > 1:
+                # Sort by created_at descending (newest first)
+                cps.sort(key=lambda x: x.created_at, reverse=True)
+                # Keep newest, remove rest
+                for old_cp in cps[1:]:
+                    if await self._delete(old_cp.checkpoint_id):
+                        removed += 1
+
+        return removed
 
 
 # Tags that trigger UX_CHANGE (case-insensitive)
@@ -254,32 +417,32 @@ ARCHITECTURE_TAGS = {"architecture", "refactor", "core"}
 
 # Context templates per trigger type
 CONTEXT_TEMPLATES = {
-    CheckpointTrigger.UX_CHANGE: (
+    CheckpointTriggerKind.UX_CHANGE: (
         "This goal involves UI/UX changes that may affect user experience. "
         "Goal: {description}. Tags: {tags}. "
         "Review recommended before proceeding with user-facing changes."
     ),
-    CheckpointTrigger.COST_SINGLE: (
+    CheckpointTriggerKind.COST_SINGLE: (
         "This goal has a high estimated cost of ${cost:.2f} USD, which exceeds "
         "the single-task cost threshold. Goal: {description}. "
         "Consider whether the cost is justified for this task."
     ),
-    CheckpointTrigger.COST_CUMULATIVE: (
+    CheckpointTriggerKind.COST_CUMULATIVE: (
         "Daily cumulative cost budget has been exceeded. "
         "Current daily spend: ${daily_cost:.2f} USD. Goal: {description}. "
         "Consider pausing to review overall spending before continuing."
     ),
-    CheckpointTrigger.ARCHITECTURE: (
+    CheckpointTriggerKind.ARCHITECTURE: (
         "This goal involves architectural or structural changes to the codebase. "
         "Goal: {description}. Tags: {tags}. "
         "Architectural changes may have wide-reaching impacts and should be reviewed."
     ),
-    CheckpointTrigger.SCOPE_CHANGE: (
+    CheckpointTriggerKind.SCOPE_CHANGE: (
         "This is an unplanned goal that was not in the original scope. "
         "Goal: {description}. "
         "Review whether this unplanned work should take priority over planned work."
     ),
-    CheckpointTrigger.HICCUP: (
+    CheckpointTriggerKind.HICCUP: (
         "This goal has encountered issues or errors during execution. "
         "Goal: {description}. Error count: {error_count}. "
         "Review the errors before deciding how to proceed."
@@ -288,27 +451,27 @@ CONTEXT_TEMPLATES = {
 
 # Recommendation templates per trigger type
 RECOMMENDATION_TEMPLATES = {
-    CheckpointTrigger.UX_CHANGE: (
+    CheckpointTriggerKind.UX_CHANGE: (
         "Recommend proceeding with caution. UI/UX changes should be validated "
         "against design specifications and user expectations."
     ),
-    CheckpointTrigger.COST_SINGLE: (
+    CheckpointTriggerKind.COST_SINGLE: (
         "Recommend proceeding if the task is critical. Consider breaking down "
         "into smaller tasks if cost can be reduced."
     ),
-    CheckpointTrigger.COST_CUMULATIVE: (
+    CheckpointTriggerKind.COST_CUMULATIVE: (
         "Recommend reviewing daily progress before continuing. Consider whether "
         "remaining budget should be preserved for higher-priority work."
     ),
-    CheckpointTrigger.ARCHITECTURE: (
+    CheckpointTriggerKind.ARCHITECTURE: (
         "Recommend careful review of architectural changes. Ensure changes align "
         "with overall system design and don't introduce technical debt."
     ),
-    CheckpointTrigger.SCOPE_CHANGE: (
+    CheckpointTriggerKind.SCOPE_CHANGE: (
         "Recommend evaluating priority. Unplanned work may indicate emergent "
         "requirements or scope creep. Assess impact on planned goals."
     ),
-    CheckpointTrigger.HICCUP: (
+    CheckpointTriggerKind.HICCUP: (
         "Recommend reviewing errors before proceeding. Determine if issues are "
         "transient or indicate a deeper problem requiring investigation."
     ),
@@ -339,15 +502,22 @@ class CheckpointSystem:
     # Keywords that require approval
     APPROVAL_KEYWORDS = ["approve", "approval", "confirm", "review"]
 
-    def __init__(self, config: Any = None, store: Optional[CheckpointStore] = None):
+    def __init__(
+        self,
+        config: Any = None,
+        store: Optional[CheckpointStore] = None,
+        memory_store: Optional["MemoryStore"] = None,
+    ):
         """Initialize the checkpoint system.
 
         Args:
             config: Configuration (optional).
             store: CheckpointStore for persistence (optional).
+            memory_store: MemoryStore for cross-session learning (optional).
         """
         self.config = config
         self.store = store or CheckpointStore()
+        self._memory = memory_store
         self._error_count = 0
         self.daily_cost = 0.0
 
@@ -375,31 +545,31 @@ class CheckpointSystem:
 
         # UX_CHANGE: tags contain ui, ux, frontend
         if goal_tags_lower & UX_CHANGE_TAGS:
-            triggers.append(CheckpointTrigger.UX_CHANGE)
+            triggers.append(CheckpointTriggerKind.UX_CHANGE)
 
         # COST_SINGLE: estimated_cost_usd > config.checkpoint_cost_single
         if goal.estimated_cost_usd is not None and self.config is not None:
             cost_single_threshold = getattr(self.config, "checkpoint_cost_single", 5.0)
             if goal.estimated_cost_usd > cost_single_threshold:
-                triggers.append(CheckpointTrigger.COST_SINGLE)
+                triggers.append(CheckpointTriggerKind.COST_SINGLE)
 
         # COST_CUMULATIVE: daily_cost > config.checkpoint_cost_daily
         if self.config is not None:
             cost_daily_threshold = getattr(self.config, "checkpoint_cost_daily", 15.0)
             if self.daily_cost > cost_daily_threshold:
-                triggers.append(CheckpointTrigger.COST_CUMULATIVE)
+                triggers.append(CheckpointTriggerKind.COST_CUMULATIVE)
 
         # ARCHITECTURE: tags contain architecture, refactor, core
         if goal_tags_lower & ARCHITECTURE_TAGS:
-            triggers.append(CheckpointTrigger.ARCHITECTURE)
+            triggers.append(CheckpointTriggerKind.ARCHITECTURE)
 
         # SCOPE_CHANGE: is_unplanned == True
         if goal.is_unplanned:
-            triggers.append(CheckpointTrigger.SCOPE_CHANGE)
+            triggers.append(CheckpointTriggerKind.SCOPE_CHANGE)
 
         # HICCUP: error_count > 0 or is_hiccup == True
         if goal.error_count > 0 or goal.is_hiccup:
-            triggers.append(CheckpointTrigger.HICCUP)
+            triggers.append(CheckpointTriggerKind.HICCUP)
 
         return triggers
 
@@ -737,5 +907,27 @@ class CheckpointSystem:
 
         # Save the updated checkpoint
         await self.store.save(checkpoint)
+
+        # Record decision in memory layer for cross-session learning
+        if self._memory is not None:
+            from uuid import uuid4
+            from swarm_attack.memory.store import MemoryEntry
+
+            self._memory.add(MemoryEntry(
+                id=str(uuid4()),
+                category="checkpoint_decision",
+                feature_id=checkpoint.goal_id,
+                issue_number=None,
+                content={
+                    "trigger": checkpoint.trigger.value,
+                    "context": checkpoint.context[:500],  # Truncate for storage
+                    "decision": chosen_option,
+                    "notes": notes[:200] if notes else None,
+                },
+                outcome="applied",
+                created_at=datetime.now().isoformat(),
+                tags=[checkpoint.trigger.value, chosen_option],
+            ))
+            self._memory.save()
 
         return checkpoint
