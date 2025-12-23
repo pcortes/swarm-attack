@@ -189,6 +189,11 @@ class GoalTracker:
         self.log_manager = log_manager
         self._goals: list[DailyGoal] = []
 
+    @property
+    def daily_log_manager(self) -> DailyLogManager:
+        """Alias for log_manager for compatibility."""
+        return self.log_manager
+
     def add_goal(self, goal: DailyGoal) -> None:
         """Add a goal to track."""
         self._goals.append(goal)
@@ -197,8 +202,66 @@ class GoalTracker:
         """Get all tracked goals."""
         return self._goals.copy()
 
-    def reconcile_with_state(self, snapshot: RepoStateSnapshot) -> list[Recommendation]:
+    def reconcile_with_state(
+        self, snapshot: RepoStateSnapshot
+    ) -> list[dict[str, Any]]:
         """Reconcile goals with current repo state.
+
+        Updates goal statuses based on linked feature/bug phases.
+
+        Args:
+            snapshot: Current state of the repository.
+
+        Returns:
+            List of dicts with goal_id and new_status for changed goals.
+        """
+        changes: list[dict[str, Any]] = []
+        today_log = self.log_manager.get_today()
+
+        # Build lookup maps for features and bugs
+        feature_phases = {f.feature_id: f.phase for f in snapshot.features}
+        bug_phases = {b.bug_id: b.phase for b in snapshot.bugs}
+
+        for goal_data in today_log.goals:
+            goal = (
+                DailyGoal.from_dict(goal_data)
+                if isinstance(goal_data, dict)
+                else goal_data
+            )
+
+            new_status: Optional[GoalStatus] = None
+
+            # Check if goal is linked to a feature
+            if goal.linked_feature and goal.linked_feature in feature_phases:
+                phase = feature_phases[goal.linked_feature]
+                if phase in FEATURE_PHASE_TO_STATUS:
+                    new_status = FEATURE_PHASE_TO_STATUS[phase]
+
+            # Check if goal is linked to a bug
+            elif goal.linked_bug and goal.linked_bug in bug_phases:
+                phase = bug_phases[goal.linked_bug]
+                if phase in BUG_PHASE_TO_STATUS:
+                    new_status = BUG_PHASE_TO_STATUS[phase]
+
+            # If status changed, record it
+            if new_status is not None and new_status != goal.status:
+                changes.append({
+                    "goal_id": goal.goal_id,
+                    "new_status": new_status,
+                    "old_status": goal.status,
+                    "reason": f"Linked item phase changed",
+                })
+                # Update the goal
+                goal.status = new_status
+
+        return changes
+
+    def _generate_recommendations_internal(
+        self, snapshot: RepoStateSnapshot
+    ) -> list[Recommendation]:
+        """Generate prioritized recommendations based on repo state.
+
+        This is the original reconcile logic that returns recommendations.
 
         Args:
             snapshot: Current state of the repository.
@@ -327,7 +390,8 @@ class GoalTracker:
             goals: List of goals to set for today.
         """
         today_log = self.log_manager.get_today()
-        today_log.goals = [g.to_dict() if isinstance(g, DailyGoal) else g for g in goals]
+        # Store the DailyGoal objects directly (not as dicts)
+        today_log.goals = goals
         self.log_manager.save_log(today_log)
 
     def update_goal(
@@ -449,12 +513,10 @@ class GoalTracker:
     def generate_recommendations(self, snapshot: RepoStateSnapshot) -> list[Recommendation]:
         """Generate prioritized recommendations based on repo state.
 
-        This is an alias for reconcile_with_state to match the expected interface.
-
         Args:
             snapshot: Current repository state.
 
         Returns:
             List of prioritized recommendations.
         """
-        return self.reconcile_with_state(snapshot)
+        return self._generate_recommendations_internal(snapshot)
