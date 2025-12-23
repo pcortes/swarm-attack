@@ -962,29 +962,24 @@ class AutopilotRunner:
             checkpoint_result = self._run_checkpoint_check(goal)
 
             if checkpoint_result.requires_approval and not checkpoint_result.approved:
-                # Use blocking UX instead of just pausing
-                checkpoint = checkpoint_result.checkpoint
-                if checkpoint:
-                    decision = self.checkpoint_ux.prompt_and_wait(checkpoint)
+                # Pause immediately - don't block on interactive prompt during autopilot
+                checkpoint_pending = True
+                session.state = AutopilotState.PAUSED
 
-                    if decision.chosen_option == "Proceed":
-                        # Continue with this goal - fall through to execute
-                        pass
-                    elif decision.chosen_option == "Skip":
-                        # Mark as skipped, continue to next
-                        goal.status = GoalStatus.BLOCKED
-                        blocked_goal_ids.add(goal.goal_id)
-                        continue
-                    else:  # Pause or other
-                        checkpoint_pending = True
-                        session.state = AutopilotState.PAUSED
-                        if self.on_checkpoint:
-                            self.on_checkpoint(checkpoint.trigger)
-                        break
-                else:
-                    checkpoint_pending = True
-                    session.state = AutopilotState.PAUSED
-                    break
+                # Mark goal as blocked pending approval
+                goal.status = GoalStatus.BLOCKED
+                blocked_goal_ids.add(goal.goal_id)
+
+                # Store checkpoint for later resolution
+                if checkpoint_result.checkpoint:
+                    session.pending_checkpoint = checkpoint_result.checkpoint
+
+                    # Fire callback to notify listeners
+                    if self.on_checkpoint:
+                        self.on_checkpoint(checkpoint_result.checkpoint.trigger)
+
+                # Exit execution loop - control returns to caller
+                break
 
             # Check budget before execution
             remaining_budget = budget_usd - total_cost
