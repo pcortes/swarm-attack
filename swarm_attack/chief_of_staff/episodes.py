@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from swarm_attack.chief_of_staff.checkpoints import Checkpoint
+    from swarm_attack.memory.store import MemoryStore
 
 
 @dataclass
@@ -232,11 +233,19 @@ class PreferenceLearner:
 
     Analyzes checkpoint resolutions to learn user preferences
     for future recommendations and autopilot behavior.
+
+    Optionally backed by MemoryStore for persistent cross-session learning.
     """
 
-    def __init__(self) -> None:
-        """Initialize PreferenceLearner."""
+    def __init__(self, memory_store: Optional["MemoryStore"] = None) -> None:
+        """Initialize PreferenceLearner.
+
+        Args:
+            memory_store: Optional MemoryStore for persistent decision history.
+                         If provided, find_similar_decisions will query memory.
+        """
         self.signals: list[PreferenceSignal] = []
+        self._memory = memory_store
 
     def extract_signal(self, checkpoint: "Checkpoint") -> Optional[PreferenceSignal]:
         """Extract a preference signal from a resolved checkpoint.
@@ -284,6 +293,74 @@ class PreferenceLearner:
         """
         return self.signals.copy()
 
+    def record_decision(self, checkpoint: "Checkpoint") -> PreferenceSignal:
+        """Record a decision from a resolved checkpoint.
+
+        Args:
+            checkpoint: A resolved checkpoint with a decision.
+
+        Returns:
+            PreferenceSignal with the recorded decision.
+        """
+        # Determine if this was an acceptance (proceed, approve, etc)
+        chosen_option = checkpoint.chosen_option or ""
+        chosen_lower = chosen_option.lower()
+        was_accepted = any(
+            kw in chosen_lower
+            for kw in ["proceed", "approve", "accept", "continue", "yes"]
+        )
+
+        # Get trigger value as string
+        trigger_value = (
+            checkpoint.trigger.value
+            if hasattr(checkpoint.trigger, 'value')
+            else str(checkpoint.trigger)
+        )
+
+        # Build signal_type based on approval/rejection and trigger
+        # Format: "approved_<trigger_lower>" or "rejected_<trigger_lower>"
+        prefix = "approved" if was_accepted else "rejected"
+        signal_type = f"{prefix}_{trigger_value.lower()}"
+
+        signal = PreferenceSignal(
+            signal_type=signal_type,
+            trigger=trigger_value,
+            chosen_option=chosen_option,
+            context_summary=checkpoint.context[:200] if checkpoint.context else "",
+            timestamp=datetime.now().isoformat(),
+            was_accepted=was_accepted,
+        )
+        self.signals.append(signal)
+        return signal
+
+    def get_signals_by_trigger(self, trigger: str) -> list[PreferenceSignal]:
+        """Get all signals for a specific trigger type.
+
+        Args:
+            trigger: The trigger type to filter by (e.g., "COST_SINGLE").
+
+        Returns:
+            List of PreferenceSignal objects matching the trigger.
+        """
+        return [s for s in self.signals if s.trigger == trigger]
+
+    def get_approval_rate(self, trigger: str) -> float:
+        """Calculate the approval rate for a trigger type.
+
+        Args:
+            trigger: The trigger type to calculate rate for.
+
+        Returns:
+            Float between 0.0 and 1.0 representing approval rate.
+            Returns 0.0 if no signals exist for this trigger.
+        """
+        matching_signals = self.get_signals_by_trigger(trigger)
+        if not matching_signals:
+            return 0.0
+
+        approvals = sum(1 for s in matching_signals if s.was_accepted)
+        return approvals / len(matching_signals)
+
     # Tag to trigger type mapping for find_similar_decisions
     TAG_TO_TRIGGER_MAP = {
         "ui": "UX_CHANGE",
@@ -300,6 +377,9 @@ class PreferenceLearner:
     ) -> list[dict[str, Any]]:
         """Find similar past checkpoint decisions for a goal.
 
+        If memory_store is provided, queries persistent memory for decisions.
+        Otherwise, falls back to in-memory signals.
+
         Args:
             goal: A DailyGoal object with tags attribute.
             k: Maximum number of results to return (default: 3).
@@ -308,9 +388,96 @@ class PreferenceLearner:
             List of dicts with keys: trigger, context_summary, was_accepted,
             chosen_option, timestamp. Sorted by recency (most recent first).
         """
-        if not self.signals:
+        result: list[dict[str, Any]] = []
+
+        # If memory store is available, query it for persistent decisions
+        if self._memory is not None:
+            result = self._query_memory_for_decisions(goal, k)
+
+        # If no memory results, fall back to in-memory signals
+        if not result and self.signals:
+            result = self._query_signals_for_decisions(goal, k)
+
+        return result
+
+    def _query_memory_for_decisions(
+        self, goal: DailyGoalProtocol, k: int
+    ) -> list[dict[str, Any]]:
+        """Query MemoryStore for past checkpoint decisions.
+
+        Args:
+            goal: A DailyGoal object with tags attribute.
+            k: Maximum number of results to return.
+
+        Returns:
+            List of decision dicts from memory.
+        """
+        if self._memory is None:
             return []
 
+        # Query memory for checkpoint decisions
+        entries = self._memory.query(
+            category="checkpoint_decision",
+            limit=k * 2,  # Get more than needed to filter by relevance
+        )
+
+        if not entries:
+            return []
+
+        # Determine which triggers are relevant based on goal tags
+        relevant_triggers: set[str] = set(self.ALWAYS_RELEVANT_TRIGGERS)
+        for tag in goal.tags:
+            tag_lower = tag.lower()
+            if tag_lower in self.TAG_TO_TRIGGER_MAP:
+                relevant_triggers.add(self.TAG_TO_TRIGGER_MAP[tag_lower])
+
+        # Also consider ALL triggers if no specific matches
+        # (better to show something than nothing)
+        all_triggers = {"HICCUP", "COST_SINGLE", "COST_CUMULATIVE", "UX_CHANGE", "ARCHITECTURE", "SCOPE_CHANGE"}
+
+        # Filter and convert entries to output format
+        result: list[dict[str, Any]] = []
+        for entry in entries:
+            trigger = entry.content.get("trigger", "")
+            decision = entry.content.get("decision", "")
+            context = entry.content.get("context", "")
+
+            # Check if trigger is relevant or use all if no relevant found
+            if trigger in relevant_triggers or (not relevant_triggers and trigger in all_triggers):
+                # Determine was_accepted from decision text
+                was_accepted = any(
+                    kw in decision.lower()
+                    for kw in ["proceed", "approve", "accept", "continue", "yes"]
+                )
+
+                result.append({
+                    "trigger": trigger,
+                    "context_summary": context[:200] if context else "",
+                    "was_accepted": was_accepted,
+                    "chosen_option": decision,
+                    "timestamp": entry.created_at,
+                })
+
+            if len(result) >= k:
+                break
+
+        # Sort by timestamp descending (most recent first)
+        result.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+        return result[:k]
+
+    def _query_signals_for_decisions(
+        self, goal: DailyGoalProtocol, k: int
+    ) -> list[dict[str, Any]]:
+        """Query in-memory signals for past decisions (legacy behavior).
+
+        Args:
+            goal: A DailyGoal object with tags attribute.
+            k: Maximum number of results to return.
+
+        Returns:
+            List of decision dicts from in-memory signals.
+        """
         # Determine which triggers are relevant based on goal tags
         relevant_triggers: set[str] = set(self.ALWAYS_RELEVANT_TRIGGERS)
 

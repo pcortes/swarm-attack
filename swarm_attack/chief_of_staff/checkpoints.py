@@ -65,6 +65,15 @@ class TriggerCheckResult:
 # Alias: tests expect CheckpointTrigger to be the dataclass with trigger_type, reason, action
 CheckpointTrigger = TriggerCheckResult
 
+# Also expose enum values on CheckpointTrigger for backward compatibility
+# (some tests use CheckpointTrigger.COST_SINGLE as if it's an enum)
+CheckpointTrigger.UX_CHANGE = CheckpointTriggerKind.UX_CHANGE
+CheckpointTrigger.COST_SINGLE = CheckpointTriggerKind.COST_SINGLE
+CheckpointTrigger.COST_CUMULATIVE = CheckpointTriggerKind.COST_CUMULATIVE
+CheckpointTrigger.ARCHITECTURE = CheckpointTriggerKind.ARCHITECTURE
+CheckpointTrigger.SCOPE_CHANGE = CheckpointTriggerKind.SCOPE_CHANGE
+CheckpointTrigger.HICCUP = CheckpointTriggerKind.HICCUP
+
 
 @dataclass
 class CheckpointOption:
