@@ -114,11 +114,24 @@ class AutopilotSessionStore:
     
     def list_all(self) -> list[str]:
         """Return all session IDs.
-        
+
         Returns:
             List of all session IDs (file stems of JSON files).
         """
         return [f.stem for f in self._storage_path.glob("*.json")]
+
+    def list_sessions(self) -> list[AutopilotSession]:
+        """Return all sessions as AutopilotSession objects.
+
+        Returns:
+            List of all AutopilotSession objects.
+        """
+        sessions = []
+        for session_id in self.list_all():
+            session = self.load(session_id)
+            if session is not None:
+                sessions.append(session)
+        return sessions
     
     def delete(self, session_id: str) -> None:
         """Remove session file.

@@ -1055,25 +1055,18 @@ class AutopilotRunner:
 
         Returns:
             AutopilotRunResult with updated session state
+
+        Raises:
+            ValueError: If session not found or not in paused state.
         """
         # Load session
         session = self.session_store.load(session_id)
         if session is None:
-            return AutopilotRunResult(
-                session=AutopilotSession(
-                    session_id=session_id,
-                    state=AutopilotState.FAILED,
-                    goals=[],
-                    current_goal_index=0,
-                    total_cost_usd=0.0,
-                    started_at=datetime.now(timezone.utc).isoformat(),
-                ),
-                goals_completed=0,
-                goals_total=0,
-                total_cost_usd=0.0,
-                duration_seconds=0,
-                error=f"Session {session_id} not found",
-            )
+            raise ValueError(f"Session not found: {session_id}")
+
+        # Check if session is paused
+        if session.state != AutopilotState.PAUSED:
+            raise ValueError(f"Session {session_id} is not paused (state: {session.state.value})")
 
         # Reconstruct goals from session
         goals = [DailyGoal.from_dict(g) for g in session.goals]
@@ -1088,3 +1081,47 @@ class AutopilotRunner:
             budget_usd=session.budget_usd,
             duration_minutes=session.duration_minutes,
         )
+
+    def _describe_goal(self, goal: DailyGoal) -> str:
+        """Generate a human-readable description of a goal.
+
+        Args:
+            goal: The goal to describe.
+
+        Returns:
+            A string description of the goal.
+        """
+        if goal.linked_feature:
+            return f"[Feature] {goal.description} (feature: {goal.linked_feature})"
+        elif goal.linked_bug:
+            return f"[Bug] {goal.description} (bug: {goal.linked_bug})"
+        else:
+            return f"[Manual] {goal.description}"
+
+    def list_paused_sessions(self) -> list[AutopilotSession]:
+        """List all paused autopilot sessions.
+
+        Returns:
+            List of AutopilotSession objects in PAUSED state.
+        """
+        all_sessions = self.session_store.list_sessions()
+        return [s for s in all_sessions if s.state == AutopilotState.PAUSED]
+
+    def cancel(self, session_id: str) -> bool:
+        """Cancel an autopilot session.
+
+        Args:
+            session_id: ID of session to cancel.
+
+        Returns:
+            True if session was cancelled, False if not found.
+        """
+        session = self.session_store.load(session_id)
+        if session is None:
+            return False
+
+        session.state = AutopilotState.FAILED
+        session.error_message = "Cancelled by user"
+        session.completed_at = datetime.now(timezone.utc).isoformat()
+        self.session_store.save(session)
+        return True
