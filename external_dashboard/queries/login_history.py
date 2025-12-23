@@ -14,10 +14,10 @@ def get_db_connection():
 
 def get_user_login_history(user_id: str) -> Optional[dict]:
     """Retrieve login history for a user from the auth logs database.
-    
+
     Args:
         user_id: The unique identifier of the user.
-        
+
     Returns:
         A dictionary containing:
             - login_history: List of login timestamps (most recent first)
@@ -27,32 +27,31 @@ def get_user_login_history(user_id: str) -> Optional[dict]:
     """
     if not user_id:
         return None
-    
+
     try:
         conn = get_db_connection()
         with conn:
-            cursor = conn.cursor()
-            with cursor:
+            with conn.cursor() as cursor:
                 # Query login events from auth logs, ordered by timestamp descending
                 cursor.execute(
                     "SELECT timestamp FROM auth_logs WHERE user_id = %s AND event_type = 'login' ORDER BY timestamp DESC",
                     (user_id,)
                 )
                 login_results = cursor.fetchall()
-                
+
                 # Query user data for last_active and total_actions
                 cursor.execute(
                     "SELECT last_active, total_actions FROM users WHERE user_id = %s",
                     (user_id,)
                 )
                 user_data = cursor.fetchone()
-                
+
                 if user_data is None:
                     return None
-                
+
                 # Extract login timestamps
                 login_history = [row["timestamp"] for row in login_results]
-                
+
                 return {
                     "login_history": login_history,
                     "last_active": user_data["last_active"],

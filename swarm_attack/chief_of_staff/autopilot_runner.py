@@ -36,10 +36,13 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
 from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
 from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger
+from swarm_attack.chief_of_staff.checkpoint_ux import CheckpointUX, CheckpointDecision
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalStatus
 from swarm_attack.chief_of_staff.budget import check_budget, get_effective_cost
 from swarm_attack.chief_of_staff.recovery import RecoveryManager
 from swarm_attack.chief_of_staff.progress import ProgressTracker
+from swarm_attack.chief_of_staff.risk_scoring import RiskScoringEngine
+from swarm_attack.chief_of_staff.preflight import PreFlightChecker
 
 if TYPE_CHECKING:
     from swarm_attack.orchestrator import Orchestrator
@@ -215,6 +218,8 @@ class AutopilotRunner:
         bug_orchestrator: Optional["BugOrchestrator"] = None,
         recovery_manager: Optional[RecoveryManager] = None,
         episode_store: Optional["EpisodeStore"] = None,
+        risk_engine: Optional[RiskScoringEngine] = None,
+        preflight_checker: Optional[PreFlightChecker] = None,
         on_goal_start: Optional[Callable[[DailyGoal], None]] = None,
         on_goal_complete: Optional[Callable[[DailyGoal, GoalExecutionResult], None]] = None,
         on_checkpoint: Optional[Callable[[CheckpointTrigger], None]] = None,
@@ -254,6 +259,18 @@ class AutopilotRunner:
         progress_base_path = Path(config.storage_path) / "progress"
         self.progress_tracker = ProgressTracker(progress_base_path)
 
+        # Risk scoring + pre-flight validation (Jarvis safety layer)
+        self.risk_engine = risk_engine or RiskScoringEngine(
+            episode_store=self.episode_store
+        )
+        self.preflight_checker = preflight_checker or PreFlightChecker(
+            risk_engine=self.risk_engine
+        )
+        self._preflight_checkpoint_triggered = False
+
+        # Blocking checkpoint UX (Self-Healing Jarvis)
+        self.checkpoint_ux = CheckpointUX()
+
     @staticmethod
     def _parse_duration(duration: str) -> int:
         """Parse duration string to minutes.
@@ -282,6 +299,32 @@ class AutopilotRunner:
             total_minutes = int(duration)
 
         return total_minutes if total_minutes > 0 else 120  # Default 2 hours
+
+    def _build_preflight_context(
+        self,
+        session_budget: float,
+        spent_usd: float,
+        completed_goals: set[str],
+        blocked_goals: set[str],
+    ) -> dict:
+        """Build a minimal context payload for PreFlightChecker."""
+        return {
+            "session_budget": session_budget,
+            "spent_usd": spent_usd,
+            "completed_goals": completed_goals,
+            "blocked_goals": blocked_goals,
+        }
+
+    def _run_preflight(self, goal: DailyGoal, context: dict):
+        """Run pre-flight validation if configured."""
+        if not self.preflight_checker:
+            return None
+
+        try:
+            return self.preflight_checker.validate(goal, context)
+        except Exception:
+            # Fail open if preflight validation errors to avoid blocking execution unexpectedly
+            return None
 
     def _execute_feature_goal_sync(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a feature goal via Orchestrator (synchronous).
@@ -621,8 +664,9 @@ class AutopilotRunner:
         Returns:
             GoalExecutionResult with execution outcome
         """
-        # Update progress tracker with current goal at start
-        self.progress_tracker.update(current_goal=goal.description)
+        # Update progress tracker with current goal at start (if session active)
+        if self.progress_tracker.get_current() is not None:
+            self.progress_tracker.update(current_goal=goal.description)
 
         # Route based on linked artifact type
         # Priority: feature > bug > spec > generic
@@ -702,6 +746,29 @@ class AutopilotRunner:
 
             # Execute the first ready goal
             goal = ready_goals[0]
+
+            # Pre-flight validation (risk + budget + dependencies)
+            preflight_context = self._build_preflight_context(
+                session_budget=budget_usd,
+                spent_usd=total_cost,
+                completed_goals=completed,
+                blocked_goals=blocked,
+            )
+            preflight_result = self._run_preflight(goal, preflight_context)
+
+            if preflight_result:
+                if not preflight_result.passed:
+                    goal.status = GoalStatus.BLOCKED
+                    goal.is_hiccup = True
+                    blocked.add(goal.goal_id)
+                    continue
+
+                if preflight_result.requires_checkpoint:
+                    goal.status = GoalStatus.BLOCKED
+                    goal.is_hiccup = True
+                    blocked.add(goal.goal_id)
+                    self._preflight_checkpoint_triggered = True
+                    break
 
             # Check budget before execution
             remaining_budget = budget_usd - total_cost
@@ -827,13 +894,18 @@ class AutopilotRunner:
 
         # Use continue-on-block strategy if configured
         if execution_strategy == ES.CONTINUE_ON_BLOCK:
+            self._preflight_checkpoint_triggered = False
             goals_completed, total_cost, blocked = self._execute_goals_continue_on_block(
                 goals, budget_usd, session
             )
 
             # Finalize session
             duration = int(time.time() - start_time)
-            session.state = AutopilotState.COMPLETED
+            session.state = (
+                AutopilotState.PAUSED
+                if self._preflight_checkpoint_triggered
+                else AutopilotState.COMPLETED
+            )
             session.completed_at = datetime.now(timezone.utc).isoformat()
             session.total_cost_usd = total_cost
 
@@ -846,29 +918,73 @@ class AutopilotRunner:
                 goals_total=len(goals),
                 total_cost_usd=total_cost,
                 duration_seconds=duration,
+                error="Pre-flight checkpoint required"
+                if self._preflight_checkpoint_triggered
+                else None,
             )
 
         # Default: Sequential execution
         goals_completed = 0
         total_cost = 0.0
         checkpoint_pending = False
+        completed_goal_ids: set[str] = set()
+        blocked_goal_ids: set[str] = set()
 
         for i, goal in enumerate(goals):
             session.current_goal_index = i
+
+            # Pre-flight validation (risk + budget + dependencies)
+            preflight_context = self._build_preflight_context(
+                session_budget=budget_usd,
+                spent_usd=total_cost,
+                completed_goals=completed_goal_ids,
+                blocked_goals=blocked_goal_ids,
+            )
+            preflight_result = self._run_preflight(goal, preflight_context)
+
+            if preflight_result:
+                if not preflight_result.passed:
+                    goal.status = GoalStatus.BLOCKED
+                    goal.is_hiccup = True
+                    checkpoint_pending = preflight_result.requires_checkpoint
+                    session.state = AutopilotState.PAUSED
+                    break
+
+                if preflight_result.requires_checkpoint:
+                    goal.status = GoalStatus.BLOCKED
+                    goal.is_hiccup = True
+                    checkpoint_pending = True
+                    session.state = AutopilotState.PAUSED
+                    break
 
             # Check checkpoint before execution (Issue #12 requirement)
             # This checks for triggers like COST, UX_CHANGE, ARCHITECTURE, etc.
             checkpoint_result = self._run_checkpoint_check(goal)
 
             if checkpoint_result.requires_approval and not checkpoint_result.approved:
-                # Checkpoint requires approval - pause execution
-                checkpoint_pending = True
-                session.state = AutopilotState.PAUSED
+                # Use blocking UX instead of just pausing
+                checkpoint = checkpoint_result.checkpoint
+                if checkpoint:
+                    decision = self.checkpoint_ux.prompt_and_wait(checkpoint)
 
-                if self.on_checkpoint and checkpoint_result.checkpoint:
-                    self.on_checkpoint(checkpoint_result.checkpoint.trigger)
-
-                break
+                    if decision.chosen_option == "Proceed":
+                        # Continue with this goal - fall through to execute
+                        pass
+                    elif decision.chosen_option == "Skip":
+                        # Mark as skipped, continue to next
+                        goal.status = GoalStatus.BLOCKED
+                        blocked_goal_ids.add(goal.goal_id)
+                        continue
+                    else:  # Pause or other
+                        checkpoint_pending = True
+                        session.state = AutopilotState.PAUSED
+                        if self.on_checkpoint:
+                            self.on_checkpoint(checkpoint.trigger)
+                        break
+                else:
+                    checkpoint_pending = True
+                    session.state = AutopilotState.PAUSED
+                    break
 
             # Check budget before execution
             remaining_budget = budget_usd - total_cost
@@ -898,8 +1014,10 @@ class AutopilotRunner:
             if result.success:
                 goal.status = GoalStatus.COMPLETE
                 goals_completed += 1
+                completed_goal_ids.add(goal.goal_id)
             else:
                 goal.status = GoalStatus.BLOCKED
+                blocked_goal_ids.add(goal.goal_id)
 
             # Check if execution returned checkpoint_pending
             if result.checkpoint_pending:
