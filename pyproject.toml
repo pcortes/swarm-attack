@@ -49,3 +49,19 @@ include = ["swarm_attack*"]
 
 [tool.setuptools.package-data]
 swarm_attack = ["*.md", "*.yaml", "*.yml"]
+
+[tool.coverage.run]
+source = ["swarm_attack/qa"]
+branch = true
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+fail_under = 80
+
+[tool.coverage.html]
+directory = "htmlcov"
