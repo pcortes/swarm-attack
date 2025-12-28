@@ -1,0 +1,3 @@
+# This directory stores timestamped verification findings
+# Each run creates a new file: YYYYMMDD_HHMMSS_qa_verification.md
+# Do not delete historical findings - they serve as audit trail
