@@ -29,6 +29,7 @@ from swarm_attack.utils.fs import FileSystemError, file_exists, read_file
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
+    from swarm_attack.events.types import EventType, SwarmEvent
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
     from swarm_attack.universal_context_builder import AgentContext
@@ -442,6 +443,66 @@ class BaseAgent(ABC):
             )
 
         return "\n\n".join(sections)
+
+    def _emit_event(
+        self,
+        event_type: "EventType",
+        feature_id: str = "",
+        issue_number: Optional[int] = None,
+        bug_id: Optional[str] = None,
+        payload: Optional[dict] = None,
+        confidence: float = 0.0,
+    ) -> "SwarmEvent":
+        """
+        Emit an event from this agent.
+
+        Events are routed through the EventBus to subscribers and persisted
+        for debugging and replay.
+
+        Args:
+            event_type: The type of event (from EventType enum).
+            feature_id: Associated feature ID, if any.
+            issue_number: Associated issue number, if any.
+            bug_id: Associated bug ID, if any.
+            payload: Additional data for the event.
+            confidence: Confidence score (0.0-1.0) for auto-approval decisions.
+
+        Returns:
+            The emitted SwarmEvent.
+        """
+        from swarm_attack.events.bus import get_event_bus
+        from swarm_attack.events.types import SwarmEvent
+
+        event = SwarmEvent(
+            event_type=event_type,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            bug_id=bug_id,
+            source_agent=self.__class__.__name__,
+            payload=payload or {},
+            confidence=confidence,
+        )
+
+        # Get swarm_dir from config if available
+        swarm_dir = None
+        if hasattr(self.config, "swarm_dir"):
+            swarm_dir = self.config.swarm_dir
+        elif hasattr(self.config, "repo_root"):
+            swarm_dir = Path(self.config.repo_root) / ".swarm"
+
+        bus = get_event_bus(swarm_dir)
+        bus.emit(event)
+
+        self._log(
+            "event_emitted",
+            {
+                "event_type": event_type.value,
+                "feature_id": feature_id,
+                "event_id": event.event_id,
+            },
+        )
+
+        return event
 
     @abstractmethod
     def run(self, context: dict[str, Any]) -> AgentResult:
