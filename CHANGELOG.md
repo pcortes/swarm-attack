@@ -11,7 +11,7 @@ This release includes comprehensive bug fixes from the bug bash session (BUG-1 t
 #### Input Validation & Security
 
 - **BUG-1/BUG-3: Path Traversal Prevention** - Feature and bug IDs now reject `..`, `/`, and `\` characters to prevent directory traversal attacks
-- **BUG-6: Shell Metacharacter Validation** - IDs reject shell metacharacters (`$`, backticks, `|`, `;`, etc.)
+- **Shell Metacharacter Validation** - IDs reject shell metacharacters (`$`, backticks, `|`, `;`, etc.)
 - **BUG-9: Empty Description Validation** - `bug init` now rejects empty or whitespace-only descriptions
 - **BUG-10: Positive Integer Validation** - Issue numbers must be >= 1 (enforced in `TaskRef` and CLI)
 - **BUG-11: ID Format Validation** - Feature IDs must be lowercase alphanumeric with hyphens (max 64 chars)

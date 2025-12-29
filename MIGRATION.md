@@ -61,7 +61,8 @@ from swarm_attack.chief_of_staff.backlog_discovery import TestFailureDiscoveryAg
 # New (recommended)
 from swarm_attack.chief_of_staff.validation_gates import TestingValidationGate
 from swarm_attack.chief_of_staff.critics import TestingCritic
-from swarm_attack.chief_of_staff.backlog_discovery import FailureDiscoveryAgent
+# Note: FailureDiscoveryAgent must be imported from the submodule directly
+from swarm_attack.chief_of_staff.backlog_discovery.discovery_agent import FailureDiscoveryAgent
 ```
 
 ### Complete Rename Table
@@ -83,12 +84,17 @@ from swarm_attack.chief_of_staff.backlog_discovery import FailureDiscoveryAgent
 A new validation module provides input validation utilities:
 
 ```python
-from swarm_attack.validation.input_validator import InputValidator
+from swarm_attack.validation.input_validator import InputValidator, ValidationError
 
-# Validate feature ID
+# Validate feature ID - returns validated string or ValidationError
 result = InputValidator.validate_feature_id("my-feature")
-if not result.is_valid:
-    print(f"Error: {result.error}")
+if isinstance(result, ValidationError):
+    print(f"Error: {result.message}")
+    print(f"Expected: {result.expected}")
+    print(f"Got: {result.got}")
+    print(f"Hint: {result.hint}")
+else:
+    print(f"Valid feature ID: {result}")
 
 # Validate positive integer
 result = InputValidator.validate_positive_int(42, "issue_number")

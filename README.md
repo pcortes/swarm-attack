@@ -441,7 +441,7 @@ Swarm Attack validates all user inputs to prevent security issues and ensure dat
 When validation fails, you'll see detailed error messages:
 
 ```
-ValidationError: Budget must be positive
+Error: Budget must be positive
   Expected: float > 0
   Got: 0.0
   Hint: Provide a positive budget value (e.g., 10.0)
