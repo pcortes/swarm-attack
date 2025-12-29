@@ -634,11 +634,24 @@ class StateStore:
         for task in state.tasks:
             # Only include outputs from DONE tasks
             if task.stage == TaskStage.DONE and task.outputs:
+                # Include files that were created
                 for file_path in task.outputs.files_created:
                     registry["modules"][file_path] = {
                         "created_by_issue": task.issue_number,
+                        "modified": False,
                         "classes": task.outputs.classes_defined.get(file_path, []),
                     }
+
+                # P0 FIX: Also include classes from modified files (not just created)
+                # This prevents schema drift when classes are added to existing files
+                for file_path, classes in task.outputs.classes_defined.items():
+                    if file_path not in registry["modules"]:
+                        # File was modified (has classes) but not created
+                        registry["modules"][file_path] = {
+                            "created_by_issue": task.issue_number,
+                            "modified": True,  # Flag that this was modified, not created
+                            "classes": classes,
+                        }
 
         return registry
 

@@ -1090,7 +1090,12 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
         return test_files
 
-    def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:
+    def _extract_outputs(
+        self,
+        files: dict[str, str],
+        files_modified: Optional[list[str]] = None,
+        base_path: Optional[Path] = None,
+    ) -> IssueOutput:
         """
         Extract classes/functions from written files.
 
@@ -1098,7 +1103,10 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         what was created for context handoff to subsequent issues.
 
         Args:
-            files: Dictionary mapping file paths to their contents.
+            files: Dictionary mapping file paths to their contents (newly created files).
+            files_modified: Optional list of paths to files that were modified (not created).
+                           These will be read from disk to extract classes.
+            base_path: Base path for reading modified files. Defaults to config.repo_root.
 
         Returns:
             IssueOutput with files_created and classes_defined.
@@ -1106,31 +1114,61 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         files_created = list(files.keys())
         classes_defined: dict[str, list[str]] = {}
 
+        # Extract classes from newly created files (content passed in)
         for path, content in files.items():
-            classes: list[str] = []
-
-            if path.endswith(".py"):
-                # Parse Python files for class definitions
-                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
-                classes.extend(matches)
-            elif path.endswith(".dart"):
-                # Parse Dart files for class definitions
-                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
-                classes.extend(matches)
-            elif path.endswith(".ts") or path.endswith(".tsx"):
-                # Parse TypeScript files for class/interface definitions
-                class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
-                interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
-                classes.extend(class_matches)
-                classes.extend(interface_matches)
-
+            classes = self._extract_classes_from_content(path, content)
             if classes:
                 classes_defined[path] = classes
+
+        # Extract classes from modified files (read from disk)
+        if files_modified:
+            effective_base = base_path or Path(self.config.repo_root)
+            for path in files_modified:
+                try:
+                    full_path = effective_base / path
+                    if file_exists(full_path):
+                        content = read_file(full_path)
+                        classes = self._extract_classes_from_content(path, content)
+                        if classes:
+                            classes_defined[path] = classes
+                except Exception:
+                    # Skip files that can't be read (nonexistent, permission errors, etc.)
+                    pass
 
         return IssueOutput(
             files_created=files_created,
             classes_defined=classes_defined,
         )
+
+    def _extract_classes_from_content(self, path: str, content: str) -> list[str]:
+        """
+        Extract class names from file content.
+
+        Args:
+            path: File path (used to determine file type).
+            content: File content to parse.
+
+        Returns:
+            List of class names found in the content.
+        """
+        classes: list[str] = []
+
+        if path.endswith(".py"):
+            # Parse Python files for class definitions
+            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            classes.extend(matches)
+        elif path.endswith(".dart"):
+            # Parse Dart files for class definitions
+            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            classes.extend(matches)
+        elif path.endswith(".ts") or path.endswith(".tsx"):
+            # Parse TypeScript files for class/interface definitions
+            class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
+            interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
+            classes.extend(class_matches)
+            classes.extend(interface_matches)
+
+        return classes
 
     def _build_prompt(
         self,
@@ -1801,7 +1839,12 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         implementation_summary = self._generate_summary(files_created, files_modified, issue)
 
         # Extract outputs for module registry (context handoff to subsequent issues)
-        issue_outputs = self._extract_outputs(files)
+        # P0 FIX: Pass files_modified so classes from modified files are tracked
+        issue_outputs = self._extract_outputs(
+            files,
+            files_modified=files_modified,
+            base_path=base_path,
+        )
 
         # Success
         self._log(
