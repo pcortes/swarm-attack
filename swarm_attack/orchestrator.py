@@ -43,6 +43,8 @@ from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.summarizer import SummarizerAgent
 from swarm_attack.context_builder import ContextBuilder
 from swarm_attack.event_logger import EventLogger
+from swarm_attack.events.bus import EventBus, get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
 from swarm_attack.github.issue_context import IssueContextManager
 from swarm_attack.github_sync import GitHubSync
 from swarm_attack.models import FeaturePhase, TaskStage
@@ -655,12 +657,17 @@ class Orchestrator:
         return "continue", consecutive_no_improvement
 
     def _update_phase(self, feature_id: str, phase: FeaturePhase) -> None:
-        """Update the feature phase in the state store."""
+        """Update the feature phase in the state store and emit event."""
+        old_phase = None
         if self._state_store:
             state = self._state_store.load(feature_id)
             if state:
+                old_phase = state.phase
                 state.update_phase(phase)
                 self._state_store.save(state)
+
+        # Emit phase transition event
+        self._emit_phase_transition(feature_id, old_phase, phase)
 
     def _update_cost(self, feature_id: str, cost_usd: float, phase_name: str) -> None:
         """Update the cost tracking in the state store."""
@@ -669,6 +676,61 @@ class Orchestrator:
             if state:
                 state.add_cost(cost_usd, phase_name)
                 self._state_store.save(state)
+
+    def _emit_phase_transition(
+        self,
+        feature_id: str,
+        from_phase: Optional[FeaturePhase],
+        to_phase: FeaturePhase,
+    ) -> None:
+        """
+        Emit a phase transition event.
+
+        Maps FeaturePhase transitions to appropriate EventTypes and
+        emits them through the event bus.
+
+        Args:
+            feature_id: The feature being transitioned.
+            from_phase: Previous phase (may be None for first transition).
+            to_phase: New phase.
+        """
+        swarm_dir = Path(self.config.repo_root) / ".swarm"
+        bus = get_event_bus(swarm_dir)
+
+        # Map specific transitions to semantic events
+        event_type = EventType.SYSTEM_PHASE_TRANSITION
+
+        if to_phase == FeaturePhase.SPEC_NEEDS_APPROVAL:
+            # Spec debate succeeded, ready for approval
+            event_type = EventType.SPEC_REVIEW_COMPLETE
+        elif to_phase == FeaturePhase.SPEC_APPROVED:
+            event_type = EventType.SPEC_APPROVED
+        elif to_phase == FeaturePhase.COMPLETE:
+            event_type = EventType.IMPL_VERIFIED
+
+        from_phase_str = from_phase.value if from_phase else "INITIAL"
+        to_phase_str = to_phase.value
+
+        event = SwarmEvent(
+            event_type=event_type,
+            feature_id=feature_id,
+            source_agent="Orchestrator",
+            payload={
+                "from_phase": from_phase_str,
+                "to_phase": to_phase_str,
+            },
+        )
+        bus.emit(event)
+
+        self._log(
+            "phase_transition_event",
+            {
+                "feature_id": feature_id,
+                "from_phase": from_phase_str,
+                "to_phase": to_phase_str,
+                "event_type": event_type.value,
+            },
+        )
 
     def _check_spec_files_indicate_success(self, feature_id: str) -> tuple[bool, dict[str, float]]:
         """
