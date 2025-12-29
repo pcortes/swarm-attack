@@ -421,3 +421,268 @@ When running Chief of Staff and encountering bugs in the tooling itself:
 5. **Resume** - Continue Chief of Staff operations after fix
 
 See `prompts/CHIEF_OF_STAFF_PROMPT.md` for the full autonomous operation prompt.
+
+## Auto-Approval System (v0.3.0)
+
+Enables autonomous operation by auto-approving routine decisions while pausing for human review on risky changes.
+
+### Auto-Approvers
+
+| Approver | Threshold | Conditions |
+|----------|-----------|------------|
+| **SpecAutoApprover** | Score ≥ 0.85 | After 2+ debate rounds |
+| **IssueAutoGreenlighter** | Complexity gate passed | Has interface contract, no circular deps |
+| **BugAutoApprover** | Confidence ≥ 0.9 | Risk level low/medium, no API breaks |
+
+### CLI Usage
+
+```bash
+# Enable auto-approval mode
+swarm-attack approve my-feature --auto
+
+# Force manual mode (requires human approval)
+swarm-attack approve my-feature --manual
+
+# Check current mode
+swarm-attack status my-feature
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/auto_approval/spec.py` | Spec auto-approval logic |
+| `swarm_attack/auto_approval/issue.py` | Issue greenlight logic |
+| `swarm_attack/auto_approval/bug.py` | Bug fix auto-approval |
+| `swarm_attack/auto_approval/overrides.py` | Manual mode overrides |
+
+## Event Infrastructure (v0.3.0)
+
+Pub/sub event system for agent communication and audit logging.
+
+### Event Types
+
+```python
+from swarm_attack.events.types import EventType
+
+# Available event types (27 total):
+EventType.SPEC_APPROVED      # Spec passed debate
+EventType.SPEC_REJECTED      # Spec failed debate
+EventType.ISSUE_CREATED      # GitHub issue created
+EventType.ISSUE_GREENLIGHTED # Issue ready for implementation
+EventType.IMPL_STARTED       # Coder started work
+EventType.IMPL_COMPLETED     # Coder finished successfully
+EventType.IMPL_FAILED        # Coder failed
+EventType.BUG_ANALYZED       # Root cause identified
+EventType.BUG_FIXED          # Bug fix verified
+EventType.AUTO_APPROVED      # Auto-approval triggered
+EventType.CHECKPOINT_CREATED # Human checkpoint created
+# ... and more
+```
+
+### Using the EventBus
+
+```python
+from swarm_attack.events.bus import get_event_bus, EventType
+
+bus = get_event_bus()
+
+# Subscribe to events
+def on_impl_complete(event):
+    print(f"Issue #{event.issue_number} completed!")
+
+bus.subscribe(EventType.IMPL_COMPLETED, on_impl_complete)
+
+# Emit events (typically done by agents)
+bus.emit_phase_transition("my-feature", "IMPLEMENTING", "COMPLETE")
+```
+
+### Event Persistence
+
+Events are stored in JSONL format at `.swarm/events/events-YYYY-MM-DD.jsonl`:
+
+```python
+from swarm_attack.events.persistence import EventPersistence
+
+persistence = EventPersistence(config)
+
+# Query recent events
+events = persistence.get_recent(limit=50)
+
+# Query by feature
+events = persistence.get_by_feature("my-feature")
+```
+
+## Session Initialization Protocol (v0.3.0)
+
+Standardized 5-step initialization for all agent sessions.
+
+### Protocol Steps
+
+1. **Verify Working Directory** - Confirm correct repo/worktree
+2. **Verify Issue Assignment** - Load issue context and dependencies
+3. **Run Verification Tests** - Execute pre-existing tests to establish baseline
+4. **Load Prior Context** - Get completed summaries and module registry
+5. **Initialize Progress Tracking** - Start progress.txt logging
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **SessionInitializer** | Orchestrates the 5-step protocol |
+| **ProgressLogger** | Append-only logging to `.swarm/features/{id}/progress.txt` |
+| **SessionFinalizer** | Ensures all tests pass before marking complete |
+| **VerificationTracker** | JSON status at `.swarm/features/{id}/verification.json` |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/session_initializer.py` | Main initialization logic |
+| `swarm_attack/progress_logger.py` | Progress file management |
+| `swarm_attack/session_finalizer.py` | Completion verification |
+| `swarm_attack/verification_tracker.py` | Verification state tracking |
+
+## Universal Context Builder (v0.3.0)
+
+Provides right-sized context to each agent type with token budget management.
+
+### Agent Context Profiles
+
+| Agent | Token Budget | Depth | Includes |
+|-------|--------------|-------|----------|
+| **Coder** | 15,000 | full_source | Project instructions, module registry, completed summaries, test structure |
+| **Verifier** | 3,000 | compact | Module registry, test paths |
+| **SpecAuthor** | 8,000 | summary | PRD, existing patterns |
+| **IssueCreator** | 5,000 | summary | Spec, sizing guidelines |
+
+### Usage
+
+```python
+from swarm_attack.universal_context_builder import UniversalContextBuilder
+
+builder = UniversalContextBuilder(config, state_store)
+
+# Build context for a specific agent
+context = builder.build_context_for_agent(
+    agent_type="coder",
+    feature_id="my-feature",
+    issue_number=3,
+)
+
+# Context includes:
+# - project_instructions (from CLAUDE.md)
+# - module_registry (classes from prior issues)
+# - completed_summaries (what prior issues built)
+# - test_structure (test file locations)
+```
+
+### BaseAgent Integration
+
+All agents can use context injection:
+
+```python
+class MyAgent(BaseAgent):
+    def run(self, context: dict):
+        # Get formatted context for prompt
+        context_section = self._get_context_prompt_section()
+        prompt = f"{context_section}\n\n{self._build_task_prompt()}"
+```
+
+## QA Session Extension (v0.3.0)
+
+Coverage tracking and regression detection for QA workflows.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **CoverageTracker** | Captures test coverage baselines and computes deltas |
+| **RegressionDetector** | Detects new test failures vs baseline |
+| **QASessionExtension** | Orchestrates coverage + regression checks |
+
+### Blocking Conditions
+
+Sessions are blocked when:
+- **Critical regressions** detected (previously passing tests now fail)
+- **Coverage drop > 10%** from baseline
+
+### Usage
+
+```python
+from swarm_attack.qa.session_extension import QASessionExtension
+
+extension = QASessionExtension(config)
+
+# Start of session - capture baseline
+extension.on_session_start(feature_id="my-feature")
+
+# ... run implementation ...
+
+# End of session - check for regressions
+result = extension.on_session_complete(feature_id="my-feature")
+
+if result.should_block:
+    print(f"Blocked: {result.block_reason}")
+else:
+    print("Session completed successfully")
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/qa/coverage_tracker.py` | Coverage baseline and delta |
+| `swarm_attack/qa/regression_detector.py` | Regression detection |
+| `swarm_attack/qa/session_extension.py` | Orchestration |
+
+## Context Flow & Schema Drift Prevention (v0.3.0)
+
+Prevents duplicate class definitions across issues by tracking what each issue creates or modifies.
+
+### How It Works
+
+1. **CoderAgent** extracts classes from both created AND modified files
+2. **StateStore** saves class definitions in module registry
+3. **Next issue** receives rich context showing existing classes with source code
+4. **Coder prompt** includes "DO NOT RECREATE" warnings with import statements
+
+### Module Registry
+
+```python
+# What the coder sees in context:
+## Existing Classes (MUST IMPORT - DO NOT RECREATE)
+
+### From `swarm_attack/models/session.py` (Issue #1)
+**Import:** `from swarm_attack.models.session import AutopilotSession`
+
+**Class `AutopilotSession`:**
+```python
+@dataclass
+class AutopilotSession:
+    session_id: str
+    feature_id: str
+    started_at: str
+    goals: list[str] = field(default_factory=list)
+```
+
+### Modified File Tracking
+
+When an issue modifies an existing file (adds classes to it), those classes are now tracked:
+
+```python
+# Issue #1 modifies models/base.py and adds ConfigParser class
+outputs = coder._extract_outputs(
+    files={},  # No new files
+    files_modified=["models/base.py"],  # Modified existing file
+)
+# ConfigParser is now in module registry for Issue #2 to see
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/agents/coder.py:_extract_outputs()` | Extracts classes from created + modified files |
+| `swarm_attack/state_store.py:get_module_registry()` | Builds registry including modified files |
+| `swarm_attack/context_builder.py` | Formats rich context with source code |
