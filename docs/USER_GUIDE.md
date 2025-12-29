@@ -834,6 +834,261 @@ Bug analysis uses multiple agents with debate validation:
 
 ---
 
+## 12. Testing v0.3.0 Features
+
+This section provides manual testing instructions for all v0.3.0 features.
+
+### 12.1 Test Auto-Approval System
+
+```bash
+# Create a test feature
+swarm-attack init test-auto-approval
+# Edit .claude/prds/test-auto-approval.md with a simple PRD
+
+# Run spec debate (should take 2+ rounds)
+swarm-attack run test-auto-approval
+
+# Check if auto-approval triggers (score >= 0.85)
+swarm-attack status test-auto-approval
+# Look for: "Auto-approved: Yes" or manual approval prompt
+
+# Test manual override
+swarm-attack approve test-auto-approval --manual
+# Should require explicit approval even if threshold met
+
+# Test auto mode
+swarm-attack approve test-auto-approval --auto
+# Should auto-approve if thresholds met
+```
+
+**Verify:**
+- [ ] Specs with score >= 0.85 after 2 rounds auto-approve
+- [ ] `--manual` flag forces human approval
+- [ ] `--auto` flag enables auto-approval
+
+### 12.2 Test Event Infrastructure
+
+```python
+# Run in Python REPL
+from swarm_attack.events.bus import get_event_bus, EventType
+from swarm_attack.events.types import SwarmEvent
+
+bus = get_event_bus()
+
+# Test subscription
+events_received = []
+def handler(event):
+    events_received.append(event)
+    print(f"Received: {event.event_type}")
+
+bus.subscribe(EventType.IMPL_COMPLETED, handler)
+
+# Test emission
+bus.emit(SwarmEvent(
+    event_type=EventType.IMPL_COMPLETED,
+    feature_id="test-feature",
+    issue_number=1,
+    source_agent="test",
+))
+
+assert len(events_received) == 1
+print("EventBus works!")
+```
+
+```python
+# Test persistence
+from swarm_attack.events.persistence import EventPersistence
+from swarm_attack.config import SwarmConfig
+
+config = SwarmConfig.load()
+persistence = EventPersistence(config)
+
+# Query recent events
+events = persistence.get_recent(limit=10)
+print(f"Found {len(events)} recent events")
+
+# Query by feature
+events = persistence.get_by_feature("test-feature")
+print(f"Found {len(events)} events for test-feature")
+```
+
+**Verify:**
+- [ ] Events are received by subscribers
+- [ ] Events are persisted to `.swarm/events/events-YYYY-MM-DD.jsonl`
+- [ ] Events can be queried by feature
+
+### 12.3 Test Session Initialization Protocol
+
+```python
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.config import SwarmConfig
+
+config = SwarmConfig.load()
+initializer = SessionInitializer(config)
+
+# Test initialization
+result = initializer.initialize_session(
+    feature_id="test-feature",
+    issue_number=1,
+)
+
+print(f"Working directory verified: {result.working_dir_verified}")
+print(f"Issue loaded: {result.issue_loaded}")
+print(f"Baseline tests: {result.baseline_test_count}")
+```
+
+```python
+# Test progress logging
+from swarm_attack.progress_logger import ProgressLogger
+
+logger = ProgressLogger(config, "test-feature")
+logger.log_session_start(issue_number=1)
+logger.log_checkpoint("Tests written", {"test_count": 5})
+logger.log_session_end(success=True)
+
+# Check progress file
+# cat .swarm/features/test-feature/progress.txt
+```
+
+**Verify:**
+- [ ] 5-step initialization completes
+- [ ] Progress logged to `.swarm/features/{id}/progress.txt`
+- [ ] Verification status saved to `.swarm/features/{id}/verification.json`
+
+### 12.4 Test Universal Context Builder
+
+```python
+from swarm_attack.universal_context_builder import UniversalContextBuilder
+from swarm_attack.config import SwarmConfig
+from swarm_attack.state_store import StateStore
+
+config = SwarmConfig.load()
+state_store = StateStore(config)
+builder = UniversalContextBuilder(config, state_store)
+
+# Build context for different agents
+coder_ctx = builder.build_context_for_agent("coder", "test-feature", 1)
+verifier_ctx = builder.build_context_for_agent("verifier", "test-feature", 1)
+
+print(f"Coder token budget: {coder_ctx.token_count}")
+print(f"Verifier token budget: {verifier_ctx.token_count}")
+
+# Coder should have more context
+assert coder_ctx.token_count > verifier_ctx.token_count
+print("Token budgets correct!")
+```
+
+**Verify:**
+- [ ] Coder gets ~15,000 tokens of context
+- [ ] Verifier gets ~3,000 tokens of context
+- [ ] Context includes project instructions, module registry
+
+### 12.5 Test QA Session Extension
+
+```python
+from swarm_attack.qa.session_extension import QASessionExtension
+from swarm_attack.qa.coverage_tracker import CoverageTracker
+from swarm_attack.qa.regression_detector import RegressionDetector
+from swarm_attack.config import SwarmConfig
+
+config = SwarmConfig.load()
+extension = QASessionExtension(config)
+
+# Simulate session start
+extension.on_session_start("test-feature")
+
+# Check baseline captured
+tracker = CoverageTracker(config)
+baseline = tracker.get_latest_baseline("test-feature")
+print(f"Baseline captured: {baseline is not None}")
+
+# Simulate session complete (no regressions)
+result = extension.on_session_complete("test-feature")
+print(f"Should block: {result.should_block}")
+print(f"Block reason: {result.block_reason}")
+```
+
+**Verify:**
+- [ ] Coverage baseline captured at session start
+- [ ] Regressions detected if tests fail
+- [ ] Session blocked on critical regressions
+
+### 12.6 Test Schema Drift Prevention
+
+```python
+from swarm_attack.agents.coder import CoderAgent
+from swarm_attack.state_store import StateStore
+from swarm_attack.config import SwarmConfig
+from swarm_attack.models import IssueOutput, TaskRef, TaskStage, RunState, FeaturePhase
+from pathlib import Path
+import tempfile
+
+config = SwarmConfig.load()
+state_store = StateStore(config)
+
+# Create a temp directory with a "modified" file
+with tempfile.TemporaryDirectory() as tmp:
+    # Create file with classes
+    models_dir = Path(tmp) / "models"
+    models_dir.mkdir()
+    (models_dir / "user.py").write_text('''
+@dataclass
+class User:
+    user_id: str
+    name: str
+''')
+
+    # Test extraction from modified file
+    coder = CoderAgent(config)
+    outputs = coder._extract_outputs(
+        files={},  # No new files
+        files_modified=["models/user.py"],
+        base_path=Path(tmp),
+    )
+
+    print(f"Classes found: {outputs.classes_defined}")
+    assert "models/user.py" in outputs.classes_defined
+    assert "User" in outputs.classes_defined["models/user.py"]
+    print("Modified file tracking works!")
+```
+
+**Verify:**
+- [ ] Classes extracted from modified files (not just created)
+- [ ] Module registry includes modified file classes
+- [ ] Coder prompt shows existing classes with source code
+
+### 12.7 Run Automated Tests
+
+```bash
+# Run all v0.3.0 feature tests
+PYTHONPATH=. pytest tests/unit/test_auto_approval.py -v
+PYTHONPATH=. pytest tests/unit/test_events.py -v
+PYTHONPATH=. pytest tests/unit/test_session_initializer.py -v
+PYTHONPATH=. pytest tests/unit/test_universal_context_builder.py -v
+PYTHONPATH=. pytest tests/unit/qa/test_session_extension.py -v
+PYTHONPATH=. pytest tests/integration/test_context_flow_fixes.py -v
+
+# Run all at once
+PYTHONPATH=. pytest tests/unit/test_auto_approval.py \
+    tests/unit/test_events.py \
+    tests/unit/test_session_initializer.py \
+    tests/unit/test_universal_context_builder.py \
+    tests/unit/qa/test_session_extension.py \
+    tests/integration/test_context_flow_fixes.py \
+    -v --tb=short
+```
+
+**Expected Results:**
+- Auto-approval: 22 tests passing
+- Events: 26 tests passing
+- Session init: 18 tests passing
+- Universal context: 20 tests passing
+- QA session: 15 tests passing
+- Context flow: 9 tests passing
+- **Total: 110+ tests passing**
+
+---
+
 ## Getting Help
 
 - **CLAUDE.md**: See `CLAUDE.md` for system overview
@@ -847,4 +1102,4 @@ swarm-attack bug --help
 
 ---
 
-*This guide was written for Swarm Attack. Commands and behavior may change in future versions.*
+*This guide was written for Swarm Attack v0.3.0. Commands and behavior may change in future versions.*
