@@ -353,7 +353,7 @@ swarm-attack bug status bug-id
 | **ComplexityGate** | Estimates issue complexity; triggers auto-split for oversized issues |
 | **IssueSplitter** | Automatically splits complex issues into 2-4 smaller sub-issues |
 | **Implementation Agent** | TDD in single context (tests + code + iteration) with dynamic max_turns |
-| **Verifier** | Validates implementations and creates commits |
+| **Verifier** | Validates implementations, detects schema drift, and creates commits |
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
@@ -413,6 +413,67 @@ After split (#5 → #10, #11, #12):
 - First child inherits parent's dependencies
 - Children are chained sequentially
 - Dependents rewired to last child
+
+## Input Validation
+
+Swarm Attack validates all user inputs to prevent security issues and ensure data integrity.
+
+### Feature & Bug IDs
+
+- Must be lowercase alphanumeric with hyphens (e.g., `my-feature`, `bug-123`)
+- Maximum 64 characters
+- Cannot contain path traversal sequences (`..`, `/`, `\`)
+- Cannot contain shell metacharacters (`$`, backticks, `|`, `;`, etc.)
+
+### Budget & Duration
+
+- Budget must be positive (> 0)
+- Duration format: `2h`, `90m`, `1h30m`
+- Duration must be positive
+
+### Issue Numbers
+
+- Must be positive integers (>= 1)
+- Validated in `TaskRef` model and CLI commands
+
+### Validation Errors
+
+When validation fails, you'll see detailed error messages:
+
+```
+ValidationError: Budget must be positive
+  Expected: float > 0
+  Got: 0.0
+  Hint: Provide a positive budget value (e.g., 10.0)
+```
+
+## Schema Drift Detection
+
+The Verifier agent detects **schema drift** - when implementations create duplicate class definitions across different modules.
+
+### How It Works
+
+1. Tracks all classes defined in the codebase via `module_registry`
+2. When verifying new code, checks if new classes conflict with existing ones
+3. Uses AST parsing to detect legitimate subclasses (allowed) vs duplicates (blocked)
+
+### Example
+
+```python
+# models/user.py
+class User:  # Original definition
+    pass
+
+# services/user.py
+class User:  # SCHEMA DRIFT - duplicate class name
+    pass
+
+# services/admin.py
+class AdminUser(User):  # ALLOWED - subclass of existing class
+    pass
+```
+
+The Verifier will fail with a schema conflict error for the duplicate, but allow the subclass.
 
 ## License
 
