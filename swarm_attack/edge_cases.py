@@ -67,10 +67,14 @@ class ContextExhaustedError(EdgeCaseError):
     pass
 
 
-class TestFailureError(EdgeCaseError):
-    """Tests failed during verification."""
+class ExecutionFailureError(EdgeCaseError):
+    """Tests failed during verification. (Renamed from TestFailureError for BUG-14)"""
 
     pass
+
+
+# BUG-14: Backward compatibility alias
+TestFailureError = ExecutionFailureError
 
 
 class StateInconsistencyError(EdgeCaseError):
@@ -487,9 +491,9 @@ class ContextExhaustedHandler(BaseHandler):
 # =============================================================================
 
 
-class TestFailureHandler(BaseHandler):
+class FailureHandler(BaseHandler):
     """
-    Handles test failures during verification.
+    Handles test failures during verification. (Renamed from TestFailureHandler for BUG-14)
 
     Tracks retry count per issue and retries up to max_implementation_retries.
     """
@@ -557,6 +561,10 @@ class TestFailureHandler(BaseHandler):
                 "retry_count": retry_count,
             },
         )
+
+
+# BUG-14: Backward compatibility alias
+TestFailureHandler = FailureHandler
 
 
 # =============================================================================

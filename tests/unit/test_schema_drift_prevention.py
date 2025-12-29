@@ -358,6 +358,108 @@ class BaseSession(BaseSession):
         # Same file = modification, not duplication
         assert len(conflicts) == 0
 
+    def test_duplicate_not_subclass_still_flagged(self, tmp_path):
+        """Duplicate class without inheritance should still be flagged."""
+        from swarm_attack.agents.verifier import VerifierAgent
+
+        mock_config = MagicMock()
+        mock_config.repo_root = tmp_path
+
+        verifier = VerifierAgent(mock_config)
+
+        # Create file with same class name but NO inheritance
+        new_file = tmp_path / "duplicate.py"
+        new_file.write_text("""
+class BaseSession:
+    other_field: str
+""")
+
+        new_classes = {
+            "duplicate.py": ["BaseSession"],
+        }
+
+        registry = {
+            "modules": {
+                "models.py": {
+                    "created_by_issue": 1,
+                    "classes": ["BaseSession"],
+                },
+            }
+        }
+
+        conflicts = verifier._check_duplicate_classes(new_classes, registry)
+
+        # Not a subclass, should be flagged
+        assert len(conflicts) == 1
+        assert conflicts[0]["class_name"] == "BaseSession"
+
+    def test_inherits_from_different_class_still_flagged(self, tmp_path):
+        """Class inheriting from different class should still be flagged."""
+        from swarm_attack.agents.verifier import VerifierAgent
+
+        mock_config = MagicMock()
+        mock_config.repo_root = tmp_path
+
+        verifier = VerifierAgent(mock_config)
+
+        # Create file with same class name but inheriting from different class
+        new_file = tmp_path / "wrong_parent.py"
+        new_file.write_text("""
+class OtherClass:
+    pass
+
+class BaseSession(OtherClass):
+    extra_field: str
+""")
+
+        new_classes = {
+            "wrong_parent.py": ["BaseSession"],
+        }
+
+        registry = {
+            "modules": {
+                "models.py": {
+                    "created_by_issue": 1,
+                    "classes": ["BaseSession"],
+                },
+            }
+        }
+
+        conflicts = verifier._check_duplicate_classes(new_classes, registry)
+
+        # Inherits from different class, not from BaseSession - should be flagged
+        assert len(conflicts) == 1
+        assert conflicts[0]["class_name"] == "BaseSession"
+
+    def test_file_not_found_still_flags_conflict(self, tmp_path):
+        """If file can't be read, default to flagging conflict."""
+        from swarm_attack.agents.verifier import VerifierAgent
+
+        mock_config = MagicMock()
+        mock_config.repo_root = tmp_path
+
+        verifier = VerifierAgent(mock_config)
+
+        # Don't create the file - just pass class names
+        new_classes = {
+            "nonexistent.py": ["BaseSession"],
+        }
+
+        registry = {
+            "modules": {
+                "models.py": {
+                    "created_by_issue": 1,
+                    "classes": ["BaseSession"],
+                },
+            }
+        }
+
+        conflicts = verifier._check_duplicate_classes(new_classes, registry)
+
+        # File doesn't exist, can't verify subclass - should flag conflict (safe default)
+        assert len(conflicts) == 1
+        assert conflicts[0]["class_name"] == "BaseSession"
+
 
 class TestIssueContextManager:
     """Tests for GitHub issue context propagation."""

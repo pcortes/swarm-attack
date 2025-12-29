@@ -88,6 +88,37 @@ def _format_duration(seconds: int) -> str:
     return f"{minutes}min"
 
 
+def _parse_duration_string(duration: str) -> int:
+    """Parse duration string to minutes.
+
+    Args:
+        duration: Duration string like '2h', '90m', or '1h30m'.
+
+    Returns:
+        Duration in minutes.
+
+    Raises:
+        ValueError: If the format is invalid.
+    """
+    import re
+
+    # Check for negative values
+    if duration.startswith('-'):
+        raise ValueError("Duration cannot be negative")
+
+    # Match patterns like 2h, 90m, 1h30m
+    hours_match = re.search(r'(\d+)h', duration.lower())
+    mins_match = re.search(r'(\d+)m', duration.lower())
+
+    if not hours_match and not mins_match:
+        raise ValueError(f"Invalid duration format: {duration}")
+
+    hours = int(hours_match.group(1)) if hours_match else 0
+    minutes = int(mins_match.group(1)) if mins_match else 0
+
+    return hours * 60 + minutes
+
+
 @app.command("standup")
 def standup_command(
     since: Optional[str] = typer.Option(None, "--since", "-s", help="Filter to changes since datetime (ISO format)"),
@@ -278,7 +309,12 @@ def standup_command(
         console.print()
 
     except Exception as e:
-        console.print(f"[red]Error during standup: {e}[/red]")
+        import traceback
+        console.print(f"[red]Error during standup:[/red]")
+        console.print(f"[red]{type(e).__name__}: {e}[/red]")
+        console.print()
+        console.print("[dim]Full traceback:[/dim]")
+        console.print(f"[dim]{traceback.format_exc()}[/dim]")
         raise typer.Exit(1)
 
 
@@ -818,7 +854,34 @@ def autopilot_command(
         swarm-attack cos autopilot --list             # List paused sessions
         swarm-attack cos autopilot --cancel <id>      # Cancel a session
     """
+    from swarm_attack.validation.input_validator import InputValidator, ValidationError
+
     console = get_console()
+
+    # BUG-7, BUG-16: Validate budget (must be positive, non-zero)
+    budget_result = InputValidator.validate_positive_float(budget, "Budget")
+    if isinstance(budget_result, ValidationError):
+        console.print(f"[red]Error:[/red] {budget_result.message}")
+        console.print(f"  Expected: {budget_result.expected}")
+        console.print(f"  Got: {budget_result.got}")
+        if budget_result.hint:
+            console.print(f"  Hint: {budget_result.hint}")
+        raise typer.Exit(1)
+
+    # BUG-8: Validate duration format and value
+    # Parse duration to validate it's not negative
+    try:
+        duration_minutes = _parse_duration_string(duration)
+        if duration_minutes <= 0:
+            console.print(f"[red]Error:[/red] Duration must be positive")
+            console.print(f"  Expected: positive duration like '2h' or '90m'")
+            console.print(f"  Got: {duration}")
+            raise typer.Exit(1)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] Invalid duration format: {duration}")
+        console.print(f"  Expected: duration like '2h', '90m', or '1h30m'")
+        console.print(f"  Hint: Use format like '2h' for 2 hours or '90m' for 90 minutes")
+        raise typer.Exit(1)
 
     try:
         runner = _get_autopilot_runner()
@@ -1015,6 +1078,12 @@ def checkpoints_command() -> None:
 
     try:
         store = _get_checkpoint_store()
+
+        # BUG-15: Auto-cleanup stale checkpoints (8+ days) when viewing
+        # This prevents stale hiccup checkpoints from cluttering the list
+        removed = store.cleanup_stale_checkpoints_sync(max_age_days=8)
+        if removed:
+            console.print(f"[dim]Cleaned up {len(removed)} stale checkpoint(s).[/dim]")
 
         # Run async operation synchronously
         pending = asyncio.run(store.list_pending())

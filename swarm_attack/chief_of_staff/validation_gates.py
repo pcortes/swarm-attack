@@ -235,8 +235,8 @@ class CodeValidationGate(ValidationGate):
         )
 
 
-class TestValidationGate(ValidationGate):
-    """Validation gate for test files.
+class TestingValidationGate(ValidationGate):
+    """Validation gate for test files. (Renamed from TestValidationGate for BUG-14)
 
     Uses coverage and edge_cases critics.
     No security veto (tests don't have security implications).
@@ -303,6 +303,10 @@ class TestValidationGate(ValidationGate):
         )
 
 
+# BUG-14: Backward compatibility alias
+TestValidationGate = TestingValidationGate
+
+
 def get_validation_gate(
     artifact_type: str,
     llm: Any,
@@ -322,7 +326,7 @@ def get_validation_gate(
     gates = {
         "spec": SpecValidationGate,
         "code": CodeValidationGate,
-        "test": TestValidationGate,
+        "test": TestingValidationGate,
     }
 
     gate_class = gates.get(artifact_type.lower())

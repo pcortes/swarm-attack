@@ -189,6 +189,9 @@ class EventLogger:
         session_id: str = "",
     ) -> None:
         """Log that an issue implementation session started."""
+        # BUG-18: Validate issue number
+        if issue_number < 1:
+            raise ValueError(f"Invalid issue number: {issue_number}")
         self.log(feature_id, "issue_started", {
             "issue": issue_number,
             "session": session_id,

@@ -643,11 +643,10 @@ class ValidationLayer:
         )
 
 
-class TestCritic(Critic):
-    """Critic for evaluating test quality.
+class TestingCritic(Critic):
+    """Critic for evaluating test quality. (Renamed from TestCritic for BUG-14)
 
     Supports COVERAGE and EDGE_CASES focus areas.
-    Named TestCritic for clarity in critic_name.
     """
 
     # Maximum characters to include in prompt
@@ -755,7 +754,7 @@ Return ONLY the JSON object.""",
             )
         except (json.JSONDecodeError, ValueError) as e:
             return CriticScore(
-                critic_name=f"TestCritic-{self.focus.value}",
+                critic_name=f"TestingCritic-{self.focus.value}",
                 focus=self.focus,
                 score=0.0,
                 approved=False,
@@ -763,3 +762,7 @@ Return ONLY the JSON object.""",
                 suggestions=["Retry evaluation"],
                 reasoning=f"Parse error: {response[:200]}",
             )
+
+
+# BUG-14: Backward compatibility alias
+TestCritic = TestingCritic

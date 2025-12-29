@@ -68,6 +68,37 @@ def bug_init(
         swarm-attack bug init "Test fails intermittently" --test tests/test_auth.py::test_login
     """
     from swarm_attack.bug_orchestrator import BugOrchestrator
+    from swarm_attack.validation.input_validator import InputValidator, ValidationError
+
+    # BUG-9: Validate description is not empty
+    if not description or not description.strip():
+        console.print("[red]Error:[/red] Bug description cannot be empty")
+        console.print("  Expected: non-empty description of the bug")
+        console.print(f"  Got: {repr(description)}")
+        console.print("  Hint: Provide a brief description of the bug to investigate")
+        raise typer.Exit(1)
+
+    # Validate bug_id if provided
+    if bug_id is not None:
+        result = InputValidator.validate_bug_id(bug_id)
+        if isinstance(result, ValidationError):
+            console.print(f"[red]Error:[/red] {result.message}")
+            console.print(f"  Expected: {result.expected}")
+            console.print(f"  Got: {result.got}")
+            if result.hint:
+                console.print(f"  Hint: {result.hint}")
+            raise typer.Exit(1)
+
+    # BUG-10: Validate issue number if provided
+    if issue is not None:
+        issue_result = InputValidator.validate_positive_int(issue, "Issue number")
+        if isinstance(issue_result, ValidationError):
+            console.print(f"[red]Error:[/red] {issue_result.message}")
+            console.print(f"  Expected: {issue_result.expected}")
+            console.print(f"  Got: {issue_result.got}")
+            if issue_result.hint:
+                console.print(f"  Hint: {issue_result.hint}")
+            raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)
