@@ -782,16 +782,23 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
     def _format_module_registry(self, registry: Optional[dict[str, Any]]) -> str:
         """
-        Format module registry for prompt injection.
+        Format module registry for prompt injection with full source code.
 
-        Shows what files and classes have been created by prior issues,
-        enabling proper imports and context handoff.
+        P0 FIX: Uses ContextBuilder.format_module_registry_with_source() to show
+        actual class source code, not just class names. This prevents schema drift
+        by giving the coder full visibility into existing class definitions.
+
+        Shows:
+        - Import statements for each class
+        - Full class source code (fields, methods, decorators)
+        - Explicit warnings against recreating existing classes
+        - Schema evolution guidance
 
         Args:
             registry: Module registry dict from StateStore.get_module_registry()
 
         Returns:
-            Formatted string for inclusion in prompt.
+            Formatted string for inclusion in prompt with source code.
         """
         if not registry or not registry.get("modules"):
             return "No prior modules created for this feature."
@@ -800,20 +807,11 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         if not modules:
             return "No prior modules created for this feature."
 
-        lines = ["**Files and classes created by prior issues:**", ""]
-        for file_path, info in modules.items():
-            classes = info.get("classes", [])
-            issue_num = info.get("created_by_issue", "?")
-            if classes:
-                class_list = ", ".join(classes)
-                lines.append(f"- `{file_path}` (issue #{issue_num}): {class_list}")
-            else:
-                lines.append(f"- `{file_path}` (issue #{issue_num})")
-
-        lines.append("")
-        lines.append("**IMPORTANT:** Import and use these existing modules rather than recreating them.")
-        lines.append("If your implementation needs classes from these files, import them directly.")
-        return "\n".join(lines)
+        # P0 FIX: Use ContextBuilder to format with actual source code
+        # This shows coder the EXACT class definitions to prevent schema drift
+        from swarm_attack.context_builder import ContextBuilder
+        context_builder = ContextBuilder(self.config)
+        return context_builder.format_module_registry_with_source(registry)
 
     def _format_completed_summaries(self, summaries: list[dict[str, Any]]) -> str:
         """
@@ -1507,6 +1505,11 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # P0 FIX: Extract completed summaries for issue-to-issue context handoff
         completed_summaries = context.get("completed_summaries", [])
 
+        # P0 FIX: Extract worktree path for file operations
+        # When running in worktree, write files there instead of main repo
+        worktree_path_str = context.get("worktree_path")
+        base_path = Path(worktree_path_str) if worktree_path_str else Path(self.config.repo_root)
+
         self._log("coder_start", {
             "feature_id": feature_id,
             "issue_number": issue_number,
@@ -1753,7 +1756,8 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                         "reason": "Protected path - redirecting to feature output directory",
                     }, level="warning")
 
-                full_path = Path(self.config.repo_root) / file_path
+                # P0 FIX: Use worktree path if provided, otherwise main repo
+                full_path = base_path / file_path
                 is_new = not file_exists(full_path)
 
                 # Detect large overwrites - potential destructive rewrite

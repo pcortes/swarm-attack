@@ -2564,6 +2564,7 @@ class Orchestrator:
         session_id: str,
         retry_number: int = 0,
         previous_failures: Optional[list[dict[str, Any]]] = None,
+        worktree_path: Optional[str] = None,
     ) -> tuple[bool, Optional[AgentResult], AgentResult, float]:
         """
         Run one implementation cycle (coder → verifier).
@@ -2574,6 +2575,7 @@ class Orchestrator:
             session_id: Current session ID for checkpoints.
             retry_number: Current retry attempt (0 = first attempt).
             previous_failures: Failure details from previous verifier run.
+            worktree_path: Optional path to git worktree for file operations.
 
         Returns:
             Tuple of (success, coder_result, verifier_result, total_cost).
@@ -2686,6 +2688,9 @@ class Orchestrator:
             "completed_summaries": completed_summaries,
             # Pass baseline result for logging/debugging (if available)
             "baseline_result": baseline_result.to_dict() if baseline_result else None,
+            # P0 FIX: Pass worktree path for file operations
+            # When running in worktree, coder writes to worktree, not main repo
+            "worktree_path": worktree_path,
         }
 
         # Complexity Gate: Check if issue is too complex before burning tokens
@@ -3289,6 +3294,9 @@ class Orchestrator:
 
             lock_claimed = True
 
+        # P0 FIX: Initialize worktree_path (may be set when session starts)
+        worktree_path: Optional[str] = None
+
         try:
             # Step 3: Ensure feature branch (now inside try for guaranteed lock cleanup)
             if self._session_manager:
@@ -3297,6 +3305,8 @@ class Orchestrator:
                 # Start session
                 session = self._session_manager.start_session(feature_id, issue_number)
                 session_id = session.session_id
+                # P0 FIX: Extract worktree path for file operations
+                worktree_path = getattr(session, 'worktree_path', None)
 
             # Log issue started event
             try:
@@ -3323,6 +3333,7 @@ class Orchestrator:
                     session_id,
                     retry_number=attempt,
                     previous_failures=previous_failures,
+                    worktree_path=worktree_path,  # P0 FIX: Pass worktree for file operations
                 )
                 total_cost += cycle_cost
                 # Track coder result for summary generation

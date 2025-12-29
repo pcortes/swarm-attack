@@ -591,6 +591,118 @@ import pytest
 
         test_path.write_text(test_code)
 
+    # =========================================================================
+    # Auto-Approval Operations
+    # =========================================================================
+
+    def get(self, bug_id: str) -> Optional[BugState]:
+        """
+        Get bug state, returning None if not found.
+
+        This is a convenience wrapper around load() that doesn't raise.
+
+        Args:
+            bug_id: The bug identifier.
+
+        Returns:
+            BugState if exists, None otherwise.
+        """
+        try:
+            return self.load(bug_id)
+        except (BugNotFoundError, StateCorruptionError):
+            return None
+
+    def approve_fix(self, bug_id: str) -> None:
+        """
+        Approve a bug fix (auto-approval or manual).
+
+        Transitions bug from PLANNED to APPROVED.
+
+        Args:
+            bug_id: The bug identifier.
+
+        Raises:
+            BugNotFoundError: If bug doesn't exist.
+            ValueError: If bug is not in PLANNED phase.
+        """
+        state = self.load(bug_id)
+
+        if state.phase != BugPhase.PLANNED:
+            raise ValueError(
+                f"Bug '{bug_id}' is in phase {state.phase.value}, "
+                f"expected 'planned' for approval"
+            )
+
+        # Transition to approved
+        old_phase = state.phase
+        state.phase = BugPhase.APPROVED
+        state.updated_at = self._now()
+
+        # Save and log transition
+        self.save(state)
+        self.append_transition(
+            bug_id,
+            PhaseTransition(
+                from_phase=old_phase.value,
+                to_phase=state.phase.value,
+                timestamp=state.updated_at,
+                trigger="auto_approval",
+                metadata={"reason": "auto_approval_conditions_met"},
+            ),
+        )
+
+        self._log("bug_fix_approved", {"bug_id": bug_id})
+
+    def veto_approval(self, bug_id: str, reason: str) -> None:
+        """
+        Veto an auto-approved bug fix, reverting it to needs-approval state.
+
+        Transitions bug from APPROVED back to PLANNED.
+
+        Args:
+            bug_id: The bug identifier.
+            reason: Human-provided reason for the veto.
+
+        Raises:
+            BugNotFoundError: If bug doesn't exist.
+            ValueError: If bug is not in APPROVED phase.
+        """
+        state = self.load(bug_id)
+
+        if state.phase != BugPhase.APPROVED:
+            raise ValueError(
+                f"Bug '{bug_id}' is in phase {state.phase.value}, "
+                f"expected 'approved' for veto"
+            )
+
+        # Transition back to planned
+        old_phase = state.phase
+        state.phase = BugPhase.PLANNED
+        state.updated_at = self._now()
+
+        # Save and log transition
+        self.save(state)
+        self.append_transition(
+            bug_id,
+            PhaseTransition(
+                from_phase=old_phase.value,
+                to_phase=state.phase.value,
+                timestamp=state.updated_at,
+                trigger="human_veto",
+                metadata={"reason": reason},
+            ),
+        )
+
+        self._log("bug_approval_vetoed", {
+            "bug_id": bug_id,
+            "reason": reason,
+        })
+
+    def _now(self) -> str:
+        """Get current UTC timestamp in ISO format."""
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
 
 # Module-level singleton for convenience
 _store_cache: dict[str, BugStateStore] = {}

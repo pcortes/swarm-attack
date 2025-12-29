@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
+    from swarm_attack.universal_context_builder import AgentContext
 
 
 @dataclass
@@ -179,6 +180,7 @@ class BaseAgent(ABC):
         self._state_store = state_store
         self._checkpoints: list[CheckpointData] = []
         self._total_cost: float = 0.0
+        self._universal_context: Optional[AgentContext] = None
 
     @property
     def logger(self) -> Optional[SwarmLogger]:
@@ -375,6 +377,71 @@ class BaseAgent(ABC):
         """Reset agent state for a fresh run."""
         self._checkpoints = []
         self._total_cost = 0.0
+        self._universal_context = None
+
+    def with_context(self, context: AgentContext) -> "BaseAgent":
+        """
+        Inject universal context before running the agent.
+
+        This method allows the orchestrator to provide tailored context
+        to agents before execution. The context is built by UniversalContextBuilder
+        based on the agent type.
+
+        Args:
+            context: AgentContext with tailored context for this agent type.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._universal_context = context
+        self._log(
+            "context_injected",
+            {
+                "agent_type": context.agent_type,
+                "token_count": context.token_count,
+            },
+        )
+        return self
+
+    def _get_context_prompt_section(self) -> str:
+        """
+        Format injected context for inclusion in prompts.
+
+        Returns:
+            Formatted markdown string with context sections,
+            or empty string if no context was injected.
+        """
+        if not self._universal_context:
+            return ""
+
+        sections: list[str] = []
+
+        if self._universal_context.project_instructions:
+            sections.append(
+                f"## Project Instructions\n{self._universal_context.project_instructions}"
+            )
+
+        if self._universal_context.module_registry:
+            sections.append(
+                f"## Existing Code\n{self._universal_context.module_registry}"
+            )
+
+        if self._universal_context.completed_summaries:
+            sections.append(
+                f"## Prior Work\n{self._universal_context.completed_summaries}"
+            )
+
+        if self._universal_context.test_structure:
+            sections.append(
+                f"## Test Structure\n{self._universal_context.test_structure}"
+            )
+
+        if self._universal_context.architecture_overview:
+            sections.append(
+                f"## Architecture\n{self._universal_context.architecture_overview}"
+            )
+
+        return "\n\n".join(sections)
 
     @abstractmethod
     def run(self, context: dict[str, Any]) -> AgentResult:

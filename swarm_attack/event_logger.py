@@ -343,6 +343,25 @@ class EventLogger:
             "success": success,
         })
 
+    def log_auto_approval(
+        self,
+        approval_type: str,
+        target_id: str,
+        reason: str,
+    ) -> None:
+        """
+        Log an auto-approval decision.
+
+        Args:
+            approval_type: Type of approval ("spec", "greenlight", "bug_fix").
+            target_id: ID of the target (feature_id or bug_id).
+            reason: Human-readable reason for the approval.
+        """
+        self.log(target_id, "auto_approval", {
+            "type": approval_type,
+            "reason": reason,
+        })
+
 
 # Module-level singleton for convenience
 _logger_cache: dict[str, EventLogger] = {}

@@ -93,6 +93,11 @@ from swarm_attack.cli.chief_of_staff import app as cos_app
 
 app.add_typer(cos_app, name="cos")
 
+# Import and register approval commands
+from swarm_attack.cli.approval import app as approval_app
+
+app.add_typer(approval_app, name="approval")
+
 
 # =========================================================================
 # Entry Point
