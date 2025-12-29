@@ -47,6 +47,10 @@ from swarm_attack.github.issue_context import IssueContextManager
 from swarm_attack.github_sync import GitHubSync
 from swarm_attack.models import FeaturePhase, TaskStage
 from swarm_attack.planning.dependency_graph import DependencyGraph
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.session_finalizer import SessionFinalizer
+from swarm_attack.verification_tracker import VerificationTracker
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -3262,6 +3266,30 @@ class Orchestrator:
                 error=None,
             )
 
+        # Session Initialization Protocol (5-step verification before coding)
+        progress_logger = ProgressLogger(self.config.swarm_path)
+        initializer = SessionInitializer(self.config, self._state_store, progress_logger)
+        init_result = initializer.initialize_session(feature_id, issue_number)
+
+        if not init_result.ready:
+            self._log("session_init_blocked", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "reason": init_result.reason,
+            })
+            return IssueSessionResult(
+                status="failed",
+                issue_number=issue_number,
+                session_id="",
+                tests_written=0,
+                tests_passed=0,
+                tests_failed=0,
+                commits=[],
+                cost_usd=0.0,
+                retries=0,
+                error=f"Session initialization failed: {init_result.reason}",
+            )
+
         # Track whether we've claimed the lock (for finally block cleanup)
         lock_claimed = False
         session_ended = False
@@ -3515,6 +3543,24 @@ class Orchestrator:
                     commits.append(commit_hash)
                     if self._session_manager:
                         self._session_manager.add_commit(session_id, commit_hash)
+
+                # Session Finalization Protocol (verify all tests pass before marking complete)
+                verification_tracker = VerificationTracker(self.config.swarm_path)
+                finalizer = SessionFinalizer(
+                    self.config, self._state_store, progress_logger, verification_tracker
+                )
+                finalize_result = finalizer.finalize_session(
+                    feature_id, issue_number, commits=commits
+                )
+
+                if not finalize_result.can_complete:
+                    self._log("session_finalize_blocked", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "reason": finalize_result.reason,
+                    }, level="warning")
+                    # Don't block completion - just log the warning
+                    # The verifier already ran, so this is a secondary check
 
                 # Update GitHub issue
                 if self._github_client:
