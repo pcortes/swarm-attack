@@ -159,8 +159,8 @@ class FlakyTestReport:
 
 
 @dataclass
-class TestRunResult:
-    """Result of a test run with timeout."""
+class ExecutionResult:
+    """Result of a test run with timeout. (Renamed from TestRunResult for BUG-14)"""
     success: bool
     passed: int = 0
     failed: int = 0
@@ -181,6 +181,10 @@ class TestRunResult:
             "output": self.output,
             "failures": self.failures,
         }
+
+
+# BUG-14: Backward compatibility alias
+TestRunResult = ExecutionResult
 
 
 # =============================================================================
@@ -1039,9 +1043,10 @@ class WorktreeRecovery:
 # =============================================================================
 
 
-class TestRunner:
+class Executor:
     """
     Robust test execution with timeouts and flaky detection.
+    (Renamed from TestRunner for BUG-14)
 
     Features:
     - Hard timeout with process cleanup
@@ -1296,6 +1301,10 @@ class TestRunner:
             return False, "Import check timed out"
         except OSError as e:
             return False, f"Failed to check imports: {e}"
+
+
+# BUG-14: Backward compatibility alias
+TestRunner = Executor
 
 
 # =============================================================================

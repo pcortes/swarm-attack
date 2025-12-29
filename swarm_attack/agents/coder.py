@@ -31,6 +31,60 @@ if TYPE_CHECKING:
     from swarm_attack.state_store import StateStore
 
 
+def extract_code_from_response(response: str) -> str:
+    """
+    Extract only code from an LLM response, stripping explanations.
+
+    This function handles the common case where an LLM wraps code in markdown
+    code fences and adds explanatory text before/after. It extracts only the
+    code content, ensuring valid syntax without LLM commentary.
+
+    Args:
+        response: Raw LLM response that may contain code fences and explanations.
+
+    Returns:
+        Extracted code content without markdown formatting or explanations.
+        If multiple code blocks exist, they are joined with blank lines.
+
+    Example:
+        >>> response = '''
+        ... Here's the implementation:
+        ... ```python
+        ... def foo():
+        ...     return 42
+        ... ```
+        ... This function returns 42.
+        ... '''
+        >>> extract_code_from_response(response)
+        'def foo():\\n    return 42'
+    """
+    import re
+
+    if not response.strip():
+        return ""
+
+    # Extract all code blocks from markdown fences
+    # Matches ```python, ```py, ``` etc followed by content and closing ```
+    code_blocks = []
+    fence_pattern = r"```(?:python|py|dart|typescript|ts|javascript|js)?\s*\n([\s\S]*?)```"
+
+    for match in re.finditer(fence_pattern, response, re.IGNORECASE):
+        code_content = match.group(1).strip()
+        if code_content:
+            # Skip if it looks like a path comment only (part of # FILE: format)
+            first_line = code_content.split('\n')[0].strip()
+            if first_line.startswith('#') and '/' in first_line and len(code_content.split('\n')) == 1:
+                continue
+            code_blocks.append(code_content)
+
+    if code_blocks:
+        return "\n\n".join(code_blocks)
+
+    # Fallback: If no fenced code blocks, return empty
+    # This ensures we never accidentally include explanation text
+    return ""
+
+
 class CoderAgent(BaseAgent):
     """
     Agent that implements code to make tests pass.

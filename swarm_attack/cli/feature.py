@@ -528,6 +528,17 @@ def init(
     """
     from swarm_attack.state_store import get_store
     from swarm_attack.utils.fs import ensure_dir, file_exists, safe_write
+    from swarm_attack.validation.input_validator import InputValidator, ValidationError
+
+    # BUG-1, BUG-3: Validate feature_id (path traversal, empty, format)
+    result = InputValidator.validate_feature_id(feature_id)
+    if isinstance(result, ValidationError):
+        console.print(f"[red]Error:[/red] {result.message}")
+        console.print(f"  Expected: {result.expected}")
+        console.print(f"  Got: {result.got}")
+        if result.hint:
+            console.print(f"  Hint: {result.hint}")
+        raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)
@@ -636,6 +647,17 @@ def import_spec(
         swarm-attack import-spec my-feature --spec ~/my-spec.md --no-debate
     """
     from swarm_attack.orchestrator import Orchestrator
+    from swarm_attack.validation.input_validator import InputValidator, ValidationError
+
+    # Validate feature_id
+    result = InputValidator.validate_feature_id(feature_id)
+    if isinstance(result, ValidationError):
+        console.print(f"[red]Error:[/red] {result.message}")
+        console.print(f"  Expected: {result.expected}")
+        console.print(f"  Got: {result.got}")
+        if result.hint:
+            console.print(f"  Hint: {result.hint}")
+        raise typer.Exit(1)
     from swarm_attack.state_store import get_store
     from swarm_attack.utils.fs import ensure_dir, safe_write
 
@@ -836,6 +858,17 @@ def run(
     For READY_TO_IMPLEMENT/IMPLEMENTING: Runs the implementation pipeline.
     """
     from swarm_attack.state_store import get_store
+    from swarm_attack.validation.input_validator import InputValidator, ValidationError
+
+    # Validate feature_id
+    result = InputValidator.validate_feature_id(feature_id)
+    if isinstance(result, ValidationError):
+        console.print(f"[red]Error:[/red] {result.message}")
+        console.print(f"  Expected: {result.expected}")
+        console.print(f"  Got: {result.got}")
+        if result.hint:
+            console.print(f"  Hint: {result.hint}")
+        raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)

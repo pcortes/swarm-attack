@@ -119,12 +119,16 @@ class SessionConfig:
 
 
 @dataclass
-class TestRunnerConfig:
-    """Test execution configuration."""
+class ExecutorConfig:
+    """Test execution configuration. (Renamed from TestRunnerConfig for BUG-14)"""
     command: str                               # Test command (required, e.g., "pytest")
     args: list[str] = field(default_factory=list)  # Additional arguments
     autodetect: bool = False                   # Whether to auto-detect test framework
     timeout_seconds: int = 300                 # Timeout for test execution in seconds
+
+
+# BUG-14: Backward compatibility alias
+TestRunnerConfig = ExecutorConfig
 
 
 @dataclass

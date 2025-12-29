@@ -69,6 +69,9 @@ MAX_RETRIES = 3
 DEFAULT_BACKOFF_BASE_SECONDS = 5
 DEFAULT_BACKOFF_MULTIPLIER = 2
 
+# BUG-5: Backward compatibility alias
+BACKOFF_SECONDS = DEFAULT_BACKOFF_BASE_SECONDS
+
 
 # Error classification mappings using LLMErrorType from errors.py
 # Import at module level for classify_error function

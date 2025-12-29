@@ -74,11 +74,15 @@ class SpecSummary:
 
 
 @dataclass
-class TestState:
-    """Test suite state."""
-    
+class TestSuiteMetrics:
+    """Test suite state metrics. (Renamed from TestState for BUG-13)"""
+
     total_tests: int
     test_files: list[str] = field(default_factory=list)
+
+
+# BUG-13: Backward compatibility alias
+TestState = TestSuiteMetrics
 
 
 @dataclass

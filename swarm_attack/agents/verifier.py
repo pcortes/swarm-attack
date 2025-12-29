@@ -305,6 +305,127 @@ class VerifierAgent(BaseAgent):
                 "raw_response": response_text[:1000],  # Truncate for safety
             }
 
+    def _is_subclass_of_existing(
+        self,
+        file_path: str,
+        class_name: str,
+        existing_class: str,
+    ) -> bool:
+        """
+        Check if a class in a file is a subclass of an existing class.
+
+        Uses AST parsing to examine class inheritance. This allows subclassing
+        to proceed without being flagged as schema drift.
+
+        Args:
+            file_path: Path to the file containing the class (relative to repo root)
+            class_name: Name of the class to check
+            existing_class: Name of the existing class it might inherit from
+
+        Returns:
+            True if class_name inherits from existing_class, False otherwise.
+        """
+        import ast
+
+        try:
+            full_path = Path(self.config.repo_root) / file_path
+            if not full_path.exists():
+                return False
+
+            content = full_path.read_text()
+            tree = ast.parse(content)
+
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name == class_name:
+                    # Check base classes
+                    for base in node.bases:
+                        base_name = None
+                        if isinstance(base, ast.Name):
+                            base_name = base.id
+                        elif isinstance(base, ast.Attribute):
+                            base_name = base.attr
+
+                        if base_name == existing_class:
+                            return True
+
+            return False
+
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            # If we can't parse, assume not a subclass (safe default)
+            return False
+
+    def _check_duplicate_classes(
+        self,
+        new_classes: dict[str, list[str]],
+        registry: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """
+        Check for duplicate class definitions across modules.
+
+        This prevents schema drift where different issues create conflicting
+        class definitions. If Issue #1 creates AutopilotSession in models.py,
+        Issue #9 should import it rather than recreating it in autopilot.py.
+
+        Args:
+            new_classes: Mapping of file_path -> list of class names being created
+            registry: Module registry with structure:
+                {"modules": {file_path: {"created_by_issue": int, "classes": [str]}}}
+
+        Returns:
+            List of conflict dictionaries, each containing:
+                - class_name: The duplicated class name
+                - existing_file: Where the class was originally defined
+                - new_file: Where the duplicate is being created
+                - existing_issue: Issue number that created the original
+                - severity: Always "critical" for schema drift
+                - message: Human-readable description with "SCHEMA DRIFT DETECTED"
+        """
+        conflicts = []
+
+        # Handle empty registry
+        if not registry or "modules" not in registry:
+            return conflicts
+
+        modules = registry.get("modules", {})
+
+        # Build a map of class_name -> (file_path, issue_number) for existing classes
+        existing_classes: dict[str, tuple[str, int]] = {}
+        for file_path, file_info in modules.items():
+            issue_number = file_info.get("created_by_issue")
+            for class_name in file_info.get("classes", []):
+                existing_classes[class_name] = (file_path, issue_number)
+
+        # Check each new class for conflicts
+        for new_file, class_list in new_classes.items():
+            for class_name in class_list:
+                if class_name in existing_classes:
+                    existing_file, existing_issue = existing_classes[class_name]
+                    # Same file is OK (modification, not duplication)
+                    if existing_file == new_file:
+                        continue
+
+                    # Check if it's a subclass of the existing class
+                    # Subclassing is allowed - it extends rather than duplicates
+                    if self._is_subclass_of_existing(new_file, class_name, class_name):
+                        continue
+
+                    # Different file and not a subclass = schema drift
+                    conflicts.append({
+                        "class_name": class_name,
+                        "existing_file": existing_file,
+                        "new_file": new_file,
+                        "existing_issue": existing_issue,
+                        "severity": "critical",
+                        "message": (
+                            f"SCHEMA DRIFT DETECTED: Class '{class_name}' already exists in "
+                            f"'{existing_file}' (created by issue #{existing_issue}). "
+                            f"Cannot recreate in '{new_file}' - this will cause runtime errors. "
+                            f"Import the existing class instead of redefining it."
+                        ),
+                    })
+
+        return conflicts
+
     def _analyze_failure_with_llm(
         self,
         test_output: str,
@@ -456,6 +577,36 @@ class VerifierAgent(BaseAgent):
             return AgentResult.failure_result(error)
 
         self.checkpoint("context_loaded")
+
+        # Step 0: Check for schema drift (before running tests)
+        module_registry = context.get("module_registry")
+        new_classes_defined = context.get("new_classes_defined")
+
+        if module_registry and new_classes_defined:
+            schema_conflicts = self._check_duplicate_classes(new_classes_defined, module_registry)
+
+            if schema_conflicts:
+                # Schema drift detected - fail immediately without running tests
+                error_messages = [c["message"] for c in schema_conflicts]
+                self._log("verifier_schema_drift", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "conflicts": len(schema_conflicts),
+                }, level="error")
+
+                return AgentResult(
+                    success=False,
+                    output={
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "tests_run": 0,
+                        "tests_passed": 0,
+                        "tests_failed": 0,
+                        "schema_conflicts": schema_conflicts,
+                    },
+                    errors=error_messages,
+                    cost_usd=0.0,
+                )
 
         # Step 1: Run issue-specific tests
         try:

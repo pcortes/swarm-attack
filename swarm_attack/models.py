@@ -139,6 +139,11 @@ class TaskRef:
     parent_issue: Optional[int] = None  # If this is a sub-issue from splitting
     child_issues: list[int] = field(default_factory=list)  # Child issues if this was split
 
+    def __post_init__(self) -> None:
+        """BUG-10: Validate issue_number is positive."""
+        if self.issue_number < 1:
+            raise ValueError(f"issue_number must be >= 1, got {self.issue_number}")
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
