@@ -497,14 +497,14 @@ from swarm_attack.events.types import EventType
 EventType.SPEC_APPROVED      # Spec passed debate
 EventType.SPEC_REJECTED      # Spec failed debate
 EventType.ISSUE_CREATED      # GitHub issue created
-EventType.ISSUE_GREENLIGHTED # Issue ready for implementation
+EventType.ISSUE_READY        # Issue ready for implementation
 EventType.IMPL_STARTED       # Coder started work
-EventType.IMPL_COMPLETED     # Coder finished successfully
+EventType.IMPL_VERIFIED      # Coder finished successfully
 EventType.IMPL_FAILED        # Coder failed
 EventType.BUG_ANALYZED       # Root cause identified
 EventType.BUG_FIXED          # Bug fix verified
-EventType.AUTO_APPROVED      # Auto-approval triggered
-EventType.CHECKPOINT_CREATED # Human checkpoint created
+EventType.AUTO_APPROVAL_TRIGGERED  # Auto-approval triggered
+EventType.MANUAL_OVERRIDE    # Manual mode override
 # ... and more
 ```
 
@@ -519,7 +519,7 @@ bus = get_event_bus()
 def on_impl_complete(event):
     print(f"Issue #{event.issue_number} completed!")
 
-bus.subscribe(EventType.IMPL_COMPLETED, on_impl_complete)
+bus.subscribe(EventType.IMPL_VERIFIED, on_impl_complete)
 
 # Emit events (typically done by agents)
 bus.emit_phase_transition("my-feature", "IMPLEMENTING", "COMPLETE")

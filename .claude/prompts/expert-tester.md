@@ -207,9 +207,9 @@ bus = get_event_bus()
 
 # Test subscription + emission
 received = []
-bus.subscribe(EventType.IMPL_COMPLETED, lambda e: received.append(e))
+bus.subscribe(EventType.IMPL_VERIFIED, lambda e: received.append(e))
 bus.emit(SwarmEvent(
-    event_type=EventType.IMPL_COMPLETED,
+    event_type=EventType.IMPL_VERIFIED,
     feature_id="test",
     issue_number=1,
     source_agent="test",

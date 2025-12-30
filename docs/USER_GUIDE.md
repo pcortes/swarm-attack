@@ -881,11 +881,11 @@ def handler(event):
     events_received.append(event)
     print(f"Received: {event.event_type}")
 
-bus.subscribe(EventType.IMPL_COMPLETED, handler)
+bus.subscribe(EventType.IMPL_VERIFIED, handler)
 
 # Test emission
 bus.emit(SwarmEvent(
-    event_type=EventType.IMPL_COMPLETED,
+    event_type=EventType.IMPL_VERIFIED,
     feature_id="test-feature",
     issue_number=1,
     source_agent="test",
