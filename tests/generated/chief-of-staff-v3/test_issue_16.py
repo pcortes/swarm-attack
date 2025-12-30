@@ -1,4 +1,9 @@
-"""Tests for TestCritic variants."""
+"""Tests for SuiteCritic (formerly TestCritic) variants.
+
+Note: TestCritic was renamed to SuiteCritic for pytest compatibility
+(pytest collects classes starting with 'Test' as test classes).
+TestCritic is still available as a backward compatibility alias.
+"""
 
 import json
 from pathlib import Path
@@ -10,7 +15,8 @@ from swarm_attack.chief_of_staff.critics import (
     Critic,
     CriticFocus,
     CriticScore,
-    TestCritic,
+    SuiteCritic,
+    TestCritic,  # Backward compatibility alias
 )
 
 
@@ -265,8 +271,9 @@ class TestTestCriticLLMParsing:
         })
         critic = TestCritic(focus=CriticFocus.COVERAGE, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
-        
-        assert "TestCritic" in result.critic_name
+
+        # Note: TestCritic was renamed to SuiteCritic for pytest compatibility
+        assert "SuiteCritic" in result.critic_name
         assert "coverage" in result.critic_name.lower()
 
     def test_edge_cases_critic_name(self):
@@ -281,8 +288,9 @@ class TestTestCriticLLMParsing:
         })
         critic = TestCritic(focus=CriticFocus.EDGE_CASES, llm=mock_llm)
         result = critic.evaluate("def test_foo(): pass")
-        
-        assert "TestCritic" in result.critic_name
+
+        # Note: TestCritic was renamed to SuiteCritic for pytest compatibility
+        assert "SuiteCritic" in result.critic_name
         assert "edge" in result.critic_name.lower()
 
 
@@ -294,8 +302,14 @@ class TestTestCriticFileExists:
         path = Path.cwd() / "swarm_attack" / "chief_of_staff" / "critics.py"
         assert path.exists(), "critics.py must exist"
 
-    def test_critics_file_has_testcritic(self):
-        """The critics.py file should define TestCritic."""
+    def test_critics_file_has_suitecritic(self):
+        """The critics.py file should define SuiteCritic.
+
+        Note: TestCritic was renamed to SuiteCritic for pytest compatibility.
+        TestCritic alias is still available for backward compatibility.
+        """
         path = Path.cwd() / "swarm_attack" / "chief_of_staff" / "critics.py"
         content = path.read_text()
-        assert "class TestCritic" in content, "TestCritic class must be defined"
+        assert "class SuiteCritic" in content, "SuiteCritic class must be defined"
+        # Backward compatibility alias should exist
+        assert "TestCritic = SuiteCritic" in content, "TestCritic alias must exist"
