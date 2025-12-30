@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>Context Flow P0 Fixes</title>
+    <id>SPEC-2025-12-29-CONTEXT-FLOW-P0</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P0 - Critical</priority>
+    <estimated_effort>2-3 hours</estimated_effort>
+    <worktree_branch>fix/context-flow-p0</worktree_branch>
+    <depends_on>None</depends_on>
+    <source>CONTEXT_FIX_PLAN.md found in worktrees/bug-bash-fixes/docs/</source>
+  </metadata>
+
+  <executive_summary>
+    Fix critical context loss between pipeline stages. Currently 40-50% of context is lost
+    because completion summaries are saved but never passed to coder, and project instructions
+    are never injected into prompts.
+
+    These are surgical fixes to existing code paths, not new features.
+    High impact, low effort.
+  </executive_summary>
+
+  <expert_team>
+    <lead role="Pipeline Integration Lead" focus="Orchestrator context flow">
+      Fixes orchestrator.py to pass context_builder results to coder.
+      Ensures summaries flow from completed issues to dependent issues.
+    </lead>
+    <specialist role="Agent Prompt Engineer" focus="Coder prompt injection">
+      Modifies coder.py to inject project instructions and summaries into prompts.
+      Ensures context appears in correct prompt sections.
+    </specialist>
+    <specialist role="State Flow Specialist" focus="Module registry enrichment">
+      Adds source snippets to module registry entries.
+      Ensures coder sees actual code, not just class names.
+    </specialist>
+  </expert_team>
+
+  <problem_analysis>
+    <root_cause>
+      Context is BUILT but not PASSED. The ContextBuilder creates rich context
+      but orchestrator doesn't inject it into agent prompts.
+    </root_cause>
+    <evidence>
+      <finding location="orchestrator.py:2631">
+        ContextBuilder is instantiated but results not passed to coder
+      </finding>
+      <finding location="agents/coder.py">
+        No injection of project_instructions into prompt
+      </finding>
+      <finding location="agents/coder.py">
+        No injection of completed_summaries into prompt
+      </finding>
+    </evidence>
+    <impact>
+      40-50% context loss per stage. Coder doesn't know what prior issues built.
+      Schema drift because coder doesn't see existing class definitions.
+    </impact>
+  </problem_analysis>
+
+  <requirements>
+    <functional id="F1" title="Pass Completion Summaries to Coder">
+      <description>
+        Orchestrator must pass completed issue summaries to coder agent.
+      </description>
+      <current_code>
+        <![CDATA[
+# orchestrator.py - CURRENT (broken)
+def _run_coder(self, feature_id: str, issue_number: int, ...):
+    coder = CoderAgent(self._config, ...)
+    # Summaries NOT passed!
+    return coder.run(issue_context)
+        ]]>
+      </current_code>
+      <fixed_code>
+        <![CDATA[
+# orchestrator.py - FIXED
+def _run_coder(self, feature_id: str, issue_number: int, ...):
+    # Build context with summaries
+    context_builder = ContextBuilder(self._config, self._state_store)
+    summaries = context_builder.get_completed_summaries(feature_id)
+    project_instructions = context_builder.get_project_instructions()
+
+    coder = CoderAgent(self._config, ...)
+    return coder.run(
+        issue_context,
+        completed_summaries=summaries,
+        project_instructions=project_instructions,
+    )
+        ]]>
+      </fixed_code>
+    </functional>
+
+    <functional id="F2" title="Inject Project Instructions into Coder Prompt">
+      <description>
+        Coder agent must include CLAUDE.md instructions in its prompt.
+      </description>
+      <current_code>
+        <![CDATA[
+# agents/coder.py - CURRENT (broken)
+def _build_prompt(self, issue_context: dict) -> str:
+    return f"""
+    Implement issue #{issue_context['issue_number']}
+
+    {issue_context['description']}
+    """
+    # No project instructions!
+        ]]>
+      </current_code>
+      <fixed_code>
+        <![CDATA[
+# agents/coder.py - FIXED
+def _build_prompt(self, issue_context: dict) -> str:
+    sections = []
+
+    # Inject project instructions FIRST
+    if self._project_instructions:
+        sections.append(f"## Project Instructions\n{self._project_instructions}")
+
+    # Inject prior work context
+    if self._completed_summaries:
+        sections.append(f"## Prior Work (DO NOT RECREATE)\n{self._completed_summaries}")
+
+    # Then issue context
+    sections.append(f"## Current Task: Issue #{issue_context['issue_number']}")
+    sections.append(issue_context['description'])
+
+    return "\n\n".join(sections)
+        ]]>
+      </fixed_code>
+    </functional>
+
+    <functional id="F3" title="Inject Module Registry with Source">
+      <description>
+        Coder must see actual class source code, not just names.
+        This prevents schema drift (redefining existing classes).
+      </description>
+      <current_code>
+        <![CDATA[
+# Currently module registry shows:
+# "Classes created: Foo, Bar, Baz"
+# Coder has NO IDEA what fields/methods these have
+        ]]>
+      </current_code>
+      <fixed_code>
+        <![CDATA[
+# Module registry should show:
+## Existing Classes (DO NOT RECREATE - IMPORT AND USE)
+
+### swarm_attack/models.py
+
+```python
+@dataclass
+class TaskRef:
+    issue_number: int
+    stage: TaskStage
+    title: str
+    dependencies: list[int] = field(default_factory=list)
+```
+
+Import: `from swarm_attack.models import TaskRef`
+        ]]>
+      </fixed_code>
+    </functional>
+
+    <functional id="F4" title="Propagate Worktree Paths">
+      <description>
+        When running in worktree, file operations must use worktree path.
+      </description>
+      <current_behavior>
+        Coder writes to main repo path even when running in worktree.
+      </current_behavior>
+      <fixed_behavior>
+        <![CDATA[
+# Pass worktree_path through the chain
+worktree_path = self._get_active_worktree_path(feature_id)
+coder.run(issue_context, worktree_path=worktree_path)
+
+# Coder uses worktree_path for all file operations
+def _write_file(self, relative_path: str, content: str):
+    base = self._worktree_path or self._config.repo_root
+    full_path = base / relative_path
+    full_path.write_text(content)
+        ]]>
+      </fixed_behavior>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/test_context_flow_fixes.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from unittest.mock import Mock, patch
+
+class TestOrchestratorContextPassing:
+    def test_orchestrator_passes_summaries_to_coder(self, mock_orchestrator):
+        """Orchestrator must pass completed summaries to coder."""
+        with patch.object(mock_orchestrator, '_context_builder') as ctx:
+            ctx.get_completed_summaries.return_value = "Prior work summary"
+
+            mock_orchestrator._run_coder("feature", 2)
+
+            # Verify summaries were passed
+            coder_call = mock_orchestrator._coder.run.call_args
+            assert "completed_summaries" in coder_call.kwargs
+            assert coder_call.kwargs["completed_summaries"] == "Prior work summary"
+
+    def test_orchestrator_passes_project_instructions(self, mock_orchestrator):
+        """Orchestrator must pass project instructions to coder."""
+        with patch.object(mock_orchestrator, '_context_builder') as ctx:
+            ctx.get_project_instructions.return_value = "CLAUDE.md content"
+
+            mock_orchestrator._run_coder("feature", 1)
+
+            coder_call = mock_orchestrator._coder.run.call_args
+            assert "project_instructions" in coder_call.kwargs
+
+class TestCoderPromptInjection:
+    def test_coder_prompt_includes_project_instructions(self):
+        """Coder prompt must include CLAUDE.md instructions."""
+        from swarm_attack.agents.coder import CoderAgent
+
+        coder = CoderAgent(mock_config)
+        coder._project_instructions = "## Rules\n- Follow TDD"
+        coder._completed_summaries = None
+
+        prompt = coder._build_prompt({"issue_number": 1, "description": "Task"})
+
+        assert "## Rules" in prompt
+        assert "Follow TDD" in prompt
+
+    def test_coder_prompt_includes_prior_work(self):
+        """Coder prompt must include summaries of prior issues."""
+        from swarm_attack.agents.coder import CoderAgent
+
+        coder = CoderAgent(mock_config)
+        coder._project_instructions = None
+        coder._completed_summaries = "Issue #1: Created TaskRef class"
+
+        prompt = coder._build_prompt({"issue_number": 2, "description": "Task"})
+
+        assert "Prior Work" in prompt
+        assert "TaskRef" in prompt
+
+    def test_coder_prompt_warns_not_to_recreate(self):
+        """Coder prompt must warn not to recreate existing classes."""
+        from swarm_attack.agents.coder import CoderAgent
+
+        coder = CoderAgent(mock_config)
+        coder._completed_summaries = "Created: TaskRef, RunState"
+
+        prompt = coder._build_prompt({"issue_number": 3, "description": "Task"})
+
+        assert "DO NOT RECREATE" in prompt or "IMPORT AND USE" in prompt
+
+class TestModuleRegistrySource:
+    def test_module_registry_includes_source_code(self):
+        """Module registry must show actual class source, not just names."""
+        from swarm_attack.context_builder import ContextBuilder
+
+        builder = ContextBuilder(mock_config, mock_state_store)
+        registry = {"TaskRef": "swarm_attack/models.py"}
+
+        formatted = builder.format_module_registry_with_source(registry)
+
+        # Must include actual field definitions
+        assert "@dataclass" in formatted or "class TaskRef" in formatted
+        assert "issue_number" in formatted  # Field name must be visible
+
+class TestWorktreePropagation:
+    def test_coder_writes_to_worktree_when_active(self, tmp_path):
+        """When worktree is active, coder writes there, not main repo."""
+        from swarm_attack.agents.coder import CoderAgent
+
+        worktree_path = tmp_path / "worktrees" / "feature-x"
+        worktree_path.mkdir(parents=True)
+
+        coder = CoderAgent(mock_config)
+        coder._worktree_path = worktree_path
+
+        coder._write_file("test.py", "# content")
+
+        assert (worktree_path / "test.py").exists()
+        assert not (mock_config.repo_root / "test.py").exists()
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal fixes to pass tests</description>
+      <files_to_modify>
+        <file change="critical">swarm_attack/orchestrator.py</file>
+        <file change="critical">swarm_attack/agents/coder.py</file>
+        <file change="enhancement">swarm_attack/context_builder.py</file>
+        <file change="enhancement">swarm_attack/state_store.py</file>
+      </files_to_modify>
+      <changes>
+        <change file="orchestrator.py">
+          Pass context_builder.get_completed_summaries() and get_project_instructions() to coder.run()
+        </change>
+        <change file="coder.py">
+          Add _project_instructions and _completed_summaries instance variables.
+          Modify _build_prompt() to inject these into prompt.
+        </change>
+      </changes>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up</description>
+      <tasks>
+        <task>Ensure backward compatibility (new params are optional)</task>
+        <task>Add logging for context injection</task>
+        <task>Verify no test regressions</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/context-flow-p0 -b fix/context-flow-p0
+
+# Enter worktree
+cd worktrees/context-flow-p0
+
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_context_flow_fixes.py -v
+
+# Verify no regressions
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">Orchestrator passes summaries to coder</criterion>
+    <criterion id="AC2">Orchestrator passes project instructions to coder</criterion>
+    <criterion id="AC3">Coder prompt includes CLAUDE.md content</criterion>
+    <criterion id="AC4">Coder prompt includes prior work summaries</criterion>
+    <criterion id="AC5">Module registry shows actual source code</criterion>
+    <criterion id="AC6">Worktree path propagated to file operations</criterion>
+    <criterion id="AC7">All existing tests pass (no regressions)</criterion>
+  </acceptance_criteria>
+
+  <risk_assessment>
+    <risk level="LOW">
+      These are surgical fixes to existing code paths.
+      All changes are additive (new optional parameters).
+      Existing behavior unchanged if new params not provided.
+    </risk>
+  </risk_assessment>
+</spec>

@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <metadata>
+    <title>Git Archaeology and Codebase Cleanup Analysis</title>
+    <created>2025-12-29</created>
+    <purpose>Analyze stashes, worktrees, and untracked files to determine what's valuable vs outdated, and chart a path forward for codebase hygiene</purpose>
+  </metadata>
+
+  <context>
+    <repo_root>/Users/philipjcortes/Desktop/swarm-attack</repo_root>
+    <current_branch>master</current_branch>
+    <commits_ahead_of_origin>6</commits_ahead_of_origin>
+
+    <known_worktrees>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack" branch="master" status="main repo" />
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack-qa-agent" branch="main" status="2 modified files" />
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-events" branch="feature/autopilot-events" />
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/session-init" branch="feature/session-init-protocol" status="already merged" />
+      <worktree path="/Users/philipjcortes/Desktop/worktrees/bug-bash-fixes" branch="fix/bug-bash-fixes" status="already merged" />
+      <worktree path="/Users/philipjcortes/Desktop/worktrees/fix-qa-bugs" branch="fix/qa-agent-bugs" />
+    </known_worktrees>
+
+    <known_stashes>
+      <stash index="0" message="Temporary stash for branch switch" />
+      <stash index="1" message="WIP on master: 4788fa8 fix: Add self-healing for stale locks and sessions" />
+      <stash index="2" message="WIP on master: 4068eda feat(prompts): World-class implementation prompt" />
+    </known_stashes>
+
+    <untracked_source_files description="Production code not in git - HIGH RISK">
+      <file>swarm_attack/agents/research_mixin.py</file>
+      <file>swarm_attack/agents/tool_sets.py</file>
+      <file>swarm_attack/cli/ux.py</file>
+      <file>swarm_attack/contracts.py</file>
+      <file>swarm_attack/skill_loader.py</file>
+      <file>swarm_attack/memory/</file>
+      <file>swarm_attack/state/</file>
+      <file>swarm_attack/default_skills/</file>
+    </untracked_source_files>
+
+    <untracked_other>
+      <category name="specs" path="specs/" count="15+ directories" />
+      <category name="generated_tests" path="tests/generated/" count="30+ files" />
+      <category name="checkpoints" path=".swarm/chief-of-staff/checkpoints/" count="27 files" />
+      <category name="skills" path=".claude/skills/" count="3 directories" />
+      <category name="docs" path="docs/" count="5 files" />
+    </untracked_other>
+  </context>
+
+  <instructions>
+    <setup>
+      <step>Create a new worktree for this analysis work:
+        ```bash
+        cd /Users/philipjcortes/Desktop/swarm-attack
+        git worktree add worktrees/git-archaeology -b chore/git-archaeology-cleanup
+        cd worktrees/git-archaeology
+        ```
+      </step>
+      <step>Copy untracked files from main repo to analyze them:
+        ```bash
+        # The untracked files exist in the main repo, not in worktrees
+        # You'll need to reference them from /Users/philipjcortes/Desktop/swarm-attack/
+        ```
+      </step>
+    </setup>
+
+    <phase id="1" name="Discovery">
+      <description>Gather complete picture of all work-in-progress across the repository</description>
+
+      <task name="Analyze Stashes">
+        <action>For each stash, examine contents and determine:
+          - What feature/fix was being worked on?
+          - Is this code still relevant to current master?
+          - Has this work been superseded by other commits?
+          - Should it be applied, discarded, or archived?
+        </action>
+        <commands>
+          git stash list
+          git stash show -p stash@{0}
+          git stash show -p stash@{1}
+          git stash show -p stash@{2}
+        </commands>
+      </task>
+
+      <task name="Analyze Worktrees">
+        <action>For each worktree:
+          - Check if the branch has been merged to master
+          - Check for uncommitted changes
+          - Check for untracked files
+          - Determine if worktree should be kept or removed
+        </action>
+        <commands>
+          git worktree list
+          # For each worktree:
+          cd [worktree_path]
+          git status
+          git log master..[branch] --oneline  # commits not in master
+          git log [branch]..master --oneline  # commits in master not in branch
+        </commands>
+      </task>
+
+      <task name="Analyze Untracked Source Files">
+        <action>For each untracked source file in swarm_attack/:
+          - Read the file content
+          - Determine what feature it implements
+          - Check if similar functionality exists in committed code
+          - Check if it's referenced by any committed code (imports)
+          - Determine: commit as-is, integrate, or discard
+        </action>
+        <files_to_analyze>
+          - swarm_attack/agents/research_mixin.py
+          - swarm_attack/agents/tool_sets.py
+          - swarm_attack/cli/ux.py
+          - swarm_attack/contracts.py
+          - swarm_attack/skill_loader.py
+          - swarm_attack/memory/ (all files)
+          - swarm_attack/state/ (all files)
+          - swarm_attack/default_skills/ (all files)
+        </files_to_analyze>
+      </task>
+
+      <task name="Analyze Specs">
+        <action>For each spec directory:
+          - Check if the spec has been implemented (compare to git log)
+          - Check if there's a corresponding feature branch or commits
+          - Determine: archive, commit, or discard
+        </action>
+      </task>
+    </phase>
+
+    <phase id="2" name="Expert Analysis">
+      <description>Spawn specialized subagents to analyze different aspects</description>
+
+      <subagent name="Code Quality Expert">
+        <role>Analyze untracked source files for code quality</role>
+        <questions>
+          - Is this production-ready code or experimental?
+          - Does it follow the codebase patterns?
+          - Are there tests for this code?
+          - Does it have proper error handling?
+        </questions>
+      </subagent>
+
+      <subagent name="Architecture Expert">
+        <role>Analyze how untracked code fits into the system</role>
+        <questions>
+          - Does this code duplicate existing functionality?
+          - Does it integrate properly with existing modules?
+          - Are there circular dependencies?
+          - Is it properly abstracted?
+        </questions>
+      </subagent>
+
+      <subagent name="Git Historian">
+        <role>Trace the history and relationships</role>
+        <questions>
+          - What commits reference or depend on untracked code?
+          - Are there merge conflicts waiting to happen?
+          - What's the safest order to integrate changes?
+          - Which stashes overlap with which worktrees?
+        </questions>
+      </subagent>
+
+      <subagent name="Test Coverage Expert">
+        <role>Analyze test coverage implications</role>
+        <questions>
+          - Do untracked source files have corresponding tests?
+          - Are the generated tests in tests/generated/ valid?
+          - What's the test coverage delta if we commit vs discard?
+        </questions>
+      </subagent>
+    </phase>
+
+    <phase id="3" name="Decision Matrix">
+      <description>Create actionable recommendations</description>
+
+      <output_format>
+        Create a decision matrix with columns:
+        | Item | Type | Status | Recommendation | Reason | Priority | Action |
+
+        Where:
+        - Type: stash, worktree, untracked-source, untracked-spec, untracked-test
+        - Status: outdated, current, duplicate, unique
+        - Recommendation: commit, discard, archive, merge, integrate
+        - Priority: P0 (do now), P1 (do soon), P2 (can wait)
+        - Action: specific git commands to execute
+      </output_format>
+    </phase>
+
+    <phase id="4" name="Execution Plan">
+      <description>Create step-by-step plan to clean up</description>
+
+      <requirements>
+        - All valuable code must be preserved (committed or archived)
+        - No data loss for anything potentially valuable
+        - Clean up stale worktrees and branches
+        - Result in clean git status with minimal untracked files
+        - Update .gitignore for files that should remain untracked
+      </requirements>
+
+      <output>
+        Produce a shell script that can be reviewed and executed to:
+        1. Backup everything first
+        2. Apply valuable stash changes
+        3. Commit valuable untracked files
+        4. Remove stale worktrees
+        5. Delete merged branches
+        6. Update .gitignore
+        7. Push all changes to origin
+      </output>
+    </phase>
+  </instructions>
+
+  <deliverables>
+    <deliverable name="analysis_report" path="docs/GIT_ARCHAEOLOGY_REPORT.md">
+      Full analysis of all stashes, worktrees, and untracked files with recommendations
+    </deliverable>
+    <deliverable name="decision_matrix" path="docs/CLEANUP_DECISION_MATRIX.md">
+      Table of all items with keep/discard decisions and reasoning
+    </deliverable>
+    <deliverable name="cleanup_script" path="scripts/git-cleanup-2025-12-29.sh">
+      Executable script to perform the cleanup (with confirmation prompts)
+    </deliverable>
+    <deliverable name="gitignore_updates" path=".gitignore.proposed">
+      Proposed additions to .gitignore
+    </deliverable>
+  </deliverables>
+
+  <constraints>
+    - DO NOT delete or discard anything without first creating a backup
+    - DO NOT force push or rewrite history
+    - DO NOT modify files in the main repo - work only in your worktree
+    - When in doubt, preserve the code (can always delete later)
+    - Ask for human confirmation before any destructive action
+  </constraints>
+</prompt>

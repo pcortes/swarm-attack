@@ -116,7 +116,7 @@ swarm-attack bug fix bug-id           # Apply fix
 | `init <feature>` | Create PRD template |
 | `run <feature>` | Run pipeline (spec or implementation) |
 | `run <feature> --issue N` | Run specific issue |
-| `approve <feature>` | Approve spec |
+| `approve <feature> [--auto\|--manual]` | Approve spec |
 | `reject <feature>` | Reject spec with feedback |
 | `issues <feature>` | Create GitHub issues from spec |
 | `greenlight <feature>` | Enable implementation phase |
@@ -133,7 +133,7 @@ swarm-attack bug fix bug-id           # Apply fix
 | `bug init "desc" --id ID --test PATH -e "error"` | Create bug investigation |
 | `bug analyze <bug-id>` | Run full analysis pipeline |
 | `bug status <bug-id>` | Show bug investigation status |
-| `bug approve <bug-id>` | Approve fix plan |
+| `bug approve <bug-id> [--auto\|--manual]` | Approve fix plan |
 | `bug fix <bug-id>` | Execute approved fix |
 | `bug reject <bug-id>` | Reject bug (won't fix) |
 | `bug unblock <bug-id>` | Unblock stuck bug |
@@ -465,11 +465,17 @@ Enables autonomous operation by auto-approving routine decisions while pausing f
 ### CLI Usage
 
 ```bash
-# Enable auto-approval mode
+# Feature approve with auto-approval mode
 swarm-attack approve my-feature --auto
 
-# Force manual mode (requires human approval)
+# Feature approve with manual mode (requires human approval)
 swarm-attack approve my-feature --manual
+
+# Bug approve with auto-approval mode
+swarm-attack bug approve bug-id --auto
+
+# Bug approve with manual mode
+swarm-attack bug approve bug-id --manual
 
 # Check current mode
 swarm-attack status my-feature

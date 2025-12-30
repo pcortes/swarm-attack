@@ -1,0 +1,702 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>QA Session Extension - Coverage and Regression Tracking</title>
+    <id>SPEC-2025-12-29-QA-SESSION</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P0</priority>
+    <estimated_effort>2 days</estimated_effort>
+    <worktree_branch>feature/qa-session-extension</worktree_branch>
+    <depends_on>session-init-protocol (recommended)</depends_on>
+  </metadata>
+
+  <implementation_prompt>
+    <![CDATA[
+You are an expert team implementing QA Session Extension for swarm-attack.
+
+## Your Expert Team
+- **QA Automation Architect** (Lead): Designs QA-specific session initialization
+- **Coverage Analysis Expert**: Implements coverage baseline tracking
+- **Regression Testing Lead**: Bug regression detection system
+- **Integration Engineer**: Wires into existing QA infrastructure
+
+## Critical Context from Code Review
+
+### EXISTING QA INFRASTRUCTURE (5,715 lines - Use These):
+Location: /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/qa/
+
+1. **QASession** in qa/models.py - EXISTS but missing coverage fields
+2. **QAOrchestrator** in qa/orchestrator.py (838 lines) - main entry point
+3. **QAContext** in qa/models.py - testing context dataclass
+4. **QAResult** in qa/models.py - has tests_run, tests_passed, tests_failed
+5. **QAFinding** in qa/models.py - individual finding with severity
+
+### WHAT'S MISSING (Add These):
+1. Coverage tracking fields in QAResult/QASession
+2. Regression baseline storage (.swarm/qa/baselines/)
+3. Regression detection logic (compare current vs baseline)
+4. Coverage metrics reporting
+
+### FILES TO CREATE:
+- swarm_attack/qa/coverage_tracker.py
+- swarm_attack/qa/regression_detector.py
+- swarm_attack/qa/session_extension.py
+
+### FILES TO MODIFY:
+- swarm_attack/qa/models.py - Add coverage/regression fields to QASession, QAResult
+- swarm_attack/qa/orchestrator.py - Wire in coverage tracking and regression detection
+
+## TDD Protocol
+1. Create worktree: git worktree add worktrees/qa-session-ext -b feature/qa-session-extension
+2. Write failing tests in tests/unit/qa/test_session_extension.py
+3. Implement minimal code to pass
+4. Run: PYTHONPATH=. pytest tests/unit/qa/ -v
+
+## Worktree Path
+/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-session-ext
+    ]]>
+  </implementation_prompt>
+
+  <executive_summary>
+    Extend the QA Session system with coverage tracking and regression detection.
+    The QA infrastructure already has 5,715 lines of code with sessions, agents,
+    and integrations. This spec adds the missing analytics layer:
+    1. Coverage baseline tracking per session
+    2. Endpoint coverage metrics
+    3. Bug regression detection (compare sessions)
+    4. Coverage trending over time
+  </executive_summary>
+
+  <expert_team>
+    <lead role="QA Automation Architect" focus="QASessionExtension class">
+      Designs QA-specific session initialization that extends base SessionInitializer.
+      Adds coverage and regression checks to session lifecycle.
+    </lead>
+    <specialist role="Coverage Analysis Expert" focus="CoverageTracker">
+      Implements coverage baseline capture before coding.
+      Tracks endpoint coverage percentage across sessions.
+    </specialist>
+    <specialist role="Regression Testing Lead" focus="RegressionDetector">
+      Implements bug regression detection system.
+      Compares current session findings to baseline.
+    </specialist>
+    <specialist role="Integration Engineer" focus="QAOrchestrator integration">
+      Wires coverage and regression tracking into QAOrchestrator.
+      Ensures proper storage in .swarm/qa/baselines/ and .swarm/qa/coverage/.
+    </specialist>
+  </expert_team>
+
+  <existing_code_context>
+    <file path="swarm_attack/qa/models.py" lines="188-220">
+      <![CDATA[
+# QASession EXISTS - needs coverage fields added
+@dataclass
+class QASession:
+    session_id: str
+    trigger: QATrigger
+    depth: QADepth
+    status: QAStatus
+    context: QAContext
+    results: Optional[QAResult]
+    # ADD: coverage_data, baseline_session_id, regression_report
+
+# QAResult EXISTS - needs coverage metrics
+@dataclass
+class QAResult:
+    tests_run: int
+    tests_passed: int
+    tests_failed: int
+    findings: list[QAFinding]
+    # ADD: endpoints_discovered, endpoints_tested, coverage_percentage
+      ]]>
+    </file>
+    <file path="swarm_attack/qa/orchestrator.py" lines="55-87">
+      <![CDATA[
+# QAOrchestrator entry points - wire in coverage tracking
+class QAOrchestrator:
+    def test(self, context: QAContext, depth: QADepth = None) -> QASession:
+        """Main testing entry point."""
+        # ADD: Track coverage before/after
+
+    def validate_issue(self, feature_id: str, issue_number: int) -> QASession:
+        """Validate a specific issue."""
+
+    def health_check(self) -> QASession:
+        """Run health check tests."""
+      ]]>
+    </file>
+  </existing_code_context>
+
+  <requirements>
+    <functional id="F1" title="Coverage Tracker">
+      <description>
+        Track endpoint coverage across QA sessions.
+        Store baselines and compute coverage percentages.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/qa/coverage_tracker.py
+from dataclasses import dataclass, field
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+import json
+
+@dataclass
+class CoverageBaseline:
+    session_id: str
+    captured_at: str  # ISO timestamp
+    endpoints_discovered: int
+    endpoints_tested: int
+    coverage_percentage: float
+    endpoint_list: list[str]
+    tested_endpoints: list[str]
+
+@dataclass
+class CoverageReport:
+    current_session_id: str
+    baseline_session_id: Optional[str]
+    endpoints_discovered: int
+    endpoints_tested: int
+    coverage_percentage: float
+    coverage_delta: float  # vs baseline
+    untested_endpoints: list[str]
+    newly_tested: list[str]
+
+class CoverageTracker:
+    """Track QA endpoint coverage across sessions."""
+
+    def __init__(self, swarm_dir: Path):
+        self._coverage_dir = swarm_dir / "qa" / "coverage"
+        self._coverage_dir.mkdir(parents=True, exist_ok=True)
+
+    def capture_baseline(
+        self,
+        session_id: str,
+        endpoints_discovered: list[str],
+        endpoints_tested: list[str]
+    ) -> CoverageBaseline:
+        """Capture coverage baseline for a session."""
+        coverage_pct = len(endpoints_tested) / max(len(endpoints_discovered), 1) * 100
+
+        baseline = CoverageBaseline(
+            session_id=session_id,
+            captured_at=datetime.now().isoformat(),
+            endpoints_discovered=len(endpoints_discovered),
+            endpoints_tested=len(endpoints_tested),
+            coverage_percentage=coverage_pct,
+            endpoint_list=endpoints_discovered,
+            tested_endpoints=endpoints_tested,
+        )
+
+        self._save_baseline(baseline)
+        return baseline
+
+    def get_latest_baseline(self, feature_id: Optional[str] = None) -> Optional[CoverageBaseline]:
+        """Get most recent baseline for comparison."""
+        path = self._coverage_dir / "latest-baseline.json"
+        if not path.exists():
+            return None
+        with path.open() as f:
+            data = json.load(f)
+        return CoverageBaseline(**data)
+
+    def compare_to_baseline(
+        self,
+        session_id: str,
+        endpoints_discovered: list[str],
+        endpoints_tested: list[str]
+    ) -> CoverageReport:
+        """Compare current session coverage to baseline."""
+        baseline = self.get_latest_baseline()
+        current_pct = len(endpoints_tested) / max(len(endpoints_discovered), 1) * 100
+
+        if baseline:
+            delta = current_pct - baseline.coverage_percentage
+            newly_tested = [e for e in endpoints_tested if e not in baseline.tested_endpoints]
+        else:
+            delta = 0.0
+            newly_tested = endpoints_tested
+
+        untested = [e for e in endpoints_discovered if e not in endpoints_tested]
+
+        return CoverageReport(
+            current_session_id=session_id,
+            baseline_session_id=baseline.session_id if baseline else None,
+            endpoints_discovered=len(endpoints_discovered),
+            endpoints_tested=len(endpoints_tested),
+            coverage_percentage=current_pct,
+            coverage_delta=delta,
+            untested_endpoints=untested,
+            newly_tested=newly_tested,
+        )
+
+    def _save_baseline(self, baseline: CoverageBaseline):
+        """Save baseline as latest and to history."""
+        from dataclasses import asdict
+
+        # Save as latest
+        latest_path = self._coverage_dir / "latest-baseline.json"
+        with latest_path.open("w") as f:
+            json.dump(asdict(baseline), f, indent=2)
+
+        # Append to history
+        history_path = self._coverage_dir / "coverage-history.json"
+        history = []
+        if history_path.exists():
+            with history_path.open() as f:
+                history = json.load(f)
+        history.append(asdict(baseline))
+        with history_path.open("w") as f:
+            json.dump(history[-100:], f, indent=2)  # Keep last 100
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F2" title="Regression Detector">
+      <description>
+        Detect regressions by comparing QA findings between sessions.
+        Track which bugs have regressed (were fixed, now failing again).
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/qa/regression_detector.py
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+import json
+
+@dataclass
+class RegressionReport:
+    baseline_session_id: str
+    current_session_id: str
+    new_findings: list[dict]  # Findings in current but not baseline
+    fixed_findings: list[dict]  # Findings in baseline but not current
+    regression_count: int
+    improvement_count: int
+    severity: str  # "critical", "moderate", "none"
+
+class RegressionDetector:
+    """Detect regressions by comparing QA sessions."""
+
+    def __init__(self, swarm_dir: Path):
+        self._baselines_dir = swarm_dir / "qa" / "baselines"
+        self._baselines_dir.mkdir(parents=True, exist_ok=True)
+
+    def establish_baseline(self, session_id: str, findings: list) -> None:
+        """Save session as baseline for future comparison."""
+        baseline_path = self._baselines_dir / f"{session_id}.json"
+        findings_data = [self._finding_to_dict(f) for f in findings]
+        with baseline_path.open("w") as f:
+            json.dump({
+                "session_id": session_id,
+                "findings": findings_data,
+            }, f, indent=2)
+
+        # Also set as latest
+        latest_path = self._baselines_dir / "latest.json"
+        with latest_path.open("w") as f:
+            json.dump({
+                "session_id": session_id,
+                "findings": findings_data,
+            }, f, indent=2)
+
+    def detect_regressions(
+        self,
+        current_session_id: str,
+        current_findings: list
+    ) -> Optional[RegressionReport]:
+        """Compare current findings to baseline."""
+        baseline = self._load_latest_baseline()
+        if not baseline:
+            return None
+
+        baseline_keys = {self._finding_key(f) for f in baseline["findings"]}
+        current_keys = {self._finding_key(f) for f in [self._finding_to_dict(c) for c in current_findings]}
+
+        new_keys = current_keys - baseline_keys
+        fixed_keys = baseline_keys - current_keys
+
+        new_findings = [f for f in current_findings if self._finding_key(self._finding_to_dict(f)) in new_keys]
+        fixed_findings = [f for f in baseline["findings"] if self._finding_key(f) in fixed_keys]
+
+        # Determine severity
+        has_critical = any(f.get("severity") == "critical" for f in new_findings)
+        severity = "critical" if has_critical else ("moderate" if new_findings else "none")
+
+        return RegressionReport(
+            baseline_session_id=baseline["session_id"],
+            current_session_id=current_session_id,
+            new_findings=[self._finding_to_dict(f) for f in new_findings],
+            fixed_findings=fixed_findings,
+            regression_count=len(new_findings),
+            improvement_count=len(fixed_findings),
+            severity=severity,
+        )
+
+    def _finding_key(self, finding: dict) -> str:
+        """Create unique key for finding comparison."""
+        return f"{finding.get('endpoint', '')}:{finding.get('category', '')}:{finding.get('test_type', '')}"
+
+    def _finding_to_dict(self, finding) -> dict:
+        """Convert QAFinding to dict."""
+        if hasattr(finding, '__dict__'):
+            return {k: v for k, v in finding.__dict__.items() if not k.startswith('_')}
+        return finding
+
+    def _load_latest_baseline(self) -> Optional[dict]:
+        """Load latest baseline."""
+        path = self._baselines_dir / "latest.json"
+        if not path.exists():
+            return None
+        with path.open() as f:
+            return json.load(f)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F3" title="QA Session Extension">
+      <description>
+        Extend QA session lifecycle with coverage and regression checks.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/qa/session_extension.py
+from dataclasses import dataclass
+from typing import Optional
+from .coverage_tracker import CoverageTracker, CoverageReport
+from .regression_detector import RegressionDetector, RegressionReport
+
+@dataclass
+class QASessionExtensionResult:
+    coverage_report: Optional[CoverageReport]
+    regression_report: Optional[RegressionReport]
+    should_block: bool
+    block_reason: Optional[str]
+
+class QASessionExtension:
+    """Extends QA session with coverage and regression tracking."""
+
+    def __init__(self, swarm_dir):
+        self._coverage_tracker = CoverageTracker(swarm_dir)
+        self._regression_detector = RegressionDetector(swarm_dir)
+
+    def on_session_start(
+        self,
+        session_id: str,
+        endpoints_discovered: list[str]
+    ) -> None:
+        """Called when QA session starts."""
+        # Record what endpoints are available for testing
+        self._current_endpoints = endpoints_discovered
+
+    def on_session_complete(
+        self,
+        session_id: str,
+        endpoints_tested: list[str],
+        findings: list
+    ) -> QASessionExtensionResult:
+        """Called when QA session completes."""
+
+        # Capture coverage
+        coverage_report = self._coverage_tracker.compare_to_baseline(
+            session_id,
+            self._current_endpoints,
+            endpoints_tested
+        )
+
+        # Check for regressions
+        regression_report = self._regression_detector.detect_regressions(
+            session_id,
+            findings
+        )
+
+        # Determine if should block
+        should_block = False
+        block_reason = None
+
+        if regression_report and regression_report.severity == "critical":
+            should_block = True
+            block_reason = f"Critical regressions detected: {regression_report.regression_count} new issues"
+
+        if coverage_report.coverage_delta < -10:  # Coverage dropped by 10%+
+            should_block = True
+            block_reason = f"Coverage dropped significantly: {coverage_report.coverage_delta:.1f}%"
+
+        return QASessionExtensionResult(
+            coverage_report=coverage_report,
+            regression_report=regression_report,
+            should_block=should_block,
+            block_reason=block_reason,
+        )
+
+    def set_as_baseline(self, session_id: str, endpoints_tested: list[str], findings: list):
+        """Mark current session as the baseline for future comparisons."""
+        self._coverage_tracker.capture_baseline(
+            session_id,
+            self._current_endpoints,
+            endpoints_tested
+        )
+        self._regression_detector.establish_baseline(session_id, findings)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F4" title="QA Model Extensions">
+      <description>
+        Add coverage and regression fields to existing QA models.
+      </description>
+      <interface>
+        <![CDATA[
+# Add to swarm_attack/qa/models.py
+
+# Extend QAResult with coverage metrics
+@dataclass
+class QAResult:
+    tests_run: int
+    tests_passed: int
+    tests_failed: int
+    findings: list[QAFinding]
+    # NEW FIELDS:
+    endpoints_discovered: int = 0
+    endpoints_tested: int = 0
+    coverage_percentage: float = 0.0
+    coverage_delta: float = 0.0  # vs baseline
+
+# Extend QASession with extension data
+@dataclass
+class QASession:
+    session_id: str
+    trigger: QATrigger
+    depth: QADepth
+    status: QAStatus
+    context: QAContext
+    results: Optional[QAResult]
+    # NEW FIELDS:
+    coverage_report: Optional[dict] = None
+    regression_report: Optional[dict] = None
+    is_baseline: bool = False
+    baseline_session_id: Optional[str] = None
+        ]]>
+      </interface>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/qa/test_session_extension.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from pathlib import Path
+from swarm_attack.qa.coverage_tracker import CoverageTracker, CoverageBaseline
+from swarm_attack.qa.regression_detector import RegressionDetector, RegressionReport
+from swarm_attack.qa.session_extension import QASessionExtension
+
+class TestCoverageTracker:
+    def test_captures_baseline(self, tmp_path):
+        """Tracker captures coverage baseline."""
+        tracker = CoverageTracker(tmp_path / ".swarm")
+
+        baseline = tracker.capture_baseline(
+            session_id="sess-001",
+            endpoints_discovered=["/api/users", "/api/items", "/api/orders"],
+            endpoints_tested=["/api/users", "/api/items"]
+        )
+
+        assert baseline.endpoints_discovered == 3
+        assert baseline.endpoints_tested == 2
+        assert baseline.coverage_percentage == pytest.approx(66.67, rel=0.1)
+
+    def test_compares_to_baseline(self, tmp_path):
+        """Tracker compares current to baseline."""
+        tracker = CoverageTracker(tmp_path / ".swarm")
+
+        # Create baseline
+        tracker.capture_baseline(
+            session_id="sess-001",
+            endpoints_discovered=["/api/users", "/api/items"],
+            endpoints_tested=["/api/users"]
+        )
+
+        # Compare new session
+        report = tracker.compare_to_baseline(
+            session_id="sess-002",
+            endpoints_discovered=["/api/users", "/api/items", "/api/orders"],
+            endpoints_tested=["/api/users", "/api/items", "/api/orders"]
+        )
+
+        assert report.coverage_percentage == 100.0
+        assert report.coverage_delta > 0  # Improved
+        assert "/api/items" in report.newly_tested
+
+    def test_tracks_untested_endpoints(self, tmp_path):
+        """Report shows untested endpoints."""
+        tracker = CoverageTracker(tmp_path / ".swarm")
+
+        report = tracker.compare_to_baseline(
+            session_id="sess-001",
+            endpoints_discovered=["/api/users", "/api/items", "/api/orders"],
+            endpoints_tested=["/api/users"]
+        )
+
+        assert "/api/items" in report.untested_endpoints
+        assert "/api/orders" in report.untested_endpoints
+
+class TestRegressionDetector:
+    def test_detects_new_findings(self, tmp_path):
+        """Detector finds new issues not in baseline."""
+        detector = RegressionDetector(tmp_path / ".swarm")
+
+        # Establish baseline with no issues
+        detector.establish_baseline("sess-001", [])
+
+        # Current session has issues
+        current_findings = [
+            {"endpoint": "/api/users", "category": "error", "test_type": "behavioral", "severity": "moderate"}
+        ]
+        report = detector.detect_regressions("sess-002", current_findings)
+
+        assert report.regression_count == 1
+        assert report.severity == "moderate"
+
+    def test_detects_fixed_issues(self, tmp_path):
+        """Detector finds issues that were fixed."""
+        detector = RegressionDetector(tmp_path / ".swarm")
+
+        # Baseline had issues
+        baseline_findings = [
+            {"endpoint": "/api/users", "category": "error", "test_type": "behavioral", "severity": "critical"}
+        ]
+        detector.establish_baseline("sess-001", baseline_findings)
+
+        # Current has no issues
+        report = detector.detect_regressions("sess-002", [])
+
+        assert report.improvement_count == 1
+        assert report.regression_count == 0
+        assert report.severity == "none"
+
+    def test_critical_regression_severity(self, tmp_path):
+        """Critical findings result in critical severity."""
+        detector = RegressionDetector(tmp_path / ".swarm")
+        detector.establish_baseline("sess-001", [])
+
+        current = [{"endpoint": "/api/auth", "category": "security", "test_type": "contract", "severity": "critical"}]
+        report = detector.detect_regressions("sess-002", current)
+
+        assert report.severity == "critical"
+
+class TestQASessionExtension:
+    def test_blocks_on_critical_regression(self, tmp_path):
+        """Extension blocks session on critical regression."""
+        ext = QASessionExtension(tmp_path / ".swarm")
+
+        ext.on_session_start("sess-001", ["/api/users"])
+
+        # First session establishes baseline
+        ext.set_as_baseline("sess-001", ["/api/users"], [])
+
+        # Second session with critical finding
+        ext.on_session_start("sess-002", ["/api/users"])
+        result = ext.on_session_complete(
+            "sess-002",
+            ["/api/users"],
+            [{"endpoint": "/api/users", "severity": "critical", "category": "error", "test_type": "behavioral"}]
+        )
+
+        assert result.should_block is True
+        assert "Critical regressions" in result.block_reason
+
+    def test_blocks_on_coverage_drop(self, tmp_path):
+        """Extension blocks on significant coverage drop."""
+        ext = QASessionExtension(tmp_path / ".swarm")
+
+        # Baseline with high coverage
+        endpoints = [f"/api/endpoint{i}" for i in range(10)]
+        ext.on_session_start("sess-001", endpoints)
+        ext.set_as_baseline("sess-001", endpoints, [])  # 100% coverage
+
+        # New session with low coverage
+        ext.on_session_start("sess-002", endpoints)
+        result = ext.on_session_complete("sess-002", endpoints[:2], [])  # 20% coverage
+
+        assert result.should_block is True
+        assert "Coverage dropped" in result.block_reason
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass tests</description>
+      <files_to_create>
+        <file>swarm_attack/qa/coverage_tracker.py</file>
+        <file>swarm_attack/qa/regression_detector.py</file>
+        <file>swarm_attack/qa/session_extension.py</file>
+      </files_to_create>
+      <files_to_modify>
+        <file>swarm_attack/qa/models.py - Add coverage fields to QAResult and QASession</file>
+        <file>swarm_attack/qa/orchestrator.py - Wire in QASessionExtension</file>
+      </files_to_modify>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up and optimize</description>
+      <tasks>
+        <task>Add coverage trending visualization data</task>
+        <task>Implement flaky test detection (same finding appears intermittently)</task>
+        <task>Add coverage thresholds to config</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/qa-session-ext -b feature/qa-session-extension
+
+# Enter worktree
+cd worktrees/qa-session-ext
+
+# Run QA tests
+PYTHONPATH=. pytest tests/unit/qa/test_session_extension.py -v
+
+# Full QA test suite
+PYTHONPATH=. pytest tests/unit/qa/ -v
+
+# Full test suite
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">CoverageTracker captures and compares baselines</criterion>
+    <criterion id="AC2">RegressionDetector finds new and fixed issues</criterion>
+    <criterion id="AC3">QASessionExtension blocks on critical regressions</criterion>
+    <criterion id="AC4">QASessionExtension blocks on significant coverage drops</criterion>
+    <criterion id="AC5">QAResult has coverage metrics fields</criterion>
+    <criterion id="AC6">QASession has regression report field</criterion>
+    <criterion id="AC7">All existing QA tests pass</criterion>
+  </acceptance_criteria>
+
+  <storage_structure>
+    <![CDATA[
+.swarm/qa/
+├── sessions/              # Existing session storage
+│   └── qa-YYYYMMDD-HHMMSS/
+│       ├── state.json
+│       └── qa-report.md
+├── baselines/             # NEW: Regression baselines
+│   ├── latest.json
+│   └── sess-{id}.json
+└── coverage/              # NEW: Coverage tracking
+    ├── latest-baseline.json
+    └── coverage-history.json
+    ]]>
+  </storage_structure>
+</spec>
