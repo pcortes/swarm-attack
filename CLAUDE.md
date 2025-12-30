@@ -493,7 +493,7 @@ Pub/sub event system for agent communication and audit logging.
 ```python
 from swarm_attack.events.types import EventType
 
-# Available event types (27 total):
+# Available event types (28 total):
 EventType.SPEC_APPROVED      # Spec passed debate
 EventType.SPEC_REJECTED      # Spec failed debate
 EventType.ISSUE_CREATED      # GitHub issue created
@@ -579,10 +579,16 @@ Provides right-sized context to each agent type with token budget management.
 
 | Agent | Token Budget | Depth | Includes |
 |-------|--------------|-------|----------|
-| **Coder** | 15,000 | full_source | Project instructions, module registry, completed summaries, test structure |
-| **Verifier** | 3,000 | compact | Module registry, test paths |
-| **SpecAuthor** | 8,000 | summary | PRD, existing patterns |
-| **IssueCreator** | 5,000 | summary | Spec, sizing guidelines |
+| **Coder** | 15,000 | full_source | Project instructions, module registry, completed summaries, dependencies |
+| **SpecAuthor** | 5,000 | summary | Project instructions, architecture overview, existing modules |
+| **SpecCritic** | 3,000 | summary | Project instructions, review guidelines, past feedback |
+| **SpecModerator** | 3,000 | summary | Project instructions, review guidelines |
+| **IssueCreator** | 4,000 | compact | Project instructions, existing issues, module registry |
+| **BugResearcher** | 10,000 | full_source | Project instructions, test structure, recent changes |
+| **RootCauseAnalyzer** | 8,000 | full_source | Project instructions, test structure, module registry |
+| **FixPlanner** | 5,000 | summary | Project instructions, module registry, completed summaries |
+| **Verifier** | 3,000 | compact | Project instructions, test patterns, coverage gaps |
+| **ComplexityGate** | 2,000 | compact | Project instructions |
 
 ### Usage
 
