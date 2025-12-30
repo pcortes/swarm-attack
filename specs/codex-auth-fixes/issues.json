@@ -1,0 +1,51 @@
+{
+  "feature_id": "codex-auth-fixes",
+  "created_at": "2025-12-21T00:00:00Z",
+  "issues": [
+    {
+      "order": 1,
+      "title": "Fix subprocess environment inheritance in CodexCliRunner",
+      "body": "## Summary\nAdd explicit environment passing to subprocess.run() in CodexCliRunner to ensure Codex CLI receives the same environment as the parent process.\n\n## Problem\n`codex_client.py:321` uses `subprocess.run()` without explicit `env=` parameter. Shell-specific credential handling may differ between terminal and subprocess.\n\n## Acceptance Criteria\n- [ ] `subprocess.run()` explicitly passes `env=os.environ.copy()`\n- [ ] Add `import os` if not present\n- [ ] All existing tests pass\n- [ ] New test verifies environment is passed to subprocess\n\n## Technical Notes\n- File: `swarm_attack/codex_client.py`\n- Lines: 320-327\n- Pattern Reference: See how verifier.py passes env at line 101-107\n\n## Interface Contract\n```python\nproc = subprocess.run(\n    cmd,\n    capture_output=True,\n    text=True,\n    cwd=cwd,\n    timeout=timeout_seconds,\n    env=os.environ.copy(),  # NEW\n)\n```",
+      "labels": ["bug", "priority:p0", "size:small"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "automation_type": "automated"
+    },
+    {
+      "order": 2,
+      "title": "Remove overly broad 'unauthorized' pattern from CODEX_AUTH_PATTERNS",
+      "body": "## Summary\nRemove or make more specific the `r\"unauthorized\"` pattern in CODEX_AUTH_PATTERNS to prevent false positive auth errors.\n\n## Problem\n`errors.py:189` uses pattern `r\"unauthorized\"` which matches the word anywhere in stderr, causing false positives from permission errors, policy violations, etc.\n\n## Acceptance Criteria\n- [ ] Remove `r\"unauthorized\"` from CODEX_AUTH_PATTERNS (covered by `r\"401\\s+Unauthorized\"`)\n- [ ] Negative test: stderr containing \"unauthorized access denied\" does NOT trigger AUTH_REQUIRED\n- [ ] Negative test: stderr containing \"policy unauthorized module\" does NOT trigger AUTH_REQUIRED  \n- [ ] Positive test: stderr containing \"401 Unauthorized\" still triggers AUTH_REQUIRED\n- [ ] Positive test: stderr containing \"not logged in\" still triggers AUTH_REQUIRED\n- [ ] All existing error classification tests pass\n\n## Technical Notes\n- File: `swarm_attack/errors.py`\n- Lines: 183-194 (CODEX_AUTH_PATTERNS)\n- The pattern `r\"401\\s+Unauthorized\"` already covers the HTTP 401 case\n\n## Interface Contract\n```python\nCODEX_AUTH_PATTERNS = [\n    r\"not\\s+logged\\s+in\",\n    r\"login\\s+required\",\n    r\"invalid\\s+session\",\n    r\"session\\s+expired\",\n    # REMOVED: r\"unauthorized\" - too broad, causes false positives\n    r\"please\\s+run\\s+`codex\\s+login`\",\n    r\"AuthenticationError:\",\n    r\"401\\s+Unauthorized\",\n    r\"Token\\s+exchange\\s+(?:error|failed)\",\n]\n```",
+      "labels": ["bug", "priority:p0", "size:small"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "automation_type": "automated"
+    },
+    {
+      "order": 3,
+      "title": "Add skip_auth_classification option to CodexCliRunner",
+      "body": "## Summary\nWire the `config.preflight.check_codex_auth` setting to CodexCliRunner so it can skip auth error classification when configured.\n\n## Problem\n`check_codex_auth: false` in config.yaml has no effect because the setting only controls preflight checks, not runtime error classification.\n\n## Acceptance Criteria\n- [ ] `CodexCliRunner` accepts `skip_auth_classification: bool = False` parameter\n- [ ] When `True`, auth patterns result in CLI_CRASH instead of AUTH_REQUIRED\n- [ ] Default behavior unchanged (auth classification enabled)\n- [ ] Test with flag=False raises CodexAuthError on auth pattern\n- [ ] Test with flag=True raises CodexInvocationError on auth pattern\n- [ ] Rate limit and other errors unaffected by flag\n\n## Technical Notes\n- File: `swarm_attack/codex_client.py`\n- Lines: 79-93 (dataclass), 207-248 (_classify_and_raise)\n- Pattern Reference: See how other agents accept config flags\n\n## Interface Contract\n```python\n@dataclass\nclass CodexCliRunner:\n    config: SwarmConfig\n    logger: Optional[SwarmLogger] = None\n    checkpoint_callback: Optional[Callable[[], None]] = None\n    skip_auth_classification: bool = False  # NEW\n\n    def _classify_and_raise(self, stderr: str, stdout: str, returncode: int) -> None:\n        error_type = ErrorClassifier.classify_codex_error(...)\n        \n        # NEW: Skip auth classification if configured\n        if self.skip_auth_classification and error_type == LLMErrorType.AUTH_REQUIRED:\n            error_type = LLMErrorType.CLI_CRASH\n        # ... rest unchanged\n```",
+      "labels": ["enhancement", "priority:p1", "size:medium"],
+      "estimated_size": "medium",
+      "dependencies": [2],
+      "automation_type": "automated"
+    },
+    {
+      "order": 4,
+      "title": "Add importlib to STDLIB_MODULES whitelist",
+      "body": "## Summary\nAdd `'importlib'` to the STDLIB_MODULES frozenset in coder.py to prevent false positive import validation failures.\n\n## Problem\n`coder.py:113-132` STDLIB_MODULES is missing `'importlib'`, causing import validation to fail when tests import from `importlib.util` or `importlib.metadata`.\n\n## Acceptance Criteria\n- [ ] Add `'importlib'` to STDLIB_MODULES frozenset\n- [ ] Import validation skips `importlib.util`, `importlib.metadata`, etc.\n- [ ] New test: `from importlib.util import find_spec` is skipped during validation\n- [ ] New test: `from importlib import resources` is skipped\n- [ ] Test that project imports still validated (e.g., `from myproject import foo`)\n- [ ] All existing import validation tests pass\n\n## Technical Notes\n- File: `swarm_attack/agents/coder.py`\n- Lines: 113-132 (STDLIB_MODULES frozenset)\n- The module check is at line 906: `if module.split('.')[0] in self.STDLIB_MODULES`\n\n## Interface Contract\n```python\nSTDLIB_MODULES = frozenset([\n    # Python standard library\n    '__future__', 'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',\n    'enum', 'functools', 'inspect', 'io', 'itertools', 'json', 'logging', 'math',\n    'os', 'pathlib', 'pickle', 'random', 're', 'shutil', 'string', 'sys',\n    'tempfile', 'time', 'traceback', 'typing', 'unittest', 'uuid', 'warnings',\n    'contextlib', 'threading', 'multiprocessing', 'subprocess', 'socket',\n    'struct', 'textwrap', 'hashlib', 'base64', 'argparse', 'configparser',\n    'importlib',  # NEW: Import utilities (util, metadata, resources)\n    # ... rest unchanged\n])\n```",
+      "labels": ["bug", "priority:p1", "size:small"],
+      "estimated_size": "small",
+      "dependencies": [],
+      "automation_type": "automated"
+    },
+    {
+      "order": 5,
+      "title": "Add retry logic for SpecCritic failures in orchestrator",
+      "body": "## Summary\nWrap the SpecCritic invocation in a retry loop to provide resilience against transient Codex failures.\n\n## Problem\nThe orchestrator's spec debate loop has NO retry logic for critic failures. When SpecCritic fails, the loop immediately sets the feature to BLOCKED.\n\n## Acceptance Criteria\n- [ ] Wrap critic invocation in retry loop (max 2 retries)\n- [ ] Log each retry attempt with error details\n- [ ] Only block feature after all retries exhausted\n- [ ] Test: critic succeeds on first attempt → no retry\n- [ ] Test: critic fails once, succeeds on retry → continues\n- [ ] Test: critic fails all retries → BLOCKED status\n- [ ] Test: retry logging occurs with attempt number\n\n## Technical Notes\n- File: `swarm_attack/orchestrator.py`\n- Lines: 802-837 (critic invocation block)\n- Pattern Reference: See implementation retry loop at lines 3319-3466\n\n## Interface Contract\n```python\n# In run_spec_pipeline(), around lines 802-837\nMAX_CRITIC_RETRIES = 2\n\nfor critic_attempt in range(MAX_CRITIC_RETRIES + 1):\n    critic_result = self._critic.run(critic_context)\n    \n    if critic_result.success:\n        break\n    \n    if critic_attempt < MAX_CRITIC_RETRIES:\n        self._log(\"critic_retry\", {\n            \"attempt\": critic_attempt + 1,\n            \"max_retries\": MAX_CRITIC_RETRIES,\n            \"error\": critic_result.errors,\n        }, level=\"warning\")\n        continue\n    \n    # All retries exhausted\n    self._update_phase(feature_id, FeaturePhase.BLOCKED)\n    return PipelineResult(status=\"failure\", ...)\n```",
+      "labels": ["enhancement", "priority:p2", "size:medium"],
+      "estimated_size": "medium",
+      "dependencies": [1, 2],
+      "automation_type": "automated"
+    }
+  ]
+}

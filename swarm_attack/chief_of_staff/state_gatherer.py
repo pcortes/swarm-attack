@@ -74,15 +74,16 @@ class SpecSummary:
 
 
 @dataclass
-class TestSuiteMetrics:
-    """Test suite state metrics. (Renamed from TestState for BUG-13)"""
+class SuiteMetrics:
+    """Test suite state metrics (BUG-13/14: renamed from TestSuiteMetrics)."""
 
     total_tests: int
     test_files: list[str] = field(default_factory=list)
 
 
-# BUG-13: Backward compatibility alias
-TestState = TestSuiteMetrics
+# BUG-13/14: Backward compatibility aliases (not class definitions, so pytest won't collect)
+TestSuiteMetrics = SuiteMetrics
+TestState = SuiteMetrics
 
 
 @dataclass
@@ -112,7 +113,7 @@ class RepoStateSnapshot:
     bugs: list[BugSummary]
     prds: list[PRDSummary]
     specs: list[SpecSummary]
-    tests: TestState
+    tests: SuiteMetrics
     github: Optional[GitHubState]
     interrupted_sessions: list[InterruptedSession]
     cost_today: float
@@ -400,11 +401,11 @@ class StateGatherer:
         
         return specs
     
-    def gather_tests(self) -> TestState:
+    def gather_tests(self) -> SuiteMetrics:
         """Gather test state using pytest --collect-only.
-        
+
         Returns:
-            TestState with test counts.
+            SuiteMetrics with test counts.
         """
         try:
             result = subprocess.run(
@@ -438,12 +439,12 @@ class StateGatherer:
                     if parts and parts[0] not in test_files:
                         test_files.append(parts[0])
             
-            return TestState(
+            return SuiteMetrics(
                 total_tests=total_tests,
                 test_files=test_files,
             )
         except (subprocess.SubprocessError, OSError, subprocess.TimeoutExpired):
-            return TestState(total_tests=0, test_files=[])
+            return SuiteMetrics(total_tests=0, test_files=[])
     
     def gather_github(self) -> Optional[GitHubState]:
         """Gather GitHub state via gh CLI.

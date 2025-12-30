@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<expert-team-prompt>
+  <metadata>
+    <title>v0.3.0 Bug Fixes - TDD Implementation</title>
+    <date>2025-12-29</date>
+    <source-commit>f73a50c</source-commit>
+    <fix-plan-path>.swarm/qa/test-reports/v030-fix-plan-20251229.md</fix-plan-path>
+  </metadata>
+
+  <overview>
+    You are a team of expert engineers implementing bug fixes for swarm-attack v0.3.0.
+    You MUST use Test-Driven Development (TDD) and work in an isolated git worktree.
+
+    CRITICAL: You cannot proceed past Phase 1 until the worktree is created and verified.
+  </overview>
+
+  <bugs-to-fix>
+    <bug id="BUG-001" priority="P1" severity="Medium">
+      <title>CLI --auto/--manual Flags Missing</title>
+      <description>The approve commands lack --auto and --manual flags to control auto-approval mode</description>
+      <files>
+        <file>swarm_attack/cli/feature.py</file>
+        <file>swarm_attack/cli/bug.py</file>
+      </files>
+      <existing-infrastructure>
+        <item>swarm_attack/auto_approval/spec.py - SpecAutoApprover</item>
+        <item>swarm_attack/auto_approval/issue.py - IssueAutoGreenlighter</item>
+        <item>swarm_attack/auto_approval/bug.py - BugAutoApprover</item>
+        <item>swarm_attack/state_store.py:847-888 - set_manual_mode(), is_manual_mode()</item>
+      </existing-infrastructure>
+    </bug>
+
+    <bug id="BUG-002" priority="P2" severity="High">
+      <title>Documentation Uses Wrong Event Type Names</title>
+      <description>Docs reference IMPL_COMPLETED and ISSUE_GREENLIGHTED which don't exist</description>
+      <mapping>
+        <wrong>IMPL_COMPLETED</wrong><correct>IMPL_VERIFIED</correct>
+        <wrong>ISSUE_GREENLIGHTED</wrong><correct>ISSUE_READY</correct>
+      </mapping>
+      <files>
+        <file line="500,502,522">CLAUDE.md</file>
+        <file line="210-217">.claude/prompts/expert-tester.md</file>
+        <file line="884-888">docs/USER_GUIDE.md</file>
+      </files>
+    </bug>
+
+    <bug id="BUG-003" priority="P3" severity="Low">
+      <title>Documentation Numeric Discrepancies</title>
+      <description>CLAUDE.md has wrong counts and token values</description>
+      <discrepancies>
+        <item location="CLAUDE.md:496">Says 27 event types, actually 28</item>
+        <item location="CLAUDE.md:578-585">Shows 4 agent profiles, actually 10</item>
+        <item location="CLAUDE.md:582">spec_author listed as 8,000 tokens, actually 5,000</item>
+        <item location="CLAUDE.md:583">issue_creator listed as 5,000 tokens, actually 4,000</item>
+      </discrepancies>
+    </bug>
+  </bugs-to-fix>
+
+  <phases>
+    <!-- PHASE 1: WORKTREE SETUP - BLOCKING GATE -->
+    <phase id="1" name="Worktree Setup" blocking="true">
+      <description>Create isolated worktree for bug fixes. THIS IS MANDATORY.</description>
+
+      <gate>
+        <condition>Worktree must exist and be verified before ANY other work</condition>
+        <failure-action>STOP. Do not proceed. Fix worktree setup first.</failure-action>
+      </gate>
+
+      <steps>
+        <step order="1">
+          <action>Create worktree branch and directory</action>
+          <command><![CDATA[
+git -C /Users/philipjcortes/Desktop/swarm-attack worktree add \
+  /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes \
+  -b fix/v030-bugs
+          ]]></command>
+        </step>
+
+        <step order="2">
+          <action>Verify worktree exists</action>
+          <command><![CDATA[
+git -C /Users/philipjcortes/Desktop/swarm-attack worktree list
+          ]]></command>
+          <expected-output>Should show /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes</expected-output>
+        </step>
+
+        <step order="3">
+          <action>Change to worktree directory</action>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && pwd
+          ]]></command>
+        </step>
+
+        <step order="4">
+          <action>Verify clean state</action>
+          <command><![CDATA[
+git -C /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes status --short
+          ]]></command>
+          <expected-output>Should be empty (clean working tree)</expected-output>
+        </step>
+      </steps>
+
+      <checkpoint>
+        <name>WORKTREE_READY</name>
+        <validation>All 4 steps completed successfully</validation>
+        <on-failure>DO NOT PROCEED. Return to step 1.</on-failure>
+      </checkpoint>
+    </phase>
+
+    <!-- PHASE 2: BUG-001 TDD -->
+    <phase id="2" name="BUG-001: CLI Flags" depends-on="WORKTREE_READY">
+      <description>Add --auto/--manual flags using TDD</description>
+      <worktree-path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes</worktree-path>
+
+      <tdd-cycle name="Feature Approve Flags">
+        <red>
+          <description>Write failing tests for feature approve --auto/--manual</description>
+          <test-file>tests/unit/test_cli_approve_flags.py</test-file>
+          <test-cases>
+            <case>test_approve_accepts_auto_flag</case>
+            <case>test_approve_accepts_manual_flag</case>
+            <case>test_approve_rejects_both_flags_together</case>
+            <case>test_approve_auto_sets_manual_mode_false</case>
+            <case>test_approve_manual_sets_manual_mode_true</case>
+          </test-cases>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_cli_approve_flags.py -v
+          ]]></command>
+          <expected>Tests should FAIL (flags don't exist yet)</expected>
+        </red>
+
+        <green>
+          <description>Implement flags in swarm_attack/cli/feature.py</description>
+          <file>swarm_attack/cli/feature.py</file>
+          <location>Lines 921-937 (approve function)</location>
+          <changes>
+            <change>Add auto: bool = typer.Option(...) parameter</change>
+            <change>Add manual: bool = typer.Option(...) parameter</change>
+            <change>Add mutual exclusion check (error if both)</change>
+            <change>Call store.set_manual_mode() based on flags</change>
+          </changes>
+        </green>
+
+        <refactor>
+          <description>Run tests, ensure all pass</description>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_cli_approve_flags.py -v
+          ]]></command>
+          <expected>All tests PASS</expected>
+        </refactor>
+      </tdd-cycle>
+
+      <tdd-cycle name="Bug Approve Flags">
+        <red>
+          <description>Write failing tests for bug approve --auto/--manual</description>
+          <test-file>tests/unit/test_cli_bug_approve_flags.py</test-file>
+          <test-cases>
+            <case>test_bug_approve_accepts_auto_flag</case>
+            <case>test_bug_approve_accepts_manual_flag</case>
+            <case>test_bug_approve_rejects_both_flags_together</case>
+          </test-cases>
+        </red>
+
+        <green>
+          <description>Implement flags in swarm_attack/cli/bug.py</description>
+          <file>swarm_attack/cli/bug.py</file>
+          <location>Lines 412-423 (bug_approve function)</location>
+        </green>
+
+        <refactor>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_cli_bug_approve_flags.py -v
+          ]]></command>
+        </refactor>
+      </tdd-cycle>
+
+      <checkpoint>
+        <name>BUG_001_COMPLETE</name>
+        <validation-command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_cli_approve_flags.py tests/unit/test_cli_bug_approve_flags.py -v
+        ]]></validation-command>
+        <commit-message>fix(cli): add --auto/--manual flags to approve commands</commit-message>
+      </checkpoint>
+    </phase>
+
+    <!-- PHASE 3: BUG-002 Documentation Fixes -->
+    <phase id="3" name="BUG-002: Event Type Names" depends-on="BUG_001_COMPLETE">
+      <description>Fix wrong event type names in documentation</description>
+      <worktree-path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes</worktree-path>
+
+      <tdd-cycle name="Event Type Validation Test">
+        <red>
+          <description>Write test that validates documentation event types exist</description>
+          <test-file>tests/unit/test_docs_event_types.py</test-file>
+          <test-code><![CDATA[
+"""Test that documented event types actually exist in the codebase."""
+import re
+from pathlib import Path
+from swarm_attack.events.types import EventType
+
+def test_claude_md_event_types_exist():
+    """All EventType references in CLAUDE.md must exist."""
+    claude_md = Path("CLAUDE.md").read_text()
+    # Find all EventType.XXX references
+    matches = re.findall(r'EventType\.([A-Z_]+)', claude_md)
+    valid_names = {e.name for e in EventType}
+    for match in matches:
+        assert match in valid_names, f"EventType.{match} referenced in CLAUDE.md does not exist"
+
+def test_expert_tester_event_types_exist():
+    """All EventType references in expert-tester.md must exist."""
+    expert_md = Path(".claude/prompts/expert-tester.md").read_text()
+    matches = re.findall(r'EventType\.([A-Z_]+)', expert_md)
+    valid_names = {e.name for e in EventType}
+    for match in matches:
+        assert match in valid_names, f"EventType.{match} in expert-tester.md does not exist"
+          ]]></test-code>
+        </red>
+
+        <green>
+          <description>Fix event type references in documentation</description>
+          <fixes>
+            <fix file="CLAUDE.md" line="500">
+              <old>EventType.ISSUE_GREENLIGHTED</old>
+              <new>EventType.ISSUE_READY</new>
+            </fix>
+            <fix file="CLAUDE.md" line="502">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.IMPL_VERIFIED</new>
+            </fix>
+            <fix file="CLAUDE.md" line="522">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.IMPL_VERIFIED</new>
+            </fix>
+            <fix file=".claude/prompts/expert-tester.md" line="210">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.ISSUE_COMPLETE</new>
+            </fix>
+            <fix file=".claude/prompts/expert-tester.md" line="212">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.ISSUE_COMPLETE</new>
+            </fix>
+            <fix file="docs/USER_GUIDE.md" line="884">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.IMPL_VERIFIED</new>
+            </fix>
+            <fix file="docs/USER_GUIDE.md" line="888">
+              <old>EventType.IMPL_COMPLETED</old>
+              <new>EventType.IMPL_VERIFIED</new>
+            </fix>
+          </fixes>
+        </green>
+
+        <refactor>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_docs_event_types.py -v
+          ]]></command>
+        </refactor>
+      </tdd-cycle>
+
+      <checkpoint>
+        <name>BUG_002_COMPLETE</name>
+        <commit-message>docs: fix incorrect event type references</commit-message>
+      </checkpoint>
+    </phase>
+
+    <!-- PHASE 4: BUG-003 Documentation Numbers -->
+    <phase id="4" name="BUG-003: Documentation Numbers" depends-on="BUG_002_COMPLETE">
+      <description>Fix numeric discrepancies in CLAUDE.md</description>
+      <worktree-path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes</worktree-path>
+
+      <tdd-cycle name="Documentation Accuracy Test">
+        <red>
+          <description>Write test that validates documentation numbers match code</description>
+          <test-file>tests/unit/test_docs_accuracy.py</test-file>
+          <test-code><![CDATA[
+"""Test that CLAUDE.md numbers match actual code values."""
+import re
+from pathlib import Path
+from swarm_attack.events.types import EventType
+from swarm_attack.universal_context_builder import AGENT_CONTEXT_PROFILES
+
+def test_event_type_count_matches():
+    """CLAUDE.md event count should match actual EventType count."""
+    claude_md = Path("CLAUDE.md").read_text()
+    # Find "Available event types (XX total)"
+    match = re.search(r'Available event types \((\d+) total\)', claude_md)
+    assert match, "Could not find event type count in CLAUDE.md"
+    documented = int(match.group(1))
+    actual = len([e for e in EventType])
+    assert documented == actual, f"CLAUDE.md says {documented} events, actually {actual}"
+
+def test_agent_profile_count_matches():
+    """CLAUDE.md agent profile table should have all profiles."""
+    claude_md = Path("CLAUDE.md").read_text()
+    actual_count = len(AGENT_CONTEXT_PROFILES)
+    # The table should have entries for all profiles
+    for profile_name in AGENT_CONTEXT_PROFILES.keys():
+        # Convert snake_case to display format
+        assert profile_name in claude_md.lower() or profile_name.replace('_', '') in claude_md.lower(), \
+            f"Profile '{profile_name}' missing from CLAUDE.md table"
+
+def test_token_budgets_match():
+    """Token budgets in CLAUDE.md should match actual values."""
+    assert AGENT_CONTEXT_PROFILES['spec_author']['max_tokens'] == 5000
+    assert AGENT_CONTEXT_PROFILES['issue_creator']['max_tokens'] == 4000
+    assert AGENT_CONTEXT_PROFILES['coder']['max_tokens'] == 15000
+    assert AGENT_CONTEXT_PROFILES['verifier']['max_tokens'] == 3000
+          ]]></test-code>
+        </red>
+
+        <green>
+          <description>Update CLAUDE.md with correct values</description>
+          <fixes>
+            <fix file="CLAUDE.md" line="496">
+              <old>(27 total)</old>
+              <new>(28 total)</new>
+            </fix>
+            <fix file="CLAUDE.md" line="578-585">
+              <description>Replace 4-row table with complete 10-row table</description>
+              <new-table><![CDATA[
+| Agent | Token Budget | Depth | Includes |
+|-------|--------------|-------|----------|
+| **Coder** | 15,000 | full_source | Project instructions, module registry, completed summaries, dependencies |
+| **SpecAuthor** | 5,000 | summary | Project instructions, architecture overview, existing modules |
+| **SpecCritic** | 3,000 | summary | Project instructions, review guidelines, past feedback |
+| **SpecModerator** | 3,000 | summary | Project instructions, review guidelines |
+| **IssueCreator** | 4,000 | compact | Project instructions, existing issues, module registry |
+| **BugResearcher** | 10,000 | full_source | Project instructions, test structure, recent changes |
+| **RootCauseAnalyzer** | 8,000 | full_source | Project instructions, test structure, module registry |
+| **FixPlanner** | 5,000 | summary | Project instructions, module registry, completed summaries |
+| **Verifier** | 3,000 | compact | Project instructions, test patterns, coverage gaps |
+| **ComplexityGate** | 2,000 | compact | Project instructions |
+              ]]></new-table>
+            </fix>
+          </fixes>
+        </green>
+
+        <refactor>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest tests/unit/test_docs_accuracy.py -v
+          ]]></command>
+        </refactor>
+      </tdd-cycle>
+
+      <checkpoint>
+        <name>BUG_003_COMPLETE</name>
+        <commit-message>docs: fix numeric discrepancies in CLAUDE.md</commit-message>
+      </checkpoint>
+    </phase>
+
+    <!-- PHASE 5: Final Verification -->
+    <phase id="5" name="Final Verification" depends-on="BUG_003_COMPLETE">
+      <description>Run full test suite and prepare for merge</description>
+      <worktree-path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes</worktree-path>
+
+      <steps>
+        <step order="1">
+          <action>Run all v0.3.0 tests</action>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+PYTHONPATH=. pytest \
+  tests/unit/test_auto_approval.py \
+  tests/unit/test_events.py \
+  tests/unit/test_session_initializer.py \
+  tests/unit/test_universal_context_builder.py \
+  tests/unit/qa/test_session_extension.py \
+  tests/integration/test_context_flow_fixes.py \
+  tests/unit/test_cli_approve_flags.py \
+  tests/unit/test_cli_bug_approve_flags.py \
+  tests/unit/test_docs_event_types.py \
+  tests/unit/test_docs_accuracy.py \
+  -v --tb=short
+          ]]></command>
+          <expected>All tests pass</expected>
+        </step>
+
+        <step order="2">
+          <action>Run CLI integration tests</action>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+python -m swarm_attack approve --help | grep -E "\-\-auto|\-\-manual"
+          ]]></command>
+          <expected>Should show --auto and --manual flags</expected>
+        </step>
+
+        <step order="3">
+          <action>Verify event types</action>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+python3 -c "
+from swarm_attack.events.types import EventType
+assert hasattr(EventType, 'IMPL_VERIFIED')
+assert hasattr(EventType, 'ISSUE_READY')
+assert not hasattr(EventType, 'IMPL_COMPLETED')
+print('Event types verified')
+"
+          ]]></command>
+        </step>
+
+        <step order="4">
+          <action>Create final commit</action>
+          <command><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes && \
+git add -A && \
+git status
+          ]]></command>
+        </step>
+      </steps>
+
+      <checkpoint>
+        <name>ALL_BUGS_FIXED</name>
+        <summary>
+          - BUG-001: CLI --auto/--manual flags added
+          - BUG-002: Documentation event types fixed
+          - BUG-003: Documentation numbers corrected
+          - All tests passing
+        </summary>
+      </checkpoint>
+    </phase>
+  </phases>
+
+  <rules>
+    <rule id="1" priority="CRITICAL">
+      You MUST complete Phase 1 (Worktree Setup) before any other work.
+      If worktree creation fails, STOP and troubleshoot.
+    </rule>
+
+    <rule id="2" priority="HIGH">
+      Follow TDD strictly: Write failing tests FIRST, then implement.
+    </rule>
+
+    <rule id="3" priority="HIGH">
+      All work happens in the worktree at:
+      /Users/philipjcortes/Desktop/swarm-attack/worktrees/v030-bug-fixes
+    </rule>
+
+    <rule id="4" priority="MEDIUM">
+      Commit after each phase with the specified commit message.
+    </rule>
+
+    <rule id="5" priority="MEDIUM">
+      Do not modify the main repo. Only work in the worktree.
+    </rule>
+  </rules>
+
+  <success-criteria>
+    <criterion>Worktree created and verified</criterion>
+    <criterion>All new tests pass</criterion>
+    <criterion>All existing v0.3.0 tests pass (110+)</criterion>
+    <criterion>CLI shows --auto/--manual flags in help</criterion>
+    <criterion>No AttributeError when following documentation examples</criterion>
+    <criterion>CLAUDE.md numbers match actual code values</criterion>
+  </success-criteria>
+</expert-team-prompt>

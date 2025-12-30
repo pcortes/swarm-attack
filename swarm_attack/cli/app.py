@@ -98,6 +98,11 @@ from swarm_attack.cli.qa_commands import app as qa_app
 
 app.add_typer(qa_app, name="qa")
 
+# Import and register approval commands
+from swarm_attack.cli.approval import app as approval_app
+
+app.add_typer(approval_app, name="approval")
+
 
 # =========================================================================
 # Entry Point

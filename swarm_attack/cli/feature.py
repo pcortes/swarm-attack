@@ -924,15 +924,33 @@ def approve(
         ...,
         help="Feature ID to approve the spec for.",
     ),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help="Enable auto-approval mode (disable manual mode).",
+    ),
+    manual: bool = typer.Option(
+        False,
+        "--manual",
+        help="Enable manual mode (require human approval for all decisions).",
+    ),
 ) -> None:
     """
     Approve a spec that is ready for approval.
 
     Copies spec-draft.md to spec-final.md and updates the phase
     to SPEC_APPROVED.
+
+    Use --auto to enable auto-approval mode (routine decisions proceed automatically).
+    Use --manual to force manual mode (all decisions require human approval).
     """
     from swarm_attack.state_store import get_store
     from swarm_attack.utils.fs import file_exists, read_file, safe_write
+
+    # Check for mutually exclusive flags
+    if auto and manual:
+        console.print("[red]Error:[/red] Cannot use both --auto and --manual flags together.")
+        raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)
@@ -944,6 +962,14 @@ def approve(
     if state is None:
         console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
         raise typer.Exit(1)
+
+    # Set manual mode based on flags
+    if auto:
+        store.set_manual_mode(feature_id, False)
+        console.print("[green]Auto-approval mode enabled.[/green]")
+    elif manual:
+        store.set_manual_mode(feature_id, True)
+        console.print("[yellow]Manual mode enabled - all decisions require human approval.[/yellow]")
 
     # Check phase
     if state.phase != FeaturePhase.SPEC_NEEDS_APPROVAL:

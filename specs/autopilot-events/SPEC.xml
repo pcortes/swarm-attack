@@ -1,0 +1,708 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>Autopilot Phase 1 - Event Infrastructure</title>
+    <id>SPEC-2025-12-29-AUTOPILOT-EVENTS</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P1</priority>
+    <estimated_effort>1 week</estimated_effort>
+    <worktree_branch>feature/autopilot-events</worktree_branch>
+    <depends_on>None</depends_on>
+  </metadata>
+
+  <implementation_prompt>
+    <![CDATA[
+You are an expert team implementing Event Infrastructure for swarm-attack autopilot.
+
+## Your Expert Team
+- **Event Architecture Lead**: Designs SwarmEvent and EventBus classes
+- **Agent Integration Specialist**: Adds event emission to all agents
+- **State Machine Expert**: Implements phase transition detection
+- **Storage Engineer**: Implements event persistence and querying
+
+## What This Enables
+This is the FOUNDATION for auto-approval (Phase 2). Events allow:
+- Detecting when spec debate scores reach approval threshold
+- Detecting when complexity gate passes for all issues
+- Detecting when bug fix plans are ready for approval
+- Triggering automated actions based on state changes
+
+## Architecture Overview
+```
+Agents emit events → EventBus routes → Subscribers react → Phase transitions
+```
+
+## FILES TO CREATE:
+- swarm_attack/events/__init__.py
+- swarm_attack/events/types.py (SwarmEvent, EventType enum)
+- swarm_attack/events/bus.py (EventBus class)
+- swarm_attack/events/persistence.py (Event storage)
+
+## FILES TO MODIFY:
+- swarm_attack/agents/base.py - Add emit_event() method
+- swarm_attack/orchestrator.py - Emit events at phase transitions
+- swarm_attack/bug_orchestrator.py - Emit bug lifecycle events
+
+## TDD Protocol
+1. Create worktree: git worktree add worktrees/autopilot-events -b feature/autopilot-events
+2. Write tests in tests/unit/test_events.py
+3. Implement minimal code
+4. Run: PYTHONPATH=. pytest tests/unit/test_events.py -v
+
+## Worktree Path
+/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-events
+    ]]>
+  </implementation_prompt>
+
+  <executive_summary>
+    Create event-driven infrastructure for the autopilot system. This is Phase 1 of the
+    autopilot, providing the foundation for auto-approval (Phase 2) and self-healing (Phase 3).
+
+    The event system:
+    1. Defines SwarmEvent dataclass with typed event categories
+    2. Implements lightweight EventBus for routing events
+    3. Adds event emission to all agents
+    4. Persists events to .swarm/events/ for debugging and replay
+    5. Enables phase transition detection
+  </executive_summary>
+
+  <expert_team>
+    <lead role="Event Architecture Lead" focus="SwarmEvent, EventBus">
+      Designs the core event types and bus implementation.
+      Ensures events are lightweight and don't impact performance.
+    </lead>
+    <specialist role="Agent Integration Specialist" focus="BaseAgent.emit_event">
+      Adds event emission to BaseAgent so all agents can emit events.
+      Ensures backward compatibility with agents that don't emit.
+    </specialist>
+    <specialist role="State Machine Expert" focus="Phase transitions">
+      Implements phase transition event detection.
+      Maps state changes to event types.
+    </specialist>
+    <specialist role="Storage Engineer" focus="Event persistence">
+      Implements JSONL event storage in .swarm/events/.
+      Adds event querying for replay and debugging.
+    </specialist>
+  </expert_team>
+
+  <requirements>
+    <functional id="F1" title="Event Types">
+      <description>
+        Define SwarmEvent dataclass and EventType enum covering all significant events.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/events/types.py
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from enum import Enum
+from typing import Any, Optional
+import uuid
+
+class EventType(Enum):
+    """All event types in the swarm system."""
+
+    # Spec lifecycle
+    SPEC_DRAFT_CREATED = "spec.draft_created"
+    SPEC_REVIEW_COMPLETE = "spec.review_complete"
+    SPEC_APPROVED = "spec.approved"
+    SPEC_REJECTED = "spec.rejected"
+
+    # Issue lifecycle
+    ISSUE_CREATED = "issue.created"
+    ISSUE_VALIDATED = "issue.validated"
+    ISSUE_COMPLEXITY_PASSED = "issue.complexity_passed"
+    ISSUE_COMPLEXITY_FAILED = "issue.complexity_failed"
+    ISSUE_READY = "issue.ready"
+    ISSUE_COMPLETE = "issue.complete"
+
+    # Implementation lifecycle
+    IMPL_STARTED = "impl.started"
+    IMPL_TESTS_WRITTEN = "impl.tests_written"
+    IMPL_CODE_COMPLETE = "impl.code_complete"
+    IMPL_VERIFIED = "impl.verified"
+    IMPL_FAILED = "impl.failed"
+
+    # Bug lifecycle
+    BUG_DETECTED = "bug.detected"
+    BUG_REPRODUCED = "bug.reproduced"
+    BUG_ANALYZED = "bug.analyzed"
+    BUG_PLANNED = "bug.planned"
+    BUG_APPROVED = "bug.approved"
+    BUG_FIXED = "bug.fixed"
+    BUG_BLOCKED = "bug.blocked"
+
+    # System events
+    SYSTEM_PHASE_TRANSITION = "system.phase_transition"
+    SYSTEM_ERROR = "system.error"
+    SYSTEM_RECOVERY = "system.recovery"
+
+    # Auto-approval events (for Phase 2)
+    AUTO_APPROVAL_TRIGGERED = "auto.approval_triggered"
+    AUTO_APPROVAL_BLOCKED = "auto.approval_blocked"
+    MANUAL_OVERRIDE = "auto.manual_override"
+
+
+@dataclass
+class SwarmEvent:
+    """A single event in the swarm system."""
+
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    event_type: EventType = EventType.SYSTEM_ERROR
+    feature_id: str = ""
+    issue_number: Optional[int] = None
+    bug_id: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    source_agent: str = ""
+    payload: dict = field(default_factory=dict)
+    confidence: float = 0.0  # For auto-approval decisions
+
+    def to_dict(self) -> dict:
+        """Convert to dict for JSON serialization."""
+        d = asdict(self)
+        d["event_type"] = self.event_type.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SwarmEvent":
+        """Create from dict."""
+        data["event_type"] = EventType(data["event_type"])
+        return cls(**data)
+
+    def __str__(self) -> str:
+        return f"[{self.timestamp}] {self.event_type.value} feature={self.feature_id}"
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F2" title="Event Bus">
+      <description>
+        Lightweight event bus for routing events to subscribers.
+        Supports sync handlers (for Phase 1) with async-ready design.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/events/bus.py
+from typing import Callable, List, Dict, Set
+from .types import SwarmEvent, EventType
+from .persistence import EventPersistence
+
+EventHandler = Callable[[SwarmEvent], None]
+
+class EventBus:
+    """Lightweight event bus for routing swarm events."""
+
+    def __init__(self, swarm_dir=None, persist: bool = True):
+        self._handlers: Dict[EventType, List[EventHandler]] = {}
+        self._global_handlers: List[EventHandler] = []
+        self._persist = persist
+        if persist and swarm_dir:
+            self._persistence = EventPersistence(swarm_dir)
+        else:
+            self._persistence = None
+
+    def subscribe(
+        self,
+        event_type: EventType,
+        handler: EventHandler
+    ) -> None:
+        """Subscribe to a specific event type."""
+        if event_type not in self._handlers:
+            self._handlers[event_type] = []
+        self._handlers[event_type].append(handler)
+
+    def subscribe_all(self, handler: EventHandler) -> None:
+        """Subscribe to all events (for logging, metrics)."""
+        self._global_handlers.append(handler)
+
+    def unsubscribe(self, event_type: EventType, handler: EventHandler) -> None:
+        """Unsubscribe from event type."""
+        if event_type in self._handlers:
+            self._handlers[event_type] = [
+                h for h in self._handlers[event_type] if h != handler
+            ]
+
+    def emit(self, event: SwarmEvent) -> None:
+        """Emit an event to all subscribers."""
+        # Persist first (for debugging and replay)
+        if self._persistence:
+            self._persistence.append(event)
+
+        # Global handlers (logging, metrics)
+        for handler in self._global_handlers:
+            try:
+                handler(event)
+            except Exception as e:
+                # Log but don't fail
+                pass
+
+        # Type-specific handlers
+        if event.event_type in self._handlers:
+            for handler in self._handlers[event.event_type]:
+                try:
+                    handler(event)
+                except Exception as e:
+                    # Log but don't fail
+                    pass
+
+    def emit_spec_approved(
+        self,
+        feature_id: str,
+        score: float,
+        source_agent: str = "SpecModerator"
+    ) -> SwarmEvent:
+        """Convenience method to emit spec approval event."""
+        event = SwarmEvent(
+            event_type=EventType.SPEC_APPROVED,
+            feature_id=feature_id,
+            source_agent=source_agent,
+            confidence=score,
+            payload={"score": score}
+        )
+        self.emit(event)
+        return event
+
+    def emit_phase_transition(
+        self,
+        feature_id: str,
+        from_phase: str,
+        to_phase: str
+    ) -> SwarmEvent:
+        """Convenience method to emit phase transition."""
+        event = SwarmEvent(
+            event_type=EventType.SYSTEM_PHASE_TRANSITION,
+            feature_id=feature_id,
+            payload={"from": from_phase, "to": to_phase}
+        )
+        self.emit(event)
+        return event
+
+
+# Global singleton for convenience
+_default_bus: EventBus = None
+
+def get_event_bus(swarm_dir=None) -> EventBus:
+    """Get or create the default event bus."""
+    global _default_bus
+    if _default_bus is None:
+        _default_bus = EventBus(swarm_dir, persist=True)
+    return _default_bus
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F3" title="Event Persistence">
+      <description>
+        Persist events to JSONL files for debugging and replay.
+        Supports querying by feature, time range, and event type.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/events/persistence.py
+from pathlib import Path
+from datetime import datetime, timedelta
+from typing import List, Optional
+import json
+from .types import SwarmEvent, EventType
+
+class EventPersistence:
+    """Persist events to JSONL files."""
+
+    def __init__(self, swarm_dir: Path):
+        self._events_dir = Path(swarm_dir) / "events"
+        self._events_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_log_path(self) -> Path:
+        """Get today's event log path."""
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        return self._events_dir / f"events-{date_str}.jsonl"
+
+    def append(self, event: SwarmEvent) -> None:
+        """Append event to today's log."""
+        log_path = self._get_log_path()
+        with log_path.open("a") as f:
+            f.write(json.dumps(event.to_dict()) + "\n")
+
+    def query(
+        self,
+        feature_id: Optional[str] = None,
+        event_types: Optional[List[EventType]] = None,
+        since: Optional[datetime] = None,
+        limit: int = 100
+    ) -> List[SwarmEvent]:
+        """Query events with filters."""
+        events = []
+
+        # Determine which log files to read
+        log_files = sorted(self._events_dir.glob("events-*.jsonl"), reverse=True)
+
+        for log_file in log_files:
+            with log_file.open() as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+
+                    data = json.loads(line)
+                    event = SwarmEvent.from_dict(data)
+
+                    # Apply filters
+                    if feature_id and event.feature_id != feature_id:
+                        continue
+                    if event_types and event.event_type not in event_types:
+                        continue
+                    if since and datetime.fromisoformat(event.timestamp) < since:
+                        continue
+
+                    events.append(event)
+
+                    if len(events) >= limit:
+                        return events
+
+        return events
+
+    def get_recent(self, minutes: int = 60) -> List[SwarmEvent]:
+        """Get events from the last N minutes."""
+        since = datetime.now() - timedelta(minutes=minutes)
+        return self.query(since=since)
+
+    def get_by_feature(self, feature_id: str, limit: int = 50) -> List[SwarmEvent]:
+        """Get events for a specific feature."""
+        return self.query(feature_id=feature_id, limit=limit)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F4" title="BaseAgent Event Emission">
+      <description>
+        Add event emission capability to BaseAgent so all agents can emit events.
+      </description>
+      <interface>
+        <![CDATA[
+# Add to swarm_attack/agents/base.py
+
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import SwarmEvent, EventType
+
+class BaseAgent:
+    # ... existing code ...
+
+    def _emit_event(
+        self,
+        event_type: EventType,
+        feature_id: str = "",
+        issue_number: Optional[int] = None,
+        payload: dict = None,
+        confidence: float = 0.0
+    ) -> SwarmEvent:
+        """Emit an event from this agent."""
+        event = SwarmEvent(
+            event_type=event_type,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            source_agent=self.__class__.__name__,
+            payload=payload or {},
+            confidence=confidence,
+        )
+
+        bus = get_event_bus(self._config.swarm_dir if hasattr(self._config, 'swarm_dir') else None)
+        bus.emit(event)
+
+        return event
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F5" title="Orchestrator Event Integration">
+      <description>
+        Emit events at key phase transitions in the orchestrator.
+      </description>
+      <interface>
+        <![CDATA[
+# Add to swarm_attack/orchestrator.py
+
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType
+
+class Orchestrator:
+    def __init__(self, ...):
+        # ... existing code ...
+        self._event_bus = get_event_bus(config.swarm_dir)
+
+    def _transition_phase(self, feature_id: str, new_phase: str):
+        """Transition to new phase and emit event."""
+        old_phase = self._get_current_phase(feature_id)
+
+        # Do transition
+        # ... existing transition code ...
+
+        # Emit event
+        self._event_bus.emit_phase_transition(
+            feature_id=feature_id,
+            from_phase=old_phase,
+            to_phase=new_phase
+        )
+
+    def _on_spec_approved(self, feature_id: str, score: float):
+        """Called when spec is approved (manually or auto)."""
+        self._event_bus.emit_spec_approved(
+            feature_id=feature_id,
+            score=score,
+            source_agent="Orchestrator"
+        )
+
+    def _on_issue_complete(self, feature_id: str, issue_number: int):
+        """Called when issue implementation completes."""
+        self._event_bus.emit(SwarmEvent(
+            event_type=EventType.ISSUE_COMPLETE,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            source_agent="Orchestrator"
+        ))
+        ]]>
+      </interface>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/test_events.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from pathlib import Path
+from datetime import datetime, timedelta
+from swarm_attack.events.types import SwarmEvent, EventType
+from swarm_attack.events.bus import EventBus
+from swarm_attack.events.persistence import EventPersistence
+
+class TestSwarmEvent:
+    def test_event_creation(self):
+        """Events can be created with required fields."""
+        event = SwarmEvent(
+            event_type=EventType.SPEC_APPROVED,
+            feature_id="my-feature",
+            confidence=0.85
+        )
+
+        assert event.event_type == EventType.SPEC_APPROVED
+        assert event.feature_id == "my-feature"
+        assert event.confidence == 0.85
+        assert event.event_id  # Auto-generated
+
+    def test_event_serialization(self):
+        """Events serialize to/from dict."""
+        event = SwarmEvent(
+            event_type=EventType.ISSUE_COMPLETE,
+            feature_id="test",
+            issue_number=3
+        )
+
+        data = event.to_dict()
+        restored = SwarmEvent.from_dict(data)
+
+        assert restored.event_type == event.event_type
+        assert restored.feature_id == event.feature_id
+        assert restored.issue_number == event.issue_number
+
+class TestEventBus:
+    def test_subscribe_and_emit(self, tmp_path):
+        """Subscribers receive emitted events."""
+        bus = EventBus(tmp_path / ".swarm", persist=False)
+        received = []
+
+        def handler(event):
+            received.append(event)
+
+        bus.subscribe(EventType.SPEC_APPROVED, handler)
+
+        event = SwarmEvent(event_type=EventType.SPEC_APPROVED, feature_id="test")
+        bus.emit(event)
+
+        assert len(received) == 1
+        assert received[0].feature_id == "test"
+
+    def test_global_subscriber(self, tmp_path):
+        """Global subscribers receive all events."""
+        bus = EventBus(tmp_path / ".swarm", persist=False)
+        received = []
+
+        bus.subscribe_all(lambda e: received.append(e))
+
+        bus.emit(SwarmEvent(event_type=EventType.SPEC_APPROVED, feature_id="a"))
+        bus.emit(SwarmEvent(event_type=EventType.ISSUE_COMPLETE, feature_id="b"))
+
+        assert len(received) == 2
+
+    def test_convenience_methods(self, tmp_path):
+        """Convenience methods emit correct event types."""
+        bus = EventBus(tmp_path / ".swarm", persist=False)
+        received = []
+
+        bus.subscribe(EventType.SPEC_APPROVED, lambda e: received.append(e))
+
+        bus.emit_spec_approved("my-feature", score=0.9)
+
+        assert len(received) == 1
+        assert received[0].confidence == 0.9
+
+    def test_handler_error_doesnt_break_bus(self, tmp_path):
+        """Handler errors don't prevent other handlers."""
+        bus = EventBus(tmp_path / ".swarm", persist=False)
+        received = []
+
+        def bad_handler(e):
+            raise ValueError("Oops")
+
+        def good_handler(e):
+            received.append(e)
+
+        bus.subscribe(EventType.SPEC_APPROVED, bad_handler)
+        bus.subscribe(EventType.SPEC_APPROVED, good_handler)
+
+        # Should not raise
+        bus.emit(SwarmEvent(event_type=EventType.SPEC_APPROVED))
+
+        assert len(received) == 1
+
+class TestEventPersistence:
+    def test_persist_and_query(self, tmp_path):
+        """Events persist to disk and can be queried."""
+        persistence = EventPersistence(tmp_path / ".swarm")
+
+        event = SwarmEvent(
+            event_type=EventType.ISSUE_COMPLETE,
+            feature_id="test-feature",
+            issue_number=1
+        )
+        persistence.append(event)
+
+        results = persistence.query(feature_id="test-feature")
+
+        assert len(results) == 1
+        assert results[0].issue_number == 1
+
+    def test_query_by_type(self, tmp_path):
+        """Can query events by type."""
+        persistence = EventPersistence(tmp_path / ".swarm")
+
+        persistence.append(SwarmEvent(event_type=EventType.SPEC_APPROVED, feature_id="a"))
+        persistence.append(SwarmEvent(event_type=EventType.ISSUE_COMPLETE, feature_id="b"))
+        persistence.append(SwarmEvent(event_type=EventType.SPEC_APPROVED, feature_id="c"))
+
+        results = persistence.query(event_types=[EventType.SPEC_APPROVED])
+
+        assert len(results) == 2
+
+    def test_get_recent(self, tmp_path):
+        """Can get recent events."""
+        persistence = EventPersistence(tmp_path / ".swarm")
+
+        persistence.append(SwarmEvent(event_type=EventType.SPEC_APPROVED))
+
+        results = persistence.get_recent(minutes=5)
+
+        assert len(results) == 1
+
+class TestEventIntegration:
+    def test_bus_with_persistence(self, tmp_path):
+        """Bus persists events automatically."""
+        bus = EventBus(tmp_path / ".swarm", persist=True)
+
+        bus.emit(SwarmEvent(event_type=EventType.BUG_FIXED, feature_id="test"))
+
+        # Check persistence
+        persistence = EventPersistence(tmp_path / ".swarm")
+        results = persistence.query()
+
+        assert len(results) == 1
+        assert results[0].event_type == EventType.BUG_FIXED
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass tests</description>
+      <files_to_create>
+        <file>swarm_attack/events/__init__.py</file>
+        <file>swarm_attack/events/types.py</file>
+        <file>swarm_attack/events/bus.py</file>
+        <file>swarm_attack/events/persistence.py</file>
+      </files_to_create>
+      <files_to_modify>
+        <file>swarm_attack/agents/base.py - Add _emit_event() method</file>
+        <file>swarm_attack/orchestrator.py - Emit events at phase transitions</file>
+        <file>swarm_attack/bug_orchestrator.py - Emit bug lifecycle events</file>
+      </files_to_modify>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up and optimize</description>
+      <tasks>
+        <task>Add event batching for high-frequency events</task>
+        <task>Add metrics/counters per event type</task>
+        <task>Add event replay capability for debugging</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/autopilot-events -b feature/autopilot-events
+
+# Enter worktree
+cd worktrees/autopilot-events
+
+# Run event tests
+PYTHONPATH=. pytest tests/unit/test_events.py -v
+
+# Full test suite
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">SwarmEvent dataclass with EventType enum</criterion>
+    <criterion id="AC2">EventBus with subscribe/emit/unsubscribe</criterion>
+    <criterion id="AC3">EventPersistence writes to .swarm/events/</criterion>
+    <criterion id="AC4">Query events by feature, type, time</criterion>
+    <criterion id="AC5">BaseAgent._emit_event() method works</criterion>
+    <criterion id="AC6">Orchestrator emits phase transition events</criterion>
+    <criterion id="AC7">All existing tests pass</criterion>
+  </acceptance_criteria>
+
+  <event_flow_diagram>
+    <![CDATA[
+┌─────────────────────────────────────────────────────────────────┐
+│                    EVENT FLOW ARCHITECTURE                       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │ SpecCritic   │    │    Coder     │    │  Verifier    │       │
+│  │   Agent      │    │    Agent     │    │   Agent      │       │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘       │
+│         │                   │                   │                │
+│         │ emit_event()      │ emit_event()      │ emit_event()   │
+│         ▼                   ▼                   ▼                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                      EVENT BUS                            │   │
+│  │  subscribe(SPEC_APPROVED, handler)                        │   │
+│  │  subscribe(IMPL_COMPLETE, handler)                        │   │
+│  │  subscribe_all(logger)                                    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│         │                   │                   │                │
+│         ▼                   ▼                   ▼                │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │ Persistence  │    │ AutoApprover │    │   Metrics    │       │
+│  │ (JSONL logs) │    │  (Phase 2)   │    │  (Future)    │       │
+│  └──────────────┘    └──────────────┘    └──────────────┘       │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+    ]]>
+  </event_flow_diagram>
+</spec>

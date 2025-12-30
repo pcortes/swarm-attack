@@ -744,7 +744,7 @@
     },
     {
       "issue_number": 30,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Add execution_strategy config option to AutopilotConfig",
       "dependencies": [
         38

@@ -42,3 +42,4 @@ htmlcov/
 # Misc
 .DS_Store
 *.log
+worktrees/

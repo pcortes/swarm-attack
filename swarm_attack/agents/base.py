@@ -29,8 +29,10 @@ from swarm_attack.utils.fs import FileSystemError, file_exists, read_file
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
+    from swarm_attack.events.types import EventType, SwarmEvent
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
+    from swarm_attack.universal_context_builder import AgentContext
 
 
 @dataclass
@@ -179,6 +181,7 @@ class BaseAgent(ABC):
         self._state_store = state_store
         self._checkpoints: list[CheckpointData] = []
         self._total_cost: float = 0.0
+        self._universal_context: Optional[AgentContext] = None
 
     @property
     def logger(self) -> Optional[SwarmLogger]:
@@ -375,6 +378,131 @@ class BaseAgent(ABC):
         """Reset agent state for a fresh run."""
         self._checkpoints = []
         self._total_cost = 0.0
+        self._universal_context = None
+
+    def with_context(self, context: AgentContext) -> "BaseAgent":
+        """
+        Inject universal context before running the agent.
+
+        This method allows the orchestrator to provide tailored context
+        to agents before execution. The context is built by UniversalContextBuilder
+        based on the agent type.
+
+        Args:
+            context: AgentContext with tailored context for this agent type.
+
+        Returns:
+            Self for method chaining.
+        """
+        self._universal_context = context
+        self._log(
+            "context_injected",
+            {
+                "agent_type": context.agent_type,
+                "token_count": context.token_count,
+            },
+        )
+        return self
+
+    def _get_context_prompt_section(self) -> str:
+        """
+        Format injected context for inclusion in prompts.
+
+        Returns:
+            Formatted markdown string with context sections,
+            or empty string if no context was injected.
+        """
+        if not self._universal_context:
+            return ""
+
+        sections: list[str] = []
+
+        if self._universal_context.project_instructions:
+            sections.append(
+                f"## Project Instructions\n{self._universal_context.project_instructions}"
+            )
+
+        if self._universal_context.module_registry:
+            sections.append(
+                f"## Existing Code\n{self._universal_context.module_registry}"
+            )
+
+        if self._universal_context.completed_summaries:
+            sections.append(
+                f"## Prior Work\n{self._universal_context.completed_summaries}"
+            )
+
+        if self._universal_context.test_structure:
+            sections.append(
+                f"## Test Structure\n{self._universal_context.test_structure}"
+            )
+
+        if self._universal_context.architecture_overview:
+            sections.append(
+                f"## Architecture\n{self._universal_context.architecture_overview}"
+            )
+
+        return "\n\n".join(sections)
+
+    def _emit_event(
+        self,
+        event_type: "EventType",
+        feature_id: str = "",
+        issue_number: Optional[int] = None,
+        bug_id: Optional[str] = None,
+        payload: Optional[dict] = None,
+        confidence: float = 0.0,
+    ) -> "SwarmEvent":
+        """
+        Emit an event from this agent.
+
+        Events are routed through the EventBus to subscribers and persisted
+        for debugging and replay.
+
+        Args:
+            event_type: The type of event (from EventType enum).
+            feature_id: Associated feature ID, if any.
+            issue_number: Associated issue number, if any.
+            bug_id: Associated bug ID, if any.
+            payload: Additional data for the event.
+            confidence: Confidence score (0.0-1.0) for auto-approval decisions.
+
+        Returns:
+            The emitted SwarmEvent.
+        """
+        from swarm_attack.events.bus import get_event_bus
+        from swarm_attack.events.types import SwarmEvent
+
+        event = SwarmEvent(
+            event_type=event_type,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            bug_id=bug_id,
+            source_agent=self.__class__.__name__,
+            payload=payload or {},
+            confidence=confidence,
+        )
+
+        # Get swarm_dir from config if available
+        swarm_dir = None
+        if hasattr(self.config, "swarm_dir"):
+            swarm_dir = self.config.swarm_dir
+        elif hasattr(self.config, "repo_root"):
+            swarm_dir = Path(self.config.repo_root) / ".swarm"
+
+        bus = get_event_bus(swarm_dir)
+        bus.emit(event)
+
+        self._log(
+            "event_emitted",
+            {
+                "event_type": event_type.value,
+                "feature_id": feature_id,
+                "event_id": event.event_id,
+            },
+        )
+
+        return event
 
     @abstractmethod
     def run(self, context: dict[str, Any]) -> AgentResult:

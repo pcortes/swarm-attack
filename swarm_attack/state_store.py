@@ -634,11 +634,24 @@ class StateStore:
         for task in state.tasks:
             # Only include outputs from DONE tasks
             if task.stage == TaskStage.DONE and task.outputs:
+                # Include files that were created
                 for file_path in task.outputs.files_created:
                     registry["modules"][file_path] = {
                         "created_by_issue": task.issue_number,
+                        "modified": False,
                         "classes": task.outputs.classes_defined.get(file_path, []),
                     }
+
+                # P0 FIX: Also include classes from modified files (not just created)
+                # This prevents schema drift when classes are added to existing files
+                for file_path, classes in task.outputs.classes_defined.items():
+                    if file_path not in registry["modules"]:
+                        # File was modified (has classes) but not created
+                        registry["modules"][file_path] = {
+                            "created_by_issue": task.issue_number,
+                            "modified": True,  # Flag that this was modified, not created
+                            "classes": classes,
+                        }
 
         return registry
 
@@ -772,6 +785,142 @@ class StateStore:
             }, level="error")
 
         return synced_issues
+
+    # Auto-Approval Operations
+
+    def approve_spec(self, feature_id: str) -> None:
+        """
+        Approve a feature spec (auto-approval or manual).
+
+        Transitions feature from SPEC_NEEDS_APPROVAL to SPEC_APPROVED.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Raises:
+            StateStoreError: If feature doesn't exist or wrong phase.
+        """
+        with self.exclusive_lock(feature_id):
+            state = self.load(feature_id)
+            if state is None:
+                raise StateStoreError(f"Feature '{feature_id}' not found")
+
+            if state.phase != FeaturePhase.SPEC_NEEDS_APPROVAL:
+                raise StateStoreError(
+                    f"Feature '{feature_id}' is in phase {state.phase.name}, "
+                    f"expected SPEC_NEEDS_APPROVAL"
+                )
+
+            state.update_phase(FeaturePhase.SPEC_APPROVED)
+            self.save(state)
+
+            self._log("spec_approved", {"feature_id": feature_id})
+
+    def greenlight_feature(self, feature_id: str) -> None:
+        """
+        Greenlight a feature for implementation (auto-greenlight or manual).
+
+        Transitions feature from ISSUES_NEED_REVIEW to READY_TO_IMPLEMENT.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Raises:
+            StateStoreError: If feature doesn't exist or wrong phase.
+        """
+        with self.exclusive_lock(feature_id):
+            state = self.load(feature_id)
+            if state is None:
+                raise StateStoreError(f"Feature '{feature_id}' not found")
+
+            if state.phase != FeaturePhase.ISSUES_NEED_REVIEW:
+                raise StateStoreError(
+                    f"Feature '{feature_id}' is in phase {state.phase.name}, "
+                    f"expected ISSUES_NEED_REVIEW"
+                )
+
+            state.update_phase(FeaturePhase.READY_TO_IMPLEMENT)
+            self.save(state)
+
+            self._log("feature_greenlit", {"feature_id": feature_id})
+
+    def is_manual_mode(self, feature_id: str) -> bool:
+        """
+        Check if manual approval mode is enabled for a feature.
+
+        Args:
+            feature_id: The feature identifier.
+
+        Returns:
+            True if manual mode is enabled, False otherwise.
+        """
+        state = self.load(feature_id)
+        if state is None:
+            return False
+
+        # Check for manual_mode attribute (may not exist in older states)
+        return getattr(state, "manual_mode", False)
+
+    def set_manual_mode(self, feature_id: str, enabled: bool) -> None:
+        """
+        Enable or disable manual approval mode for a feature.
+
+        When enabled, the feature will not be auto-approved even if
+        quality thresholds are met.
+
+        Args:
+            feature_id: The feature identifier.
+            enabled: True to enable manual mode, False to disable.
+
+        Raises:
+            StateStoreError: If feature doesn't exist.
+        """
+        with self.exclusive_lock(feature_id):
+            state = self.load(feature_id)
+            if state is None:
+                raise StateStoreError(f"Feature '{feature_id}' not found")
+
+            # Add manual_mode attribute dynamically if needed
+            # This is safe because we serialize via to_dict()
+            state.manual_mode = enabled  # type: ignore[attr-defined]
+            self.save(state)
+
+            self._log("manual_mode_set", {
+                "feature_id": feature_id,
+                "enabled": enabled,
+            })
+
+    def veto_approval(self, feature_id: str, reason: str) -> None:
+        """
+        Veto an auto-approved feature, reverting it to needs-approval state.
+
+        Transitions feature from SPEC_APPROVED back to SPEC_NEEDS_APPROVAL.
+
+        Args:
+            feature_id: The feature identifier.
+            reason: Human-provided reason for the veto.
+
+        Raises:
+            StateStoreError: If feature doesn't exist or wrong phase.
+        """
+        with self.exclusive_lock(feature_id):
+            state = self.load(feature_id)
+            if state is None:
+                raise StateStoreError(f"Feature '{feature_id}' not found")
+
+            if state.phase != FeaturePhase.SPEC_APPROVED:
+                raise StateStoreError(
+                    f"Feature '{feature_id}' is in phase {state.phase.name}, "
+                    f"expected SPEC_APPROVED for veto"
+                )
+
+            state.update_phase(FeaturePhase.SPEC_NEEDS_APPROVAL)
+            self.save(state)
+
+            self._log("approval_vetoed", {
+                "feature_id": feature_id,
+                "reason": reason,
+            })
 
 
 # Module-level singleton for convenience

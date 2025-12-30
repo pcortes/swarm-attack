@@ -420,12 +420,25 @@ def bug_approve(
         "--yes", "-y",
         help="Skip confirmation prompt.",
     ),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help="Enable auto-approval mode for this bug fix.",
+    ),
+    manual: bool = typer.Option(
+        False,
+        "--manual",
+        help="Enable manual mode (require human approval for all decisions).",
+    ),
 ) -> None:
     """
     Approve a fix plan for implementation.
 
     This is the human gate before implementation proceeds.
     Displays the fix plan summary and asks for confirmation.
+
+    Use --auto to enable auto-approval mode for routine decisions.
+    Use --manual to force manual mode (all decisions require human approval).
 
     Example:
         swarm-attack bug approve bug-test-fails-2024
@@ -436,6 +449,11 @@ def bug_approve(
     from rich.prompt import Confirm
 
     from swarm_attack.bug_orchestrator import BugOrchestrator
+
+    # Check for mutually exclusive flags
+    if auto and manual:
+        console.print("[red]Error:[/red] Cannot use both --auto and --manual flags together.")
+        raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)
