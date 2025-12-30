@@ -346,6 +346,26 @@ git merge feature/user-notifications
 | `swarm-attack cos autopilot` | Run full autonomous development cycle |
 | `swarm-attack cos status` | Show current CoS status and metrics |
 
+### Campaign Commands (v0.3.0)
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack cos campaign-create <name> --deadline DATE` | Create a multi-day campaign |
+| `swarm-attack cos campaign-list` | List all campaigns with status |
+| `swarm-attack cos campaign-status <id>` | Show detailed campaign status |
+| `swarm-attack cos campaign-run <id>` | Execute today's goals |
+| `swarm-attack cos campaign-replan <id>` | Regenerate plans based on progress |
+
+### Feedback Commands (v0.3.0)
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack cos feedback-list [-n LIMIT] [-t TAG]` | List recorded feedback |
+| `swarm-attack cos feedback-add "text" [-t TAG] [-c CONTEXT]` | Add new feedback |
+| `swarm-attack cos feedback-clear --tag TAG` | Clear feedback by tag |
+| `swarm-attack cos feedback-clear --before DATE` | Clear old feedback |
+| `swarm-attack cos feedback-clear --all` | Clear all (requires confirmation) |
+
 ### Bug Commands
 
 | Command | Description |
@@ -1057,7 +1077,67 @@ class User:
 - [ ] Module registry includes modified file classes
 - [ ] Coder prompt shows existing classes with source code
 
-### 12.7 Run Automated Tests
+### 12.7 Test Campaign Management
+
+```bash
+# Create a campaign with deadline
+swarm-attack cos campaign-create "Bug Bash Week" --deadline 2025-01-15
+
+# List all campaigns
+swarm-attack cos campaign-list
+
+# Check campaign status
+swarm-attack cos campaign-status bug-bash-week
+
+# Run today's goals
+swarm-attack cos campaign-run bug-bash-week
+
+# If behind schedule, replan
+swarm-attack cos campaign-replan bug-bash-week
+```
+
+**Verify:**
+- [ ] Campaign created with day plans
+- [ ] Campaign list shows status, progress, cost
+- [ ] Campaign-run executes daily goals
+- [ ] Campaign-replan redistributes remaining work
+
+### 12.8 Test Feedback Management
+
+```bash
+# Add feedback with tag
+swarm-attack cos feedback-add "Prefer shorter variable names" --tag style
+
+# Add feedback with context
+swarm-attack cos feedback-add "Security concern with auth flow" -t security -c "During code review"
+
+# List all feedback
+swarm-attack cos feedback-list
+
+# List recent 5
+swarm-attack cos feedback-list -n 5
+
+# Filter by tag
+swarm-attack cos feedback-list --tag security
+
+# Clear old feedback
+swarm-attack cos feedback-clear --before 2025-01-01
+
+# Clear by tag (no confirmation needed)
+swarm-attack cos feedback-clear --tag deprecated
+
+# Clear all (requires confirmation)
+swarm-attack cos feedback-clear --all
+```
+
+**Verify:**
+- [ ] Feedback added with timestamp and ID
+- [ ] Feedback list shows content, tags, timestamps
+- [ ] Tag filter works correctly
+- [ ] Clear by date preserves recent entries
+- [ ] Clear --all requires confirmation
+
+### 12.9 Run Automated Tests
 
 ```bash
 # Run all v0.3.0 feature tests
@@ -1085,7 +1165,8 @@ PYTHONPATH=. pytest tests/unit/test_auto_approval.py \
 - Universal context: 20 tests passing
 - QA session: 15 tests passing
 - Context flow: 9 tests passing
-- **Total: 110+ tests passing**
+- Chief-of-staff-v3: 1162 tests passing
+- **Total: 1200+ tests passing**
 
 ---
 

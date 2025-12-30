@@ -294,6 +294,10 @@ This ensures the Implementation Agent knows the exact interface requirements bef
 | `swarm_attack/models/*.py` | Data models and state |
 | `.claude/skills/coder/SKILL.md` | Implementation Agent prompt |
 | `swarm_attack/skills/complexity-gate/SKILL.md` | Complexity Gate prompt |
+| `swarm_attack/chief_of_staff/campaign_planner.py` | Campaign backward planning |
+| `swarm_attack/chief_of_staff/campaign_executor.py` | Daily goal execution |
+| `swarm_attack/chief_of_staff/feedback.py` | Feedback storage and retrieval |
+| `swarm_attack/cli/chief_of_staff.py` | Chief of Staff CLI commands |
 
 ## Complexity Gate
 
@@ -424,6 +428,9 @@ The Chief of Staff pauses for human approval when:
 | **GoalTracker** | Tracks goals, compares plan vs actual |
 | **AutopilotRunner** | Executes goals with checkpoint gates |
 | **CheckpointStore** | Persists checkpoint decisions |
+| **CampaignPlanner** | Multi-day backward planning from deadlines |
+| **CampaignExecutor** | Executes daily campaign goals |
+| **FeedbackStore** | Persists human feedback for learning |
 
 ### Daily Workflow
 
@@ -449,6 +456,90 @@ When running Chief of Staff and encountering bugs in the tooling itself:
 5. **Resume** - Continue Chief of Staff operations after fix
 
 See `prompts/CHIEF_OF_STAFF_PROMPT.md` for the full autonomous operation prompt.
+
+### Campaign Management (v0.3.0)
+
+Multi-day campaign planning and execution for extended development efforts.
+
+#### Campaign CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `cos campaign-create <name> --deadline YYYY-MM-DD` | Create a new campaign |
+| `cos campaign-list` | List all campaigns with status |
+| `cos campaign-status <id>` | Show detailed campaign status |
+| `cos campaign-run <id>` | Execute today's goals |
+| `cos campaign-replan <id>` | Regenerate plans based on progress |
+
+#### Campaign Workflow
+
+```
+Create Campaign → Plan (backward from deadline) → Execute Daily → Replan if Behind
+```
+
+#### Usage Examples
+
+```bash
+# Create a 7-day campaign
+swarm-attack cos campaign-create "Q1 Feature Sprint" --deadline 2025-01-31
+
+# Check campaign status
+swarm-attack cos campaign-status q1-feature-sprint
+
+# Run today's goals
+swarm-attack cos campaign-run q1-feature-sprint
+
+# Replan if behind schedule
+swarm-attack cos campaign-replan q1-feature-sprint
+```
+
+#### Key Components
+
+| Component | Purpose |
+|-----------|---------|
+| **CampaignPlanner** | Backward planning from deadline, generates day plans |
+| **CampaignExecutor** | Executes daily goals via AutopilotRunner |
+| **CampaignStore** | Persists campaign state to `.swarm/chief-of-staff/campaigns/` |
+
+### Feedback Management (v0.3.0)
+
+Record and manage human feedback for continuous improvement.
+
+#### Feedback CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `cos feedback-list [-n LIMIT] [-t TAG]` | List recorded feedback |
+| `cos feedback-add "text" [-t TAG] [-c CONTEXT]` | Add new feedback |
+| `cos feedback-clear --tag TAG` | Clear feedback by tag |
+| `cos feedback-clear --before YYYY-MM-DD` | Clear old feedback |
+| `cos feedback-clear --all` | Clear all (requires confirmation) |
+
+#### Usage Examples
+
+```bash
+# Add feedback with tag
+swarm-attack cos feedback-add "Prefer shorter function names" --tag style
+
+# List recent feedback
+swarm-attack cos feedback-list -n 5
+
+# Filter by tag
+swarm-attack cos feedback-list --tag security
+
+# Clear old feedback
+swarm-attack cos feedback-clear --before 2025-01-01
+
+# Clear by tag
+swarm-attack cos feedback-clear --tag deprecated
+```
+
+#### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/chief_of_staff/feedback.py` | FeedbackStore and HumanFeedback model |
+| `swarm_attack/cli/chief_of_staff.py` | CLI commands implementation |
 
 ## Auto-Approval System (v0.3.0)
 
