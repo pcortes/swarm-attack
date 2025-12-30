@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_prompt>
+  <metadata>
+    <title>Complete Adaptive QA Agent - Expert Team TDD</title>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack-qa-agent</worktree>
+    <branch>feature/adaptive-qa-agent</branch>
+    <spec>/Users/philipjcortes/Desktop/swarm-attack/docs/ADAPTIVE_QA_AGENT_DESIGN.md</spec>
+    <validation_report>/Users/philipjcortes/Desktop/swarm-attack-qa-agent/docs/QA_VALIDATION_REPORT.md</validation_report>
+    <current_status>94% spec-complete, 821 tests passing, 80% coverage</current_status>
+  </metadata>
+
+  <team_structure>
+    <expert id="lead" name="QA Architect">
+      <role>Technical lead - coordinates work, reviews PRs, maintains test quality</role>
+      <expertise>System design, TDD methodology, test architecture</expertise>
+      <responsibilities>
+        <item>Verify working directory before any work</item>
+        <item>Coordinate specialist agents</item>
+        <item>Ensure no test regressions</item>
+        <item>Final integration testing</item>
+      </responsibilities>
+    </expert>
+
+    <expert id="contract" name="Contract Validator Specialist">
+      <role>Implement missing ContractValidatorAgent Python code</role>
+      <expertise>API contracts, schema validation, consumer discovery</expertise>
+      <responsibilities>
+        <item>Write tests first in tests/unit/qa/test_contract.py</item>
+        <item>Implement swarm_attack/qa/agents/contract.py</item>
+        <item>Export from swarm_attack/qa/agents/__init__.py</item>
+        <item>Verify skill file alignment with implementation</item>
+      </responsibilities>
+    </expert>
+
+    <expert id="edge_cases" name="Edge Case Specialist">
+      <role>Add missing edge case test coverage</role>
+      <expertise>Error handling, resilience, fault tolerance</expertise>
+      <responsibilities>
+        <item>Request generation edge cases (spec 10.4)</item>
+        <item>Database race condition tests (spec 10.6)</item>
+        <item>Auth flow tests - token refresh, expiry (spec 10.2)</item>
+        <item>Response validation edge cases (spec 10.5)</item>
+      </responsibilities>
+    </expert>
+
+    <expert id="integration" name="Integration Specialist">
+      <role>Final system integration and validation</role>
+      <expertise>E2E testing, CLI testing, hook registration</expertise>
+      <responsibilities>
+        <item>Add missing enum values to models.py</item>
+        <item>Verify all 3 agents dispatch correctly</item>
+        <item>Run full integration test suite</item>
+        <item>Update validation report</item>
+      </responsibilities>
+    </expert>
+  </team_structure>
+
+  <verification_first>
+    <command description="Verify working directory">
+      <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+pwd
+git branch --show-current
+      ]]>
+    </command>
+    <expected>
+      <pwd>/Users/philipjcortes/Desktop/swarm-attack-qa-agent</pwd>
+      <branch>feature/adaptive-qa-agent</branch>
+    </expected>
+    <on_failure>STOP - You are in the wrong worktree</on_failure>
+  </verification_first>
+
+  <gaps_to_close>
+    <gap priority="CRITICAL" effort="16-24h">
+      <id>GAP-001</id>
+      <title>ContractValidatorAgent NOT IMPLEMENTED</title>
+      <description>Skill file exists but no Python implementation. 1 of 3 agents missing.</description>
+      <location>swarm_attack/qa/agents/contract.py</location>
+      <spec_section>2.3, 10.8</spec_section>
+      <skill_file>.claude/skills/qa-contract-validator/SKILL.md</skill_file>
+      <test_file>tests/unit/qa/test_contract.py</test_file>
+      <acceptance_criteria>
+        <criterion>ContractValidatorAgent class exists and is importable</criterion>
+        <criterion>Exported from swarm_attack/qa/agents/__init__.py</criterion>
+        <criterion>Implements consumer discovery per skill file</criterion>
+        <criterion>Handles contract version mismatches</criterion>
+        <criterion>Handles schema drift detection</criterion>
+        <criterion>All tests pass</criterion>
+      </acceptance_criteria>
+    </gap>
+
+    <gap priority="HIGH" effort="8h">
+      <id>GAP-002</id>
+      <title>Request Generation Edge Cases (10.4)</title>
+      <description>No tests for malformed schemas, circular refs, deeply nested objects</description>
+      <test_file>tests/unit/qa/test_request_generation.py</test_file>
+      <spec_section>10.4</spec_section>
+      <acceptance_criteria>
+        <criterion>Test malformed OpenAPI schemas</criterion>
+        <criterion>Test circular reference handling</criterion>
+        <criterion>Test deeply nested object limits</criterion>
+        <criterion>Test unsupported content types</criterion>
+      </acceptance_criteria>
+    </gap>
+
+    <gap priority="HIGH" effort="6h">
+      <id>GAP-003</id>
+      <title>Database Race Condition Tests (10.6)</title>
+      <description>No concurrent write or corruption tests for session storage</description>
+      <test_file>tests/unit/qa/test_session_store.py</test_file>
+      <spec_section>10.6</spec_section>
+      <acceptance_criteria>
+        <criterion>Test concurrent session writes</criterion>
+        <criterion>Test orphaned session cleanup</criterion>
+        <criterion>Test session corruption recovery</criterion>
+      </acceptance_criteria>
+    </gap>
+
+    <gap priority="HIGH" effort="4h">
+      <id>GAP-004</id>
+      <title>Auth Flow Tests (10.2)</title>
+      <description>Token refresh/expiry flows not tested</description>
+      <test_file>tests/unit/qa/test_auth_flows.py</test_file>
+      <spec_section>10.2</spec_section>
+      <acceptance_criteria>
+        <criterion>Test token expiry handling</criterion>
+        <criterion>Test OAuth refresh flow</criterion>
+        <criterion>Test auth strategy selection</criterion>
+      </acceptance_criteria>
+    </gap>
+
+    <gap priority="MEDIUM" effort="1h">
+      <id>GAP-005</id>
+      <title>Missing QATrigger Enum Values</title>
+      <description>SCHEDULED_HEALTH and SPEC_COMPLIANCE missing from enum</description>
+      <location>swarm_attack/qa/models.py:36-42</location>
+      <spec_section>3.5</spec_section>
+      <acceptance_criteria>
+        <criterion>Add SCHEDULED_HEALTH = "scheduled_health"</criterion>
+        <criterion>Add SPEC_COMPLIANCE = "spec_compliance"</criterion>
+        <criterion>Update any switch/match statements</criterion>
+      </acceptance_criteria>
+    </gap>
+  </gaps_to_close>
+
+  <tdd_workflow>
+    <phase name="RED">
+      <step>Write failing test that defines expected behavior</step>
+      <step>Run test to confirm it fails for the RIGHT reason</step>
+      <step>Commit test with message "test: add failing test for X"</step>
+    </phase>
+    <phase name="GREEN">
+      <step>Write MINIMAL code to make test pass</step>
+      <step>Run test to confirm it passes</step>
+      <step>Run full test suite to check for regressions</step>
+    </phase>
+    <phase name="REFACTOR">
+      <step>Clean up implementation if needed</step>
+      <step>Ensure all tests still pass</step>
+      <step>Commit with message "feat: implement X"</step>
+    </phase>
+  </tdd_workflow>
+
+  <execution_plan>
+    <stage id="1" name="Setup and Verify">
+      <agent>lead</agent>
+      <tasks>
+        <task>Verify working directory and branch</task>
+        <task>Run existing test suite to establish baseline</task>
+        <task>Read validation report for current state</task>
+      </tasks>
+      <commands>
+        <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+pwd && git branch --show-current
+PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ --tb=no -q 2>&1 | tail -10
+        ]]>
+      </commands>
+      <exit_criteria>821+ tests passing, correct worktree confirmed</exit_criteria>
+    </stage>
+
+    <stage id="2" name="ContractValidatorAgent Implementation">
+      <agent>contract</agent>
+      <depends_on>1</depends_on>
+      <tasks>
+        <task>Read skill file for requirements</task>
+        <task>Read existing test file for patterns</task>
+        <task>Expand tests for full agent coverage</task>
+        <task>Implement ContractValidatorAgent class</task>
+        <task>Export from agents/__init__.py</task>
+      </tasks>
+      <files>
+        <read>.claude/skills/qa-contract-validator/SKILL.md</read>
+        <read>swarm_attack/qa/agents/behavioral.py</read>
+        <read>tests/unit/qa/test_contract.py</read>
+        <write>swarm_attack/qa/agents/contract.py</write>
+        <edit>swarm_attack/qa/agents/__init__.py</edit>
+      </files>
+      <verification>
+        <![CDATA[
+PYTHONPATH=. python -c "from swarm_attack.qa.agents import ContractValidatorAgent; print('OK')"
+PYTHONPATH=. python -m pytest tests/unit/qa/test_contract.py -v
+        ]]>
+      </verification>
+      <exit_criteria>ContractValidatorAgent importable, all contract tests pass</exit_criteria>
+    </stage>
+
+    <stage id="3" name="Missing Enum Values">
+      <agent>integration</agent>
+      <depends_on>1</depends_on>
+      <tasks>
+        <task>Add SCHEDULED_HEALTH to QATrigger</task>
+        <task>Add SPEC_COMPLIANCE to QATrigger</task>
+        <task>Add test for new enum values</task>
+      </tasks>
+      <files>
+        <edit>swarm_attack/qa/models.py</edit>
+        <edit>tests/unit/qa/test_models.py</edit>
+      </files>
+      <verification>
+        <![CDATA[
+PYTHONPATH=. python -c "from swarm_attack.qa.models import QATrigger; print(QATrigger.SCHEDULED_HEALTH, QATrigger.SPEC_COMPLIANCE)"
+        ]]>
+      </verification>
+      <exit_criteria>New enum values exist and serialize correctly</exit_criteria>
+    </stage>
+
+    <stage id="4" name="Edge Case Tests - Request Generation">
+      <agent>edge_cases</agent>
+      <depends_on>2</depends_on>
+      <tasks>
+        <task>Create test file for request generation edge cases</task>
+        <task>Test malformed schema handling</task>
+        <task>Test circular reference detection</task>
+        <task>Test nested object depth limits</task>
+      </tasks>
+      <files>
+        <create>tests/unit/qa/test_request_generation.py</create>
+      </files>
+      <exit_criteria>Request generation edge cases covered with 10+ tests</exit_criteria>
+    </stage>
+
+    <stage id="5" name="Edge Case Tests - Database/Auth">
+      <agent>edge_cases</agent>
+      <depends_on>4</depends_on>
+      <tasks>
+        <task>Create session store race condition tests</task>
+        <task>Create auth flow edge case tests</task>
+      </tasks>
+      <files>
+        <create>tests/unit/qa/test_session_store.py</create>
+        <create>tests/unit/qa/test_auth_flows.py</create>
+      </files>
+      <exit_criteria>Database and auth edge cases covered</exit_criteria>
+    </stage>
+
+    <stage id="6" name="Integration Verification">
+      <agent>lead</agent>
+      <depends_on>2,3,4,5</depends_on>
+      <tasks>
+        <task>Run full test suite</task>
+        <task>Verify all 3 agents dispatch from orchestrator</task>
+        <task>Update validation report</task>
+        <task>Create summary of completed work</task>
+      </tasks>
+      <verification>
+        <![CDATA[
+PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ -v --tb=short
+PYTHONPATH=. python -c "
+from swarm_attack.qa.agents import BehavioralTesterAgent, ContractValidatorAgent, RegressionScannerAgent
+print('All 3 agents importable: OK')
+"
+        ]]>
+      </verification>
+      <exit_criteria>All tests pass, 3 agents working, validation report updated</exit_criteria>
+    </stage>
+  </execution_plan>
+
+  <test_commands>
+    <command name="run_all_qa_tests">
+      <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ -v --tb=short
+      ]]>
+    </command>
+    <command name="run_contract_tests">
+      <![CDATA[
+PYTHONPATH=. python -m pytest tests/unit/qa/test_contract.py -v
+      ]]>
+    </command>
+    <command name="check_imports">
+      <![CDATA[
+PYTHONPATH=. python -c "
+from swarm_attack.qa.orchestrator import QAOrchestrator
+from swarm_attack.qa.agents import BehavioralTesterAgent, ContractValidatorAgent, RegressionScannerAgent
+from swarm_attack.qa.models import QATrigger, QADepth, QASession
+print('All imports OK')
+"
+      ]]>
+    </command>
+    <command name="test_count">
+      <![CDATA[
+PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ --collect-only -q | tail -3
+      ]]>
+    </command>
+  </test_commands>
+
+  <patterns>
+    <pattern name="agent_implementation">
+      <description>Pattern for implementing QA agents</description>
+      <reference>swarm_attack/qa/agents/behavioral.py</reference>
+      <code_template>
+        <![CDATA[
+from __future__ import annotations
+from typing import Any, Optional
+from swarm_attack.agents.base import BaseAgent, AgentResult
+from swarm_attack.config import SwarmConfig
+from swarm_attack.logging import SwarmLogger
+from swarm_attack.qa.models import QAContext, QAFinding, QADepth, QALimits
+
+class ContractValidatorAgent(BaseAgent):
+    """Validates API contracts against consumer expectations."""
+
+    name: str = "contract_validator"
+
+    def __init__(
+        self,
+        config: SwarmConfig,
+        logger: Optional[SwarmLogger] = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(config, logger, **kwargs)
+        self._finding_counter = 0
+
+    def run(self, context: dict[str, Any]) -> AgentResult:
+        """Execute contract validation."""
+        qa_context = context.get("qa_context")
+        if not qa_context:
+            return AgentResult.failure_result("Missing qa_context")
+
+        findings: list[QAFinding] = []
+        # Implementation here...
+
+        return AgentResult.success_result(output={
+            "agent": self.name,
+            "findings": [f.to_dict() for f in findings],
+        })
+
+    def _generate_finding_id(self) -> str:
+        self._finding_counter += 1
+        return f"CV-{self._finding_counter:03d}"
+        ]]>
+      </code_template>
+    </pattern>
+
+    <pattern name="test_fixture">
+      <description>Pattern for test fixtures</description>
+      <code_template>
+        <![CDATA[
+import pytest
+from unittest.mock import MagicMock, patch
+
+class TestContractValidatorAgent:
+    @pytest.fixture
+    def mock_config(self):
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return config
+
+    @pytest.fixture
+    def agent(self, mock_config):
+        from swarm_attack.qa.agents.contract import ContractValidatorAgent
+        return ContractValidatorAgent(mock_config)
+
+    def test_agent_name(self, agent):
+        assert agent.name == "contract_validator"
+
+    def test_run_with_valid_context(self, agent):
+        context = {"qa_context": MagicMock()}
+        result = agent.run(context)
+        assert result.success
+        ]]>
+      </code_template>
+    </pattern>
+  </patterns>
+
+  <constraints>
+    <constraint type="MUST">Write tests BEFORE implementation code</constraint>
+    <constraint type="MUST">Run full test suite after each implementation</constraint>
+    <constraint type="MUST">Verify working directory before starting</constraint>
+    <constraint type="MUST">Follow existing code patterns from behavioral.py</constraint>
+    <constraint type="MUST_NOT">Introduce regressions - 821 tests must keep passing</constraint>
+    <constraint type="MUST_NOT">Skip edge case handling from spec section 10</constraint>
+    <constraint type="SHOULD">Use PYTHONPATH=. for all test commands</constraint>
+    <constraint type="SHOULD">Commit after each completed gap</constraint>
+  </constraints>
+
+  <success_criteria>
+    <criterion>ContractValidatorAgent fully implemented and importable</criterion>
+    <criterion>All 3 agents (Behavioral, Contract, Regression) dispatch from orchestrator</criterion>
+    <criterion>Missing enum values added to QATrigger</criterion>
+    <criterion>Edge case tests added for spec sections 10.2, 10.4, 10.6</criterion>
+    <criterion>All tests pass (target: 850+ tests)</criterion>
+    <criterion>No regressions in existing functionality</criterion>
+    <criterion>Validation report updated to reflect completion</criterion>
+  </success_criteria>
+</implementation_prompt>

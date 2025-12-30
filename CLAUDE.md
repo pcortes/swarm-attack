@@ -1,8 +1,40 @@
-# Swarm Attack
+# Swarm Attack QA Agent
 
-Autonomous AI-powered multi-agent development automation system. Orchestrates Claude Code agents to handle feature development and bug fixing pipelines.
+**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack-qa-agent`
+**Branch:** `feature/adaptive-qa-agent`
+
+---
+
+## FIRST: Verify Your Working Directory
+
+**Before reading further, run these commands:**
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+git branch   # Must show: * feature/adaptive-qa-agent
+```
+
+**STOP if you're not in the correct worktree.**
+
+---
+
+## COO Integration
+
+This project is managed by the COO (Chief Operating Officer) agent at `/Users/philipjcortes/Desktop/coo`. All specs and prompts should follow COO archival conventions.
+
+### Implementation Rules
+
+1. **Must be TDD** - Write failing tests before implementing
+2. **Expert Team Definition Required** - Every prompt MUST have `<team_structure>` with QA experts
+3. **Test Coverage Focus** - QA specs must include coverage requirements
+4. **Integration Testing Required** - Must test interaction with parent swarm-attack system
+
+---
 
 ## System Overview
+
+Autonomous AI-powered multi-agent development automation system. Orchestrates Claude Code agents to handle feature development and bug fixing pipelines.
 
 Swarm Attack provides two main pipelines:
 

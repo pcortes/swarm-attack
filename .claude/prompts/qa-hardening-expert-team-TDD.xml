@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_prompt>
+  <metadata>
+    <title>QA Agent Hardening - Expert Team TDD</title>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack-qa-agent</worktree>
+    <branch>feature/adaptive-qa-agent</branch>
+    <created>2025-12-30</created>
+    <baseline>933 tests passing - ALL CRITICAL WORK COMPLETE</baseline>
+    <focus>High-value optional hardening via TDD</focus>
+  </metadata>
+
+  <team_structure>
+    <expert role="lead" name="QA Hardening Lead">
+      <responsibility>Coordinate team, ensure TDD discipline, track coverage gains</responsibility>
+      <tools>TodoWrite, test runners, coverage tools</tools>
+    </expert>
+
+    <expert role="docs" name="Documentation Specialist">
+      <responsibility>Update QA_VALIDATION_REPORT.md to reflect current state</responsibility>
+      <focus>OPT-001: Fix outdated documentation showing ContractValidator as missing</focus>
+    </expert>
+
+    <expert role="response" name="Response Validation Expert">
+      <responsibility>Add edge case tests for response handling</responsibility>
+      <focus>OPT-003: Malformed JSON, non-UTF8 encoding, streaming responses</focus>
+      <spec_section>10.5</spec_section>
+    </expert>
+
+    <expert role="security" name="Security Testing Expert">
+      <responsibility>Add security edge case tests</responsibility>
+      <focus>OPT-005: XSS/injection detection, SSRF protection, input sanitization</focus>
+      <spec_section>10.11</spec_section>
+    </expert>
+
+    <expert role="git" name="Git/VCS Edge Case Expert" priority="lower">
+      <responsibility>Add VCS edge case tests</responsibility>
+      <focus>OPT-004: Detached HEAD, shallow clones, submodules</focus>
+      <spec_section>10.9</spec_section>
+    </expert>
+  </team_structure>
+
+  <worktree_verification priority="CRITICAL">
+    <instruction>BEFORE ANY WORK, verify you are in the correct worktree:</instruction>
+    <commands>
+      <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack-qa-agent
+git branch --show-current   # Must show: feature/adaptive-qa-agent
+      ]]>
+    </commands>
+    <on_failure>STOP - You are in the wrong directory.</on_failure>
+  </worktree_verification>
+
+  <baseline_state>
+    <test_count>933 tests passing</test_count>
+    <all_agents_working>BehavioralTesterAgent, ContractValidatorAgent, RegressionScannerAgent</all_agents_working>
+    <verify_command>
+      <![CDATA[
+PYTHONPATH=. python -c "from swarm_attack.qa.agents import BehavioralTesterAgent, ContractValidatorAgent, RegressionScannerAgent; print('All 3 agents: OK')"
+      ]]>
+    </verify_command>
+    <note>DO NOT re-run full test suite unless making changes. Trust the baseline.</note>
+  </baseline_state>
+
+  <tasks>
+    <task id="OPT-001" priority="1" effort="30min">
+      <title>Update QA_VALIDATION_REPORT.md</title>
+      <description>The validation report is outdated and misleading</description>
+      <file>/Users/philipjcortes/Desktop/swarm-attack-qa-agent/docs/QA_VALIDATION_REPORT.md</file>
+
+      <current_issues>
+        <issue>Shows 821 tests (should be 933)</issue>
+        <issue>Says ContractValidatorAgent is NOT IMPLEMENTED (it is)</issue>
+        <issue>Lists GAPs as open (all are closed)</issue>
+        <issue>Dated 2025-12-27 (outdated)</issue>
+      </current_issues>
+
+      <requirements>
+        <item>Update test count to 933</item>
+        <item>Mark ContractValidatorAgent as IMPLEMENTED</item>
+        <item>Update all GAP statuses to CLOSED</item>
+        <item>Update date to 2025-12-30</item>
+        <item>Change status from "94% spec-complete" to "100% spec-complete"</item>
+        <item>Update recommendation from "Option B" to "Ship ready"</item>
+      </requirements>
+
+      <acceptance_criteria>
+        <criterion>Report accurately reflects current implementation state</criterion>
+        <criterion>No misleading "NOT IMPLEMENTED" entries remain</criterion>
+        <criterion>All GAP statuses show CLOSED/COMPLETED</criterion>
+      </acceptance_criteria>
+    </task>
+
+    <task id="OPT-003" priority="2" effort="4hrs">
+      <title>Response Validation Edge Case Tests (Spec 10.5)</title>
+      <description>Add comprehensive tests for response handling edge cases</description>
+      <test_file>tests/unit/qa/test_response_validation_edge_cases.py</test_file>
+
+      <tdd_workflow>
+        <step>1. Create test file with failing tests for each scenario</step>
+        <step>2. Verify tests FAIL (RED phase)</step>
+        <step>3. Implement handling code if needed OR verify existing code handles it</step>
+        <step>4. Verify tests PASS (GREEN phase)</step>
+        <step>5. Run full QA test suite to ensure no regressions</step>
+      </tdd_workflow>
+
+      <test_scenarios>
+        <scenario name="malformed_json">
+          <description>Response body is invalid JSON</description>
+          <cases>
+            <case>Truncated JSON: '{"key": "val'</case>
+            <case>Invalid syntax: '{key: value}'</case>
+            <case>Empty body with application/json content-type</case>
+            <case>BOM at start of JSON</case>
+          </cases>
+          <expected_behavior>Graceful handling with clear error message</expected_behavior>
+        </scenario>
+
+        <scenario name="encoding_issues">
+          <description>Non-UTF8 or mixed encoding responses</description>
+          <cases>
+            <case>Latin-1 encoded response with no charset header</case>
+            <case>UTF-16 response</case>
+            <case>Binary data in text/plain response</case>
+            <case>Mixed encoding within response</case>
+          </cases>
+          <expected_behavior>Decode gracefully or report encoding issue</expected_behavior>
+        </scenario>
+
+        <scenario name="streaming_responses">
+          <description>Chunked transfer encoding, SSE, streaming JSON</description>
+          <cases>
+            <case>Chunked response that never completes</case>
+            <case>Server-Sent Events stream</case>
+            <case>NDJSON (newline-delimited JSON)</case>
+            <case>Partial chunk received</case>
+          </cases>
+          <expected_behavior>Handle streaming appropriately or skip gracefully</expected_behavior>
+        </scenario>
+
+        <scenario name="large_responses">
+          <description>Very large response bodies</description>
+          <cases>
+            <case>Response >10MB</case>
+            <case>Response with millions of array elements</case>
+            <case>Deeply nested JSON (100+ levels)</case>
+          </cases>
+          <expected_behavior>Enforce limits from QALimits config</expected_behavior>
+        </scenario>
+
+        <scenario name="content_type_mismatches">
+          <description>Content-Type header doesn't match body</description>
+          <cases>
+            <case>JSON body with text/html content-type</case>
+            <case>HTML body with application/json content-type</case>
+            <case>Missing content-type header</case>
+          </cases>
+          <expected_behavior>Detect mismatch, attempt content sniffing</expected_behavior>
+        </scenario>
+      </test_scenarios>
+
+      <existing_file_check>
+        <note>Check if tests/unit/qa/test_response_validation_edge_cases.py exists</note>
+        <if_exists>Extend it with missing scenarios</if_exists>
+        <if_not_exists>Create new file following test_behavioral.py patterns</if_not_exists>
+      </existing_file_check>
+
+      <acceptance_criteria>
+        <criterion>All 5 scenario categories have tests</criterion>
+        <criterion>At least 20 new test cases added</criterion>
+        <criterion>All tests pass</criterion>
+        <criterion>No regressions in existing tests</criterion>
+      </acceptance_criteria>
+    </task>
+
+    <task id="OPT-005" priority="3" effort="6hrs">
+      <title>Security Edge Case Tests (Spec 10.11)</title>
+      <description>Add security-focused tests for the QA system</description>
+      <test_file>tests/unit/qa/test_security_edge_cases.py</test_file>
+
+      <tdd_workflow>
+        <step>1. Create test file with security scenario tests</step>
+        <step>2. RED phase - tests should fail if security handling is missing</step>
+        <step>3. Implement security handling in relevant modules</step>
+        <step>4. GREEN phase - all security tests pass</step>
+        <step>5. Run full suite for regression check</step>
+      </tdd_workflow>
+
+      <test_scenarios>
+        <scenario name="xss_injection">
+          <description>Cross-site scripting payloads in responses</description>
+          <cases>
+            <case>Script tags in JSON string values</case>
+            <case>Event handlers in response data</case>
+            <case>JavaScript URLs in href fields</case>
+            <case>SVG-based XSS payloads</case>
+          </cases>
+          <expected_behavior>Detect and flag as security finding</expected_behavior>
+        </scenario>
+
+        <scenario name="sql_injection">
+          <description>SQL injection indicators in requests/responses</description>
+          <cases>
+            <case>Classic SQL injection in parameters</case>
+            <case>Blind SQL injection indicators</case>
+            <case>NoSQL injection patterns</case>
+            <case>ORM injection patterns</case>
+          </cases>
+          <expected_behavior>Detect patterns, flag for security review</expected_behavior>
+        </scenario>
+
+        <scenario name="ssrf_protection">
+          <description>Server-Side Request Forgery prevention</description>
+          <cases>
+            <case>Request to localhost/127.0.0.1</case>
+            <case>Request to internal IP ranges (10.x, 172.16.x, 192.168.x)</case>
+            <case>Request to metadata endpoints (169.254.169.254)</case>
+            <case>DNS rebinding attack patterns</case>
+          </cases>
+          <expected_behavior>Block or warn about internal requests</expected_behavior>
+        </scenario>
+
+        <scenario name="path_traversal">
+          <description>Path traversal attempts</description>
+          <cases>
+            <case>../../../etc/passwd patterns</case>
+            <case>URL-encoded traversal (%2e%2e%2f)</case>
+            <case>Null byte injection</case>
+            <case>Double-encoding bypasses</case>
+          </cases>
+          <expected_behavior>Sanitize paths, reject traversal attempts</expected_behavior>
+        </scenario>
+
+        <scenario name="sensitive_data_exposure">
+          <description>Sensitive data in responses</description>
+          <cases>
+            <case>API keys in response</case>
+            <case>Password fields in JSON</case>
+            <case>Credit card patterns</case>
+            <case>JWT tokens in logs</case>
+          </cases>
+          <expected_behavior>Detect and flag as sensitive data exposure</expected_behavior>
+        </scenario>
+
+        <scenario name="header_injection">
+          <description>HTTP header injection attempts</description>
+          <cases>
+            <case>CRLF injection in headers</case>
+            <case>Response splitting</case>
+            <case>Host header injection</case>
+          </cases>
+          <expected_behavior>Sanitize headers, reject injection attempts</expected_behavior>
+        </scenario>
+      </test_scenarios>
+
+      <config_reference>
+        <file>swarm_attack/qa/qa_config.py</file>
+        <class>QASafetyConfig</class>
+        <note>Security settings should integrate with existing safety config</note>
+      </config_reference>
+
+      <acceptance_criteria>
+        <criterion>All 6 security scenario categories have tests</criterion>
+        <criterion>At least 30 security test cases added</criterion>
+        <criterion>Security findings correctly categorized by severity</criterion>
+        <criterion>All tests pass</criterion>
+        <criterion>No regressions</criterion>
+      </acceptance_criteria>
+    </task>
+
+    <task id="OPT-004" priority="4" effort="4hrs">
+      <title>Git VCS Edge Case Tests (Spec 10.9)</title>
+      <description>Add tests for Git edge cases common in CI environments</description>
+      <test_file>tests/unit/qa/test_git_vcs_edge_cases.py</test_file>
+
+      <tdd_workflow>
+        <step>1. Create test file with Git scenario tests</step>
+        <step>2. RED phase - verify tests identify missing handling</step>
+        <step>3. Implement Git edge case handling</step>
+        <step>4. GREEN phase - all tests pass</step>
+        <step>5. Run full suite for regression check</step>
+      </tdd_workflow>
+
+      <test_scenarios>
+        <scenario name="detached_head">
+          <description>Repository is in detached HEAD state</description>
+          <cases>
+            <case>Checkout specific commit</case>
+            <case>CI pipeline checkout</case>
+            <case>Git worktree detached</case>
+          </cases>
+          <expected_behavior>Handle gracefully, use commit SHA instead of branch name</expected_behavior>
+        </scenario>
+
+        <scenario name="shallow_clone">
+          <description>Repository is shallow (--depth)</description>
+          <cases>
+            <case>Depth=1 clone (common in CI)</case>
+            <case>Missing history for diff</case>
+            <case>Unable to find merge-base</case>
+          </cases>
+          <expected_behavior>Detect shallow clone, limit diff analysis scope</expected_behavior>
+        </scenario>
+
+        <scenario name="submodules">
+          <description>Repository has submodules</description>
+          <cases>
+            <case>Uninitialized submodule</case>
+            <case>Submodule version mismatch</case>
+            <case>Recursive submodules</case>
+          </cases>
+          <expected_behavior>Identify submodules, analyze or skip appropriately</expected_behavior>
+        </scenario>
+
+        <scenario name="large_repos">
+          <description>Large repository edge cases</description>
+          <cases>
+            <case>Very large diff (1000+ files)</case>
+            <case>Binary files in diff</case>
+            <case>Huge file deletions/additions</case>
+          </cases>
+          <expected_behavior>Enforce limits, sample or paginate results</expected_behavior>
+        </scenario>
+
+        <scenario name="git_errors">
+          <description>Git command failures</description>
+          <cases>
+            <case>Not a git repository</case>
+            <case>Corrupt git objects</case>
+            <case>Locked index file</case>
+            <case>Permission denied on .git</case>
+          </cases>
+          <expected_behavior>Graceful error handling, skip git-dependent features</expected_behavior>
+        </scenario>
+      </test_scenarios>
+
+      <existing_coverage>
+        <file>tests/unit/qa/test_context_builder.py:629-663</file>
+        <covered>Diff generation, non-git repos</covered>
+        <not_covered>Detached HEAD, shallow clones, submodules</not_covered>
+      </existing_coverage>
+
+      <acceptance_criteria>
+        <criterion>All 5 scenario categories have tests</criterion>
+        <criterion>At least 15 Git edge case tests added</criterion>
+        <criterion>All tests pass</criterion>
+        <criterion>No regressions</criterion>
+      </acceptance_criteria>
+    </task>
+  </tasks>
+
+  <skip_tasks reason="Low value or technical debt only">
+    <task id="OPT-002" reason="Architectural purity only - functionality works correctly">
+      <title>Separate QAStateStore class</title>
+      <description>State management is embedded in orchestrator.py - works fine</description>
+      <value>LOW - no user-facing benefit</value>
+    </task>
+  </skip_tasks>
+
+  <tdd_principles>
+    <principle name="red_green_refactor">
+      <red>Write failing tests first that define expected behavior</red>
+      <green>Write minimal code to make tests pass</green>
+      <refactor>Clean up code while keeping tests green</refactor>
+    </principle>
+
+    <principle name="test_first">
+      <rule>NEVER write implementation code before its test exists</rule>
+      <rule>Each test should test ONE specific behavior</rule>
+      <rule>Tests should be independent and deterministic</rule>
+    </principle>
+
+    <principle name="no_regressions">
+      <rule>Run full QA test suite after each task completion</rule>
+      <command>PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ -v --tb=short</command>
+      <baseline>933 tests must still pass</baseline>
+    </principle>
+  </tdd_principles>
+
+  <existing_test_patterns>
+    <pattern_file>tests/unit/qa/test_behavioral.py</pattern_file>
+    <pattern_file>tests/unit/qa/test_contract.py</pattern_file>
+    <notes>
+      <![CDATA[
+- Use pytest fixtures for common setup
+- Use @pytest.mark.asyncio for async tests
+- Use MagicMock for external dependencies
+- Group related tests in classes: class TestScenarioName:
+- Use descriptive test names: test_should_handle_malformed_json_gracefully
+      ]]>
+    </notes>
+  </existing_test_patterns>
+
+  <success_criteria>
+    <criterion priority="required">All existing 933 tests still pass</criterion>
+    <criterion priority="required">OPT-001: Documentation updated and accurate</criterion>
+    <criterion priority="high">OPT-003: At least 20 response validation tests added</criterion>
+    <criterion priority="high">OPT-005: At least 30 security tests added</criterion>
+    <criterion priority="medium">OPT-004: At least 15 Git edge case tests added</criterion>
+    <criterion priority="final">Final test count: 933 + new tests all passing</criterion>
+  </success_criteria>
+
+  <execution_order>
+    <step order="1">Verify environment (worktree, branch, baseline)</step>
+    <step order="2">OPT-001: Update documentation (quick win, ~30 min)</step>
+    <step order="3">OPT-003: Response validation tests (high value, ~4 hrs)</step>
+    <step order="4">OPT-005: Security tests (high value, ~6 hrs)</step>
+    <step order="5">OPT-004: Git edge cases (medium value, ~4 hrs)</step>
+    <step order="6">Final validation: all tests pass, commit changes</step>
+  </execution_order>
+
+  <commands_reference>
+    <command name="verify_baseline">PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ --collect-only -q | tail -3</command>
+    <command name="run_single_file">PYTHONPATH=. python -m pytest tests/unit/qa/test_FILE.py -v --tb=short</command>
+    <command name="run_all_qa_tests">PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ -v --tb=short</command>
+    <command name="run_quick">PYTHONPATH=. python -m pytest tests/unit/qa/ tests/integration/qa/ --tb=no -q</command>
+  </commands_reference>
+</implementation_prompt>
