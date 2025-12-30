@@ -1374,6 +1374,118 @@ def feedback_add(
         raise typer.Exit(1)
 
 
+@app.command("feedback-clear")
+def feedback_clear(
+    before: Optional[str] = typer.Option(None, "--before", help="Clear before date YYYY-MM-DD"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag"),
+    all_feedback: bool = typer.Option(False, "--all", help="Clear all feedback"),
+) -> None:
+    """Clear feedback entries.
+
+    Clears feedback entries based on filters. At least one filter must be specified
+    for safety:
+    - --all: Clear all entries (requires confirmation)
+    - --tag: Clear entries with specific tag
+    - --before: Clear entries before a specific date
+
+    Filters can be combined for more specific clearing.
+
+    Examples:
+        swarm-attack cos feedback-clear --all
+        swarm-attack cos feedback-clear --tag security
+        swarm-attack cos feedback-clear --before 2025-01-01
+        swarm-attack cos feedback-clear --tag testing --before 2025-01-15
+    """
+    console = get_console()
+
+    try:
+        # Require at least one filter for safety
+        if not (all_feedback or tag or before):
+            console.print("[red]Error: Must specify at least one filter option[/red]")
+            console.print("  Use --all to clear everything, or --tag/--before to filter")
+            raise typer.Exit(1)
+
+        store = _get_feedback_store()
+        store.load()
+
+        all_entries = store.get_all()
+        original_count = len(all_entries)
+
+        if original_count == 0:
+            console.print("\n[dim]No feedback entries to clear.[/dim]")
+            console.print()
+            return
+
+        # Parse before date if provided
+        before_date = None
+        if before:
+            try:
+                before_date = datetime.fromisoformat(before)
+                # If only date provided (no time), set to end of day
+                if before_date.hour == 0 and before_date.minute == 0:
+                    before_date = before_date.replace(hour=23, minute=59, second=59)
+            except ValueError:
+                console.print(f"[red]Error: Invalid date format: {before}[/red]")
+                console.print("  Use format: YYYY-MM-DD")
+                raise typer.Exit(1)
+
+        # Filter entries to keep
+        entries_to_keep = []
+        cleared_count = 0
+
+        for fb in all_entries:
+            should_clear = True
+
+            # Check tag filter
+            if tag:
+                fb_tags = [t.lower() for t in (fb.applies_to or [])]
+                if tag.lower() not in fb_tags:
+                    should_clear = False
+
+            # Check date filter
+            if before_date and should_clear:
+                fb_timestamp = fb.timestamp
+                if isinstance(fb_timestamp, str):
+                    fb_timestamp = datetime.fromisoformat(fb_timestamp.replace("Z", "+00:00"))
+                if fb_timestamp >= before_date:
+                    should_clear = False
+
+            if should_clear:
+                cleared_count += 1
+            else:
+                entries_to_keep.append(fb)
+
+        # If using --all flag, require confirmation
+        if all_feedback and cleared_count > 0:
+            console.print(f"\n[yellow]Warning:[/yellow] This will clear {cleared_count} feedback entries.")
+            confirm = typer.confirm("Are you sure you want to continue?")
+            if not confirm:
+                console.print("\n[dim]Operation cancelled.[/dim]")
+                console.print()
+                return
+
+        # Handle case where nothing matches
+        if cleared_count == 0:
+            console.print("\n[dim]No feedback entries matched the filter criteria.[/dim]")
+            console.print()
+            return
+
+        # Save the filtered list
+        store._feedback = entries_to_keep
+        store.save()
+
+        console.print()
+        console.print(f"[green]Cleared {cleared_count} feedback entries.[/green]")
+        console.print(f"  Remaining: {len(entries_to_keep)}")
+        console.print()
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error clearing feedback: {e}[/red]")
+        raise typer.Exit(1)
+
+
 def _get_campaign_store():
     """Get configured CampaignStore."""
     from swarm_attack.chief_of_staff.campaigns import CampaignStore
