@@ -1372,3 +1372,391 @@ def feedback_add(
     except Exception as e:
         console.print(f"[red]Error adding feedback: {e}[/red]")
         raise typer.Exit(1)
+
+
+def _get_campaign_store():
+    """Get configured CampaignStore."""
+    from swarm_attack.chief_of_staff.campaigns import CampaignStore
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+    base_path = project_dir / ".swarm" / "chief-of-staff"
+    return CampaignStore(base_path)
+
+
+def _get_campaign_executor():
+    """Get configured CampaignExecutor."""
+    from swarm_attack.chief_of_staff.campaign_executor import CampaignExecutor
+    from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
+
+    config = ChiefOfStaffConfig()
+    campaign_store = _get_campaign_store()
+    autopilot_runner = _get_autopilot_runner()
+
+    return CampaignExecutor(
+        config=config,
+        campaign_store=campaign_store,
+        autopilot_runner=autopilot_runner,
+    )
+
+
+def _get_campaign_planner():
+    """Get configured CampaignPlanner."""
+    from swarm_attack.chief_of_staff.campaign_planner import CampaignPlanner
+
+    campaign_store = _get_campaign_store()
+    return CampaignPlanner(campaign_store=campaign_store)
+
+
+@app.command("campaign-create")
+def campaign_create(
+    name: str = typer.Argument(..., help="Name of the campaign"),
+    deadline: str = typer.Option(..., "--deadline", "-d", help="Deadline YYYY-MM-DD"),
+    description: str = typer.Option("", "--description", help="Campaign description"),
+) -> None:
+    """Create a new campaign.
+
+    Creates a campaign for multi-day feature development or bug fixing.
+
+    Examples:
+        swarm-attack cos campaign-create "Q1 Feature Sprint" --deadline 2025-01-31
+        swarm-attack cos campaign-create "Bug Bash" -d 2025-01-15 --description "Fix critical bugs"
+    """
+    import asyncio
+    from swarm_attack.chief_of_staff.campaigns import Campaign, CampaignState
+
+    console = get_console()
+
+    try:
+        # Parse deadline
+        try:
+            deadline_date = date.fromisoformat(deadline)
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid deadline format: {deadline}")
+            console.print("  Expected format: YYYY-MM-DD (e.g., 2025-01-31)")
+            raise typer.Exit(1)
+
+        # Validate deadline is in the future
+        if deadline_date <= date.today():
+            console.print("[yellow]Warning:[/yellow] Deadline is not in the future")
+
+        # Generate campaign ID from name
+        campaign_id = name.lower().replace(" ", "-")
+
+        # Create campaign
+        campaign = Campaign(
+            id=campaign_id,
+            name=name,
+            description=description,
+            state=CampaignState.PLANNING,
+            start_date=date.today(),
+            planned_days=(deadline_date - date.today()).days,
+        )
+
+        # Save campaign
+        store = _get_campaign_store()
+        asyncio.run(store.save(campaign))
+
+        console.print()
+        console.print(f"[green]Campaign created successfully.[/green]")
+        console.print(f"  ID: {campaign_id}")
+        console.print(f"  Name: {name}")
+        console.print(f"  Deadline: {deadline}")
+        console.print(f"  Duration: {campaign.planned_days} days")
+        console.print(f"  State: {campaign.state.value}")
+        console.print()
+        console.print("[dim]Next steps:[/dim]")
+        console.print(f"  1. Plan the campaign: swarm-attack cos campaign-plan {campaign_id}")
+        console.print(f"  2. Start execution: swarm-attack cos campaign-run {campaign_id}")
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error creating campaign: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("campaign-list")
+def campaign_list() -> None:
+    """List all campaigns.
+
+    Shows all campaigns with their status, progress, and cost.
+    """
+    import asyncio
+    from swarm_attack.chief_of_staff.campaigns import CampaignState
+
+    console = get_console()
+
+    try:
+        store = _get_campaign_store()
+        campaigns = asyncio.run(store.list_all())
+
+        console.print()
+        console.print(Panel("[bold]Campaigns[/bold]", style="cyan"))
+
+        if not campaigns:
+            console.print("\n[dim]No campaigns found.[/dim]")
+            console.print("[dim]Create one with: swarm-attack cos campaign-create <name> --deadline YYYY-MM-DD[/dim]")
+            console.print()
+            return
+
+        table = Table()
+        table.add_column("ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("State", style="yellow")
+        table.add_column("Progress", justify="center")
+        table.add_column("Days", justify="center")
+        table.add_column("Cost", justify="right")
+
+        for campaign in campaigns:
+            # Determine state color
+            state_str = campaign.state.value
+            if campaign.state == CampaignState.ACTIVE:
+                state_str = f"[green]{state_str}[/green]"
+            elif campaign.state == CampaignState.PAUSED:
+                state_str = f"[yellow]{state_str}[/yellow]"
+            elif campaign.state == CampaignState.COMPLETED:
+                state_str = f"[blue]{state_str}[/blue]"
+            elif campaign.state == CampaignState.FAILED:
+                state_str = f"[red]{state_str}[/red]"
+
+            # Calculate progress
+            if campaign.planned_days > 0:
+                progress_pct = (campaign.current_day / campaign.planned_days) * 100
+                progress_str = f"{campaign.current_day}/{campaign.planned_days} ({progress_pct:.0f}%)"
+            else:
+                progress_str = f"{campaign.current_day}/?"
+
+            # Format cost
+            cost_str = f"${campaign.spent_usd:.2f}"
+
+            # Check if behind
+            days_behind = campaign.days_behind()
+            days_str = str(campaign.planned_days)
+            if days_behind > 0:
+                days_str = f"{campaign.planned_days} [red](-{days_behind})[/red]"
+
+            table.add_row(
+                campaign.id or campaign.campaign_id,
+                campaign.name,
+                state_str,
+                progress_str,
+                days_str,
+                cost_str,
+            )
+
+        console.print()
+        console.print(table)
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error listing campaigns: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("campaign-status")
+def campaign_status(
+    campaign_id: str = typer.Argument(..., help="The campaign ID"),
+) -> None:
+    """Show campaign status.
+
+    Displays detailed status of a campaign including milestones,
+    day plans, and progress.
+
+    Examples:
+        swarm-attack cos campaign-status my-campaign
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        store = _get_campaign_store()
+        campaign = asyncio.run(store.load(campaign_id))
+
+        if campaign is None:
+            console.print(f"\n[red]Campaign not found: {campaign_id}[/red]")
+            raise typer.Exit(1)
+
+        console.print()
+        console.print(Panel(f"[bold]Campaign: {campaign.name}[/bold]", style="cyan"))
+
+        # Basic info
+        console.print(f"\n[bold]ID:[/bold] {campaign.id or campaign.campaign_id}")
+        console.print(f"[bold]State:[/bold] {campaign.state.value}")
+        console.print(f"[bold]Description:[/bold] {campaign.description or 'No description'}")
+
+        # Progress
+        console.print(f"\n[bold]Progress:[/bold]")
+        if campaign.planned_days > 0:
+            progress_pct = (campaign.current_day / campaign.planned_days) * 100
+            console.print(f"  Day {campaign.current_day}/{campaign.planned_days} ({progress_pct:.0f}%)")
+        else:
+            console.print(f"  Day {campaign.current_day}")
+        console.print(f"  Start Date: {campaign.start_date}")
+
+        # Check if behind
+        days_behind = campaign.days_behind()
+        if days_behind > 0:
+            console.print(f"  [red]Days Behind: {days_behind}[/red]")
+
+        # Cost
+        console.print(f"\n[bold]Cost:[/bold] ${campaign.spent_usd:.2f}")
+        if campaign.total_budget_usd > 0:
+            console.print(f"  Budget: ${campaign.total_budget_usd:.2f}")
+            remaining = campaign.total_budget_usd - campaign.spent_usd
+            console.print(f"  Remaining: ${remaining:.2f}")
+
+        # Milestones
+        if campaign.milestones:
+            console.print(f"\n[bold]Milestones:[/bold]")
+            for m in campaign.milestones:
+                status_icon = "[green]v[/green]" if m.completed else "[ ]"
+                console.print(f"  {status_icon} {m.description or m.name}")
+
+        # Day plans
+        if campaign.day_plans:
+            console.print(f"\n[bold]Day Plans:[/bold]")
+            today = date.today()
+            for dp in campaign.day_plans[:5]:  # Show first 5
+                day_marker = "[cyan]>[/cyan]" if dp.date == today else " "
+                status_color = "green" if dp.status == "complete" else "yellow" if dp.status == "in_progress" else "dim"
+                console.print(f"  {day_marker} Day {dp.day_number} ({dp.date}): [{status_color}]{dp.status}[/{status_color}]")
+                for goal in dp.goals[:3]:  # Show first 3 goals
+                    console.print(f"      - {goal}")
+                if len(dp.goals) > 3:
+                    console.print(f"      [dim]... and {len(dp.goals) - 3} more[/dim]")
+            if len(campaign.day_plans) > 5:
+                console.print(f"  [dim]... and {len(campaign.day_plans) - 5} more days[/dim]")
+
+        # Needs replan warning
+        if campaign.needs_replan():
+            console.print(f"\n[yellow]Warning:[/yellow] Campaign may need replanning (>30% behind)")
+            console.print(f"  Run: swarm-attack cos campaign-replan {campaign_id}")
+
+        console.print()
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error getting campaign status: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("campaign-run")
+def campaign_run(
+    campaign_id: str = typer.Argument(..., help="The campaign ID to run"),
+) -> None:
+    """Run today's goals for a campaign.
+
+    Executes the day plan for today using the autopilot runner.
+
+    Examples:
+        swarm-attack cos campaign-run my-campaign
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        executor = _get_campaign_executor()
+
+        console.print()
+        console.print(Panel(f"[bold]Running Campaign: {campaign_id}[/bold]", style="green"))
+        console.print("[dim]Executing today's goals...[/dim]")
+
+        try:
+            result = asyncio.run(executor.execute_day(campaign_id))
+        except ValueError as e:
+            console.print(f"\n[red]Error: {e}[/red]")
+            raise typer.Exit(1)
+
+        # Display results
+        console.print(f"\n[bold]Execution Complete[/bold]")
+        console.print(f"  Goals Completed: {result.goals_completed}")
+
+        if result.goals_blocked:
+            console.print(f"  [yellow]Goals Blocked: {len(result.goals_blocked)}[/yellow]")
+            for goal_id in result.goals_blocked[:5]:
+                console.print(f"    - {goal_id}")
+            if len(result.goals_blocked) > 5:
+                console.print(f"    [dim]... and {len(result.goals_blocked) - 5} more[/dim]")
+
+        console.print(f"  Cost: ${result.cost_usd:.2f}")
+
+        if result.needs_replan:
+            console.print(f"\n[yellow]Note:[/yellow] Campaign needs replanning (>30% behind)")
+            console.print(f"  Run: swarm-attack cos campaign-replan {campaign_id}")
+
+        console.print()
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error running campaign: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("campaign-replan")
+def campaign_replan(
+    campaign_id: str = typer.Argument(..., help="The campaign ID to replan"),
+) -> None:
+    """Replan a campaign based on progress.
+
+    Regenerates day plans based on current progress and remaining work.
+
+    Examples:
+        swarm-attack cos campaign-replan my-campaign
+    """
+    import asyncio
+
+    console = get_console()
+
+    try:
+        store = _get_campaign_store()
+
+        # Load campaign
+        campaign = asyncio.run(store.load(campaign_id))
+        if campaign is None:
+            console.print(f"\n[red]Campaign not found: {campaign_id}[/red]")
+            raise typer.Exit(1)
+
+        console.print()
+        console.print(Panel(f"[bold]Replanning Campaign: {campaign.name}[/bold]", style="yellow"))
+
+        # Show current state
+        console.print(f"\n[bold]Current State:[/bold]")
+        console.print(f"  Day {campaign.current_day}/{campaign.planned_days}")
+        days_behind = campaign.days_behind()
+        if days_behind > 0:
+            console.print(f"  [red]Days Behind: {days_behind}[/red]")
+
+        # Replan using campaign planner
+        planner = _get_campaign_planner()
+
+        console.print("\n[dim]Generating new plan...[/dim]")
+
+        try:
+            updated_campaign = asyncio.run(planner.replan(campaign_id))
+        except Exception as e:
+            console.print(f"\n[red]Replanning failed: {e}[/red]")
+            raise typer.Exit(1)
+
+        # Show updated plan
+        console.print(f"\n[green]Replanning complete.[/green]")
+        console.print(f"  New day plans: {len(updated_campaign.day_plans)}")
+
+        if updated_campaign.day_plans:
+            console.print(f"\n[bold]Updated Day Plans:[/bold]")
+            for dp in updated_campaign.day_plans[:3]:
+                console.print(f"  Day {dp.day_number} ({dp.date}): {len(dp.goals)} goals")
+            if len(updated_campaign.day_plans) > 3:
+                console.print(f"  [dim]... and {len(updated_campaign.day_plans) - 3} more days[/dim]")
+
+        console.print()
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error replanning campaign: {e}[/red]")
+        raise typer.Exit(1)
