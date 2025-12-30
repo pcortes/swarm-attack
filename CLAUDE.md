@@ -2,6 +2,34 @@
 
 Autonomous AI-powered multi-agent development automation system. Orchestrates Claude Code agents to handle feature development and bug fixing pipelines.
 
+---
+
+## IMPORTANT: Manual Testing Required
+
+**After implementing ANY new feature or fix, you MUST run manual tests.**
+
+See: `.claude/prompts/expert-tester.md` for the full testing protocol.
+
+### Quick Test Checklist
+```bash
+# 1. Run automated tests for your changes
+PYTHONPATH=. pytest tests/unit/test_<your_module>.py -v
+
+# 2. Run integration tests
+PYTHONPATH=. pytest tests/integration/ -v --tb=short
+
+# 3. Test imports work
+python3 -c "from swarm_attack.<your_module> import <YourClass>; print('OK')"
+
+# 4. Create timestamped test report
+mkdir -p .swarm/qa/test-reports
+# Save findings to: .swarm/qa/test-reports/<feature>-YYYYMMDD-HHMMSS.md
+```
+
+**DO NOT consider your implementation complete until manual tests pass.**
+
+---
+
 ## System Overview
 
 Swarm Attack provides two main pipelines:

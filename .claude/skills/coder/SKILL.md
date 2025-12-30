@@ -395,8 +395,63 @@ Before finalizing output:
 
 ---
 
+## MANDATORY: Manual Testing Before Completion
+
+**Your implementation is NOT complete until you run manual tests.**
+
+See full protocol: `.claude/prompts/expert-tester.md`
+
+### Minimum Required Tests
+
+```bash
+# 1. Verify your module imports correctly
+python3 -c "from swarm_attack.<your_module> import <YourClass>; print('Import: OK')"
+
+# 2. Run your unit tests
+PYTHONPATH=. pytest tests/unit/test_<your_module>.py -v --tb=short
+
+# 3. Run integration tests if applicable
+PYTHONPATH=. pytest tests/integration/ -v --tb=short
+
+# 4. Test the actual functionality manually
+python3 << 'EOF'
+# Quick smoke test of your implementation
+from swarm_attack.<your_module> import <YourClass>
+
+# Instantiate and test basic functionality
+obj = <YourClass>(...)
+result = obj.some_method()
+assert result is not None, "Basic functionality works"
+print("Manual test: OK")
+EOF
+```
+
+### Document Your Findings
+
+Create a test report at: `.swarm/qa/test-reports/<feature>-YYYYMMDD-HHMMSS.md`
+
+```markdown
+# Test Report: <Feature Name>
+
+**Date:** YYYY-MM-DD
+**Commit:** <hash>
+
+## Tests Run
+- [ ] Imports work
+- [ ] Unit tests pass (X/Y)
+- [ ] Integration tests pass
+- [ ] Manual smoke test pass
+
+## Issues Found
+(document any bugs or unexpected behavior)
+```
+
+---
+
 ## Remember
 
 > "You have the full context. You see the tests, the implementation, and the integration points. Use that advantage to build code that works the first time."
 
 The tests are your specification. The integration points are your constraints. The patterns are your guide. Honor all three.
+
+**And ALWAYS verify with manual tests before declaring victory.**
