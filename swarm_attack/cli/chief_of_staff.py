@@ -1207,3 +1207,168 @@ def reject_command(
     except Exception as e:
         console.print(f"[red]Error rejecting checkpoint: {e}[/red]")
         raise typer.Exit(1)
+
+
+def _get_feedback_store():
+    """Get configured FeedbackStore."""
+    from swarm_attack.chief_of_staff.feedback import FeedbackStore
+
+    project_dir_str = get_project_dir()
+    project_dir = Path(project_dir_str) if project_dir_str else Path.cwd()
+    base_path = project_dir / ".swarm" / "feedback"
+    return FeedbackStore(base_path)
+
+
+@app.command("feedback-list")
+def feedback_list(
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum entries to show"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter by tag"),
+) -> None:
+    """List recorded feedback.
+
+    Shows human feedback entries recorded from checkpoint decisions.
+    Use --limit to control how many entries are shown.
+    Use --tag to filter by a specific tag.
+
+    Examples:
+        swarm-attack cos feedback-list
+        swarm-attack cos feedback-list -n 5
+        swarm-attack cos feedback-list --tag security
+    """
+    console = get_console()
+
+    try:
+        store = _get_feedback_store()
+        store.load()
+
+        all_feedback = store.get_all()
+
+        console.print()
+        console.print(Panel("[bold]Feedback Entries[/bold]", style="blue"))
+
+        if not all_feedback:
+            console.print("\n[dim]No feedback entries recorded.[/dim]")
+            console.print()
+            return
+
+        # Filter by tag if specified
+        if tag:
+            filtered = [
+                fb for fb in all_feedback
+                if tag.lower() in [t.lower() for t in (fb.applies_to or [])]
+            ]
+        else:
+            filtered = all_feedback
+
+        if not filtered:
+            console.print(f"\n[dim]No feedback entries with tag '{tag}'.[/dim]")
+            console.print()
+            return
+
+        # Apply limit (show most recent first)
+        to_show = filtered[-limit:] if len(filtered) > limit else filtered
+        to_show = list(reversed(to_show))  # Most recent first
+
+        table = Table()
+        table.add_column("ID", style="cyan")
+        table.add_column("Timestamp", style="dim")
+        table.add_column("Type", style="yellow")
+        table.add_column("Content")
+        table.add_column("Tags", style="green")
+
+        for fb in to_show:
+            # Format timestamp
+            ts = fb.timestamp
+            if isinstance(ts, datetime):
+                ts_str = ts.strftime("%Y-%m-%d %H:%M")
+            else:
+                ts_str = str(ts)[:16]
+
+            # Truncate content if too long
+            content = fb.content or ""
+            if len(content) > 50:
+                content = content[:47] + "..."
+
+            # Format tags
+            tags_str = ", ".join(fb.applies_to or [])
+
+            table.add_row(
+                fb.checkpoint_id,
+                ts_str,
+                fb.feedback_type,
+                content,
+                tags_str,
+            )
+
+        console.print()
+        console.print(table)
+        console.print(f"\n[dim]Showing {len(to_show)} of {len(filtered)} entries.[/dim]")
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error listing feedback: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command("feedback-add")
+def feedback_add(
+    text: str = typer.Argument(..., help="The feedback text"),
+    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Tag for the feedback"),
+    context: Optional[str] = typer.Option(None, "--context", "-c", help="Additional context"),
+) -> None:
+    """Add new feedback.
+
+    Records human feedback for future reference. Feedback can be tagged
+    and associated with context for easier retrieval.
+
+    Examples:
+        swarm-attack cos feedback-add "Prefer shorter function names"
+        swarm-attack cos feedback-add "Security review needed" --tag security
+        swarm-attack cos feedback-add "Performance issue" -t performance -c "During load test"
+    """
+    import uuid
+    from swarm_attack.chief_of_staff.feedback import HumanFeedback
+
+    console = get_console()
+
+    try:
+        store = _get_feedback_store()
+        store.load()
+
+        # Generate a checkpoint ID for manually added feedback
+        checkpoint_id = f"manual-{uuid.uuid4().hex[:8]}"
+
+        # Build the content (include context if provided)
+        content = text
+        if context:
+            content = f"{text}\n\nContext: {context}"
+
+        # Build tags list
+        tags = []
+        if tag:
+            tags.append(tag)
+        tags.append("manual")  # Mark as manually added
+
+        # Create feedback entry
+        feedback = HumanFeedback(
+            checkpoint_id=checkpoint_id,
+            timestamp=datetime.now(),
+            feedback_type="guidance",  # Default type for manual feedback
+            content=content,
+            applies_to=tags,
+            expires_at=None,  # Manual feedback doesn't expire
+        )
+
+        # Save to store
+        store.save(feedback)
+
+        console.print()
+        console.print(f"[green]Feedback added successfully.[/green]")
+        console.print(f"  ID: {checkpoint_id}")
+        if tag:
+            console.print(f"  Tag: {tag}")
+        console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error adding feedback: {e}[/red]")
+        raise typer.Exit(1)
