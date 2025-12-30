@@ -619,3 +619,535 @@ class TestFindingEvidenceQuality:
             assert finding.evidence["response"].startswith("START_MARKER")
             # Should be truncated (won't have end marker)
             assert "END_MARKER" not in finding.evidence["response"]
+
+
+# =============================================================================
+# Test BOM and Special Characters (Section 10.5)
+# =============================================================================
+
+
+class TestBOMAndSpecialCharacters:
+    """Section 10.5: Agent should handle BOM and special characters in responses."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_utf8_bom_at_start_of_json(self, agent):
+        """Agent should handle UTF-8 BOM at start of JSON response."""
+        # UTF-8 BOM is \xef\xbb\xbf
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '\ufeff{"data": "test"}'  # BOM + JSON
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            # Should pass since status code matches (BOM shouldn't crash)
+            assert result["passed"] is True
+
+    def test_should_handle_empty_body_with_json_content_type(self, agent):
+        """Agent should handle empty body with application/json content-type."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = ""  # Empty body
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_json_with_unicode_escape_sequences(self, agent):
+        """Agent should handle JSON with unicode escape sequences."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"emoji": "\\u2764", "text": "\\u0048\\u0065\\u006c\\u006c\\u006f"}'
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Encoding Edge Cases (Section 10.5)
+# =============================================================================
+
+
+class TestEncodingEdgeCases:
+    """Section 10.5: Agent should handle various encoding edge cases."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_latin1_encoded_response(self, agent):
+        """Agent should handle Latin-1 encoded response without charset header."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Latin-1 characters
+        mock_response.text = "Caf\xe9 au lait"
+        mock_response.headers = {"content-type": "text/plain"}  # No charset
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/text")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_mixed_encoding_content(self, agent):
+        """Agent should handle response with mixed encoding characters."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Mix of ASCII, Unicode, and potentially problematic characters
+        mock_response.text = "Hello \u4e16\u754c - Caf\xe9"
+        mock_response.headers = {}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_null_bytes_in_response(self, agent):
+        """Agent should handle null bytes in text response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "data\x00with\x00null\x00bytes"
+        mock_response.headers = {"content-type": "text/plain"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Streaming Response Edge Cases (Section 10.5)
+# =============================================================================
+
+
+class TestStreamingResponseEdgeCases:
+    """Section 10.5: Agent should handle streaming response edge cases."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_ndjson_response(self, agent):
+        """Agent should handle NDJSON (newline-delimited JSON) response."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"id": 1, "name": "a"}\n{"id": 2, "name": "b"}\n{"id": 3, "name": "c"}'
+        mock_response.headers = {"content-type": "application/x-ndjson"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/stream")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_sse_response_format(self, agent):
+        """Agent should handle Server-Sent Events (SSE) response format."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "event: message\ndata: {\"id\": 1}\n\nevent: message\ndata: {\"id\": 2}\n\n"
+        mock_response.headers = {"content-type": "text/event-stream"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/events")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_chunked_transfer_encoding_header(self, agent):
+        """Agent should handle chunked transfer-encoding header."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"data": "complete"}'
+        mock_response.headers = {
+            "content-type": "application/json",
+            "transfer-encoding": "chunked"
+        }
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_partial_json_in_stream(self, agent):
+        """Agent should handle partial JSON that may occur in streaming."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Simulates partial chunk - incomplete JSON
+        mock_response.text = '{"data": "te'
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/stream")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            # Should still pass based on status code
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Extreme Large Response Cases (Section 10.5)
+# =============================================================================
+
+
+class TestExtremeLargeResponses:
+    """Section 10.5: Agent should handle extreme large response edge cases."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_10mb_response_without_crashing(self, agent):
+        """Agent should handle response >10MB without crashing."""
+        large_response = "x" * 10_000_000  # 10MB
+
+        # Test via _create_finding - shouldn't crash
+        finding = agent._create_finding(
+            endpoint="GET /api/huge",
+            test_type="happy_path",
+            expected={"status": 200},
+            actual={"status": 500},
+            request_evidence="curl -X GET ...",
+            response_evidence=large_response,
+        )
+        assert finding is not None
+        assert finding.finding_id.startswith("BT-")
+
+    def test_should_handle_response_with_many_array_elements(self, agent):
+        """Agent should handle response with many array elements."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Generate a large array (simulated for efficiency)
+        mock_response.text = "[" + ",".join('{"id":' + str(i) + '}' for i in range(1000)) + "]"
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/items")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_deeply_nested_json_100_levels(self, agent):
+        """Agent should handle deeply nested JSON (100+ levels)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        # Build deeply nested JSON
+        nested = '"value"'
+        for i in range(100):
+            nested = '{"level' + str(i) + '":' + nested + '}'
+        mock_response.text = nested
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/nested")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_very_long_string_value_in_json(self, agent):
+        """Agent should handle JSON with very long string value."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        long_string = "a" * 100000
+        mock_response.text = '{"content": "' + long_string + '"}'
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Additional Content-Type Mismatches (Section 10.5)
+# =============================================================================
+
+
+class TestAdditionalContentTypeMismatches:
+    """Section 10.5: Additional content-type mismatch edge cases."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_json_body_with_text_html_content_type(self, agent):
+        """Agent should handle JSON body with text/html content-type."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"valid": "json"}'
+        mock_response.headers = {"content-type": "text/html"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_xml_body_with_json_content_type(self, agent):
+        """Agent should handle XML body with application/json content-type."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '<?xml version="1.0"?><root><data>test</data></root>'
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            # Status matches, so it passes
+            assert result["passed"] is True
+
+    def test_should_handle_multipart_content_type(self, agent):
+        """Agent should handle multipart content-type header."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "--boundary\r\nContent-Type: text/plain\r\n\r\ndata\r\n--boundary--"
+        mock_response.headers = {"content-type": "multipart/form-data; boundary=boundary"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/upload")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_charset_in_content_type(self, agent):
+        """Agent should handle charset specification in content-type."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"data": "test"}'
+        mock_response.headers = {"content-type": "application/json; charset=iso-8859-1"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Malformed JSON Edge Cases (Section 10.5)
+# =============================================================================
+
+
+class TestMalformedJSONEdgeCases:
+    """Section 10.5: Additional malformed JSON edge cases."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_json_with_unquoted_keys(self, agent):
+        """Agent should handle JSON with unquoted keys (invalid JSON)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{key: "value"}'  # Invalid - keys must be quoted
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            # Status code check still works
+            assert result["passed"] is True
+
+    def test_should_handle_json_with_single_quotes(self, agent):
+        """Agent should handle JSON with single quotes (invalid JSON)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "{'key': 'value'}"  # Invalid - must use double quotes
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_json_with_trailing_comma(self, agent):
+        """Agent should handle JSON with trailing comma (invalid JSON)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"key": "value",}'  # Invalid - trailing comma
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+    def test_should_handle_json_with_comments(self, agent):
+        """Agent should handle JSON with comments (invalid JSON)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = '{"key": "value" /* comment */}'  # Invalid - no comments in JSON
+        mock_response.headers = {"content-type": "application/json"}
+
+        with patch.object(agent, '_make_request_with_retry', return_value=mock_response):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is True
+
+
+# =============================================================================
+# Test Request/Response Timeout Edge Cases (Section 10.5)
+# =============================================================================
+
+
+class TestTimeoutEdgeCases:
+    """Section 10.5: Agent should handle timeout scenarios gracefully."""
+
+    @pytest.fixture
+    def agent(self):
+        """Create a BehavioralTesterAgent for testing."""
+        config = MagicMock()
+        config.repo_root = "/tmp/test"
+        return BehavioralTesterAgent(config)
+
+    def test_should_handle_timeout_exception_gracefully(self, agent):
+        """Agent should handle timeout exception during request."""
+        from requests.exceptions import Timeout
+
+        with patch.object(agent, '_make_request_with_retry', side_effect=Timeout("Request timed out")):
+            endpoint = QAEndpoint(method="GET", path="/api/slow")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            # Should handle gracefully (not crash)
+            assert result["passed"] is False
+            assert "error" in result or result.get("finding") is not None
+
+    def test_should_handle_connection_reset_error(self, agent):
+        """Agent should handle connection reset errors."""
+        from requests.exceptions import ConnectionError
+
+        with patch.object(agent, '_make_request_with_retry', side_effect=ConnectionError("Connection reset")):
+            endpoint = QAEndpoint(method="GET", path="/api/data")
+            result = agent._execute_test(
+                endpoint,
+                {"test_type": "happy_path", "expected_status": 200},
+                "http://localhost:8000",
+                ResilienceConfig(),
+            )
+            assert result["passed"] is False
