@@ -235,8 +235,8 @@ class CodeValidationGate(ValidationGate):
         )
 
 
-class TestingValidationGate(ValidationGate):
-    """Validation gate for test files. (Renamed from TestValidationGate for BUG-14)
+class SuiteValidationGate(ValidationGate):
+    """Validation gate for test files (BUG-13/14: renamed from TestingValidationGate).
 
     Uses coverage and edge_cases critics.
     No security veto (tests don't have security implications).
@@ -303,8 +303,9 @@ class TestingValidationGate(ValidationGate):
         )
 
 
-# BUG-14: Backward compatibility alias
-TestValidationGate = TestingValidationGate
+# BUG-13/14: Backward compatibility aliases (not class definitions, so pytest won't collect)
+TestingValidationGate = SuiteValidationGate
+TestValidationGate = SuiteValidationGate
 
 
 def get_validation_gate(
@@ -326,7 +327,7 @@ def get_validation_gate(
     gates = {
         "spec": SpecValidationGate,
         "code": CodeValidationGate,
-        "test": TestingValidationGate,
+        "test": SuiteValidationGate,
     }
 
     gate_class = gates.get(artifact_type.lower())

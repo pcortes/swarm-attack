@@ -74,12 +74,16 @@ class QARecommendation(Enum):
 
 
 @dataclass
-class TestDataConfig:
-    """Configure how QA handles test data from Section 10.6."""
+class QADataConfig:
+    """Configure how QA handles test data (BUG-13/14: renamed from TestDataConfig)."""
     mode: Literal["shared", "isolated", "readonly"] = "shared"
     prefix: str = "qa_test_"
     cleanup_on_success: bool = True
     cleanup_on_failure: bool = False
+
+
+# BUG-13/14: Backward compatibility alias (not a class definition, so pytest won't collect)
+TestDataConfig = QADataConfig
 
 
 @dataclass

@@ -39,7 +39,8 @@ from swarm_attack.chief_of_staff.state_gatherer import (
     BugSummary,
     PRDSummary,
     SpecSummary,
-    TestState,
+    SuiteMetrics,
+    TestState,  # Backward compatibility alias
     GitHubState,
     InterruptedSession,
 )
@@ -102,7 +103,8 @@ __all__ = [
     "BugSummary",
     "PRDSummary",
     "SpecSummary",
-    "TestState",
+    "SuiteMetrics",
+    "TestState",  # Backward compatibility alias
     "GitHubState",
     "InterruptedSession",
     # Daily logging

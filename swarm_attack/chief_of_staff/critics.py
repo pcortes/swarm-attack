@@ -643,8 +643,8 @@ class ValidationLayer:
         )
 
 
-class TestingCritic(Critic):
-    """Critic for evaluating test quality. (Renamed from TestCritic for BUG-14)
+class SuiteCritic(Critic):
+    """Critic for evaluating test quality (BUG-13/14: renamed from TestingCritic).
 
     Supports COVERAGE and EDGE_CASES focus areas.
     """
@@ -652,7 +652,7 @@ class TestingCritic(Critic):
     # Maximum characters to include in prompt
     MAX_TEST_CHARS = 6000
 
-    # Focus-specific prompts (same as SuiteCritic)
+    # Focus-specific prompts
     PROMPTS = {
         CriticFocus.COVERAGE: """You are a test coverage critic. Evaluate the following test code for:
 - Are all major code paths tested?
@@ -698,7 +698,7 @@ Return ONLY the JSON object.""",
     }
 
     def __init__(self, focus: CriticFocus, llm: Any, weight: float = 1.0) -> None:
-        """Initialize TestCritic.
+        """Initialize SuiteCritic.
 
         Args:
             focus: Must be COVERAGE or EDGE_CASES
@@ -710,7 +710,7 @@ Return ONLY the JSON object.""",
         """
         if focus not in self.PROMPTS:
             raise ValueError(
-                f"TestCritic does not support focus {focus}. "
+                f"SuiteCritic does not support focus {focus}. "
                 f"Supported: {list(self.PROMPTS.keys())}"
             )
         super().__init__(focus, llm, weight)
@@ -744,7 +744,7 @@ Return ONLY the JSON object.""",
                 data = json.loads(response)
 
             return CriticScore(
-                critic_name=f"TestCritic-{self.focus.value}",
+                critic_name=f"SuiteCritic-{self.focus.value}",
                 focus=self.focus,
                 score=float(data.get("score", 0.0)),
                 approved=bool(data.get("approved", False)),
@@ -754,7 +754,7 @@ Return ONLY the JSON object.""",
             )
         except (json.JSONDecodeError, ValueError) as e:
             return CriticScore(
-                critic_name=f"TestingCritic-{self.focus.value}",
+                critic_name=f"SuiteCritic-{self.focus.value}",
                 focus=self.focus,
                 score=0.0,
                 approved=False,
@@ -764,5 +764,6 @@ Return ONLY the JSON object.""",
             )
 
 
-# BUG-14: Backward compatibility alias
-TestCritic = TestingCritic
+# BUG-13/14: Backward compatibility aliases (not class definitions, so pytest won't collect)
+TestingCritic = SuiteCritic
+TestCritic = SuiteCritic
