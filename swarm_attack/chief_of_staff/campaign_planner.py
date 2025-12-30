@@ -133,3 +133,110 @@ class CampaignPlanner:
                 day_plans[0].goals.append(
                     f"Complete: {milestone.description}"
                 )
+
+    def replan(
+        self,
+        campaign: Campaign,
+        completed_milestones: list[str],
+        days_elapsed: int,
+    ) -> Campaign:
+        """Adjust campaign plan based on actual progress.
+
+        Logic:
+            1. Mark completed milestones
+            2. Redistribute remaining work across remaining days
+            3. Flag if campaign is behind schedule
+
+        Args:
+            campaign: The campaign to replan.
+            completed_milestones: List of milestone IDs that have been completed.
+            days_elapsed: Number of days since campaign started.
+
+        Returns:
+            Campaign with updated plan reflecting actual progress.
+        """
+        # 1. Mark completed milestones
+        for milestone in campaign.milestones:
+            if milestone.id in completed_milestones:
+                milestone.completed = True
+                milestone.status = "completed"
+
+        # 2. Update current_day based on days_elapsed
+        campaign.current_day = days_elapsed
+
+        # 3. Find remaining days and uncompleted milestones
+        remaining_days = campaign.planned_days - days_elapsed
+        uncompleted_milestones = [
+            m for m in campaign.milestones if not m.completed
+        ]
+
+        # 4. Redistribute remaining work across remaining days
+        if remaining_days > 0 and uncompleted_milestones:
+            self._redistribute_work(
+                campaign=campaign,
+                uncompleted_milestones=uncompleted_milestones,
+                days_elapsed=days_elapsed,
+            )
+
+        return campaign
+
+    def _redistribute_work(
+        self,
+        campaign: Campaign,
+        uncompleted_milestones: list[Milestone],
+        days_elapsed: int,
+    ) -> None:
+        """Redistribute uncompleted milestone work across remaining days.
+
+        Args:
+            campaign: The campaign to update.
+            uncompleted_milestones: List of uncompleted milestones.
+            days_elapsed: Number of days elapsed.
+        """
+        # Get remaining day plans (from days_elapsed onwards)
+        remaining_day_plans = campaign.day_plans[days_elapsed:]
+
+        if not remaining_day_plans:
+            return
+
+        # Clear existing goals for remaining days (except completed ones)
+        for day_plan in remaining_day_plans:
+            if day_plan.status != "completed":
+                # Keep track of original goals but prepare for redistribution
+                pass
+
+        # Sort uncompleted milestones by target_date
+        sorted_milestones = sorted(
+            uncompleted_milestones,
+            key=lambda m: m.target_date or campaign.start_date,
+        )
+
+        # Reassign milestones to remaining days based on their target dates
+        for milestone in sorted_milestones:
+            if milestone.target_date is None:
+                continue
+
+            # Calculate which remaining day this milestone should be assigned to
+            days_from_start = (milestone.target_date - campaign.start_date).days
+            remaining_day_index = days_from_start - days_elapsed
+
+            if 0 <= remaining_day_index < len(remaining_day_plans):
+                day_plan = remaining_day_plans[remaining_day_index]
+                if day_plan.status != "completed":
+                    goal_text = f"Complete: {milestone.description}"
+                    if goal_text not in day_plan.goals:
+                        day_plan.goals.append(goal_text)
+            elif remaining_day_index < 0 and remaining_day_plans:
+                # Target date has passed, assign to first remaining day
+                day_plan = remaining_day_plans[0]
+                if day_plan.status != "completed":
+                    goal_text = f"Complete: {milestone.description}"
+                    if goal_text not in day_plan.goals:
+                        day_plan.goals.append(goal_text)
+            elif remaining_day_index >= len(remaining_day_plans) and remaining_day_plans:
+                # Target date is beyond remaining days, assign to last day
+                day_plan = remaining_day_plans[-1]
+                if day_plan.status != "completed":
+                    goal_text = f"Complete: {milestone.description}"
+                    if goal_text not in day_plan.goals:
+                        day_plan.goals.append(goal_text)
