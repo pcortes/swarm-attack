@@ -169,6 +169,205 @@ Key paths:
 
 ---
 
+## v0.3.0 Feature Testing (NEW)
+
+Test all new v0.3.0 features. Store results in timestamped report at:
+`.swarm/qa/test-reports/v030-test-YYYYMMDD-HHMMSS.md`
+
+### Phase 5: Auto-Approval System
+
+```bash
+# Test imports
+python3 -c "
+from swarm_attack.auto_approval.spec import SpecAutoApprover
+from swarm_attack.auto_approval.issue import IssueAutoGreenlighter
+from swarm_attack.auto_approval.bug import BugAutoApprover
+print('Auto-approval: OK')
+print(f'Spec threshold: {SpecAutoApprover.APPROVAL_THRESHOLD}')
+"
+
+# Test CLI flags (if implemented)
+swarm-attack approve test-feature --auto 2>&1 || echo "Check if --auto flag exists"
+swarm-attack approve test-feature --manual 2>&1 || echo "Check if --manual flag exists"
+```
+
+**Verify:**
+- [ ] SpecAutoApprover threshold = 0.85
+- [ ] IssueAutoGreenlighter checks complexity gate
+- [ ] BugAutoApprover checks confidence >= 0.9
+
+### Phase 6: Event Infrastructure
+
+```python
+# Test in Python REPL
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
+
+bus = get_event_bus()
+
+# Test subscription + emission
+received = []
+bus.subscribe(EventType.IMPL_COMPLETED, lambda e: received.append(e))
+bus.emit(SwarmEvent(
+    event_type=EventType.IMPL_COMPLETED,
+    feature_id="test",
+    issue_number=1,
+    source_agent="test",
+))
+assert len(received) == 1, "EventBus subscription failed"
+print("EventBus: OK")
+```
+
+```bash
+# Check event persistence
+ls -la .swarm/events/events-*.jsonl 2>/dev/null || echo "No events persisted yet"
+```
+
+**Verify:**
+- [ ] Events received by subscribers
+- [ ] Events persisted to `.swarm/events/`
+- [ ] Events queryable by feature
+
+### Phase 7: Session Initialization Protocol
+
+```python
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.session_finalizer import SessionFinalizer
+from swarm_attack.verification_tracker import VerificationTracker
+print("Session init components: OK")
+```
+
+**Verify:**
+- [ ] SessionInitializer 5-step protocol works
+- [ ] ProgressLogger writes to progress.txt
+- [ ] VerificationTracker saves JSON status
+
+### Phase 8: Universal Context Builder
+
+```python
+from swarm_attack.universal_context_builder import (
+    UniversalContextBuilder,
+    AGENT_CONTEXT_PROFILES,
+)
+
+print(f"Profiles: {list(AGENT_CONTEXT_PROFILES.keys())}")
+print(f"Coder budget: {AGENT_CONTEXT_PROFILES['coder']['max_tokens']}")
+print(f"Verifier budget: {AGENT_CONTEXT_PROFILES['verifier']['max_tokens']}")
+```
+
+**Verify:**
+- [ ] Coder gets 15,000 tokens
+- [ ] Verifier gets 3,000 tokens
+- [ ] All 6 agent profiles defined
+
+### Phase 9: QA Session Extension
+
+```python
+from swarm_attack.qa.session_extension import QASessionExtension
+from swarm_attack.qa.coverage_tracker import CoverageTracker
+from swarm_attack.qa.regression_detector import RegressionDetector
+print("QA session extension: OK")
+```
+
+**Verify:**
+- [ ] Coverage baseline captured
+- [ ] Regressions detected correctly
+- [ ] Session blocked on critical regressions
+
+### Phase 10: Schema Drift Prevention
+
+```python
+from swarm_attack.agents.coder import CoderAgent
+from pathlib import Path
+import tempfile
+from unittest.mock import MagicMock
+
+# Test modified file tracking
+with tempfile.TemporaryDirectory() as tmp:
+    (Path(tmp) / "models").mkdir()
+    (Path(tmp) / "models" / "user.py").write_text("class User:\n    pass\n")
+
+    mock_config = MagicMock()
+    mock_config.repo_root = tmp
+
+    coder = CoderAgent(mock_config)
+    outputs = coder._extract_outputs(
+        files={},
+        files_modified=["models/user.py"],
+        base_path=Path(tmp),
+    )
+
+    assert "models/user.py" in outputs.classes_defined
+    assert "User" in outputs.classes_defined["models/user.py"]
+    print("Schema drift prevention: OK")
+```
+
+**Verify:**
+- [ ] Classes extracted from modified files
+- [ ] Module registry includes modified files
+- [ ] Coder prompt shows existing classes
+
+### Phase 11: Run Automated Test Suite
+
+```bash
+# Run all v0.3.0 tests
+PYTHONPATH=. pytest \
+    tests/unit/test_auto_approval.py \
+    tests/unit/test_events.py \
+    tests/unit/test_session_initializer.py \
+    tests/unit/test_universal_context_builder.py \
+    tests/unit/qa/test_session_extension.py \
+    tests/integration/test_context_flow_fixes.py \
+    -v --tb=short 2>&1 | tee /tmp/v030-tests.txt
+
+# Expected: 110+ tests passing
+grep -E "passed|failed|error" /tmp/v030-tests.txt | tail -5
+```
+
+---
+
+## Test Report Template (v0.3.0)
+
+Save findings to `.swarm/qa/test-reports/v030-test-YYYYMMDD-HHMMSS.md`:
+
+```markdown
+# v0.3.0 Test Report
+
+**Date:** YYYY-MM-DD HH:MM:SS
+**Tester:** Claude Code
+**Commit:** [hash]
+
+## Summary
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Auto-Approval | PASS/FAIL | |
+| Event Infrastructure | PASS/FAIL | |
+| Session Init Protocol | PASS/FAIL | |
+| Universal Context Builder | PASS/FAIL | |
+| QA Session Extension | PASS/FAIL | |
+| Schema Drift Prevention | PASS/FAIL | |
+
+## Automated Tests
+- Total: X
+- Passed: X
+- Failed: X
+
+## Bugs Found
+
+### BUG-001: [Title]
+- **Severity:** Critical/High/Medium/Low
+- **File:** path/to/file.py:line
+- **Reproduction:** Steps to reproduce
+- **Error:**
+  ```
+  error message
+  ```
+```
+
+---
+
 ## Begin Testing
 
-Start by checking the current state of `chief-of-staff` feature and running a single issue to observe behavior. Document everything you see.
+Start by checking the current state of `chief-of-staff` feature and running a single issue to observe behavior. For v0.3.0 testing, run through Phases 5-11 and document all findings.
