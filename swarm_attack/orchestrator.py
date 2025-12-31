@@ -53,6 +53,7 @@ from swarm_attack.progress_logger import ProgressLogger
 from swarm_attack.session_initializer import SessionInitializer
 from swarm_attack.session_finalizer import SessionFinalizer
 from swarm_attack.verification_tracker import VerificationTracker
+from swarm_attack.debate_retry import DebateRetryHandler
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -251,6 +252,17 @@ class Orchestrator:
 
         # Recovery agent for self-healing on coder failures
         self._recovery_agent = RecoveryAgent(config, logger)
+
+        # Debate retry handler for transient error recovery
+        retry_config = getattr(config, 'debate_retry', None)
+        if retry_config:
+            self._debate_retry_handler = DebateRetryHandler(
+                max_retries=retry_config.max_retries,
+                backoff_base_seconds=retry_config.backoff_base_seconds,
+                backoff_multiplier=retry_config.backoff_multiplier,
+            )
+        else:
+            self._debate_retry_handler = DebateRetryHandler()
 
     @property
     def author(self) -> SpecAuthorAgent:
@@ -1143,19 +1155,23 @@ class Orchestrator:
             self._log("round_start", {"feature_id": feature_id, "round": round_num})
 
             # Step 1: Critic reviews spec (with rejection context for round 2+)
-            self._critic.reset()
             # Build rejection context from prior dispositions
             rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
-            critic_result = self._critic.run({
-                "feature_id": feature_id,
-                "rejection_context": rejection_context,
-            })
-            total_cost += critic_result.cost_usd
 
-            if not critic_result.success:
+            # Use retry handler for transient error recovery (rate limits, timeouts)
+            critic_retry_result = self._debate_retry_handler.run_with_retry(
+                self._critic,
+                {
+                    "feature_id": feature_id,
+                    "rejection_context": rejection_context,
+                },
+            )
+            total_cost += critic_retry_result.cost_usd
+
+            if not critic_retry_result.success:
                 self._log(
                     "critic_failure",
-                    {"feature_id": feature_id, "error": critic_result.errors},
+                    {"feature_id": feature_id, "error": critic_retry_result.errors},
                     level="error",
                 )
                 self._update_phase(feature_id, FeaturePhase.BLOCKED)
@@ -1165,12 +1181,12 @@ class Orchestrator:
                     rounds_completed=round_num - 1,
                     final_scores=final_scores,
                     total_cost_usd=total_cost,
-                    error=f"Spec critic failed to review: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
+                    error=f"Spec critic failed to review: {critic_retry_result.errors[0] if critic_retry_result.errors else 'Unknown error'}",
                 )
 
             # Extract scores and issues from critic result
-            scores = critic_result.output.get("scores", {})
-            issues = critic_result.output.get("issues", [])
+            scores = critic_retry_result.output.get("scores", {})
+            issues = critic_retry_result.output.get("issues", [])
 
             final_scores = scores
             self._log(
@@ -1179,25 +1195,28 @@ class Orchestrator:
                     "feature_id": feature_id,
                     "round": round_num,
                     "scores": scores,
-                    "issue_counts": critic_result.output.get("issue_counts", {}),
+                    "issue_counts": critic_retry_result.output.get("issue_counts", {}),
                 },
             )
 
             # Step 2: Moderator improves spec (if not last round)
             current_dispositions: Optional[list[dict[str, Any]]] = None
             # Extract disputed_issues from critic result for escalation
-            disputed_issues = critic_result.output.get("disputed_issues", [])
+            disputed_issues = critic_retry_result.output.get("disputed_issues", [])
             if round_num < max_rounds:
-                self._moderator.reset()
-                moderator_result = self._moderator.run({
-                    "feature_id": feature_id,
-                    "round": round_num,
-                    "prior_dispositions": issue_history,  # Pass full history
-                    "disputed_issues": disputed_issues,  # Pass for escalation handling
-                })
-                total_cost += moderator_result.cost_usd
+                # Use retry handler for moderator too
+                moderator_retry_result = self._debate_retry_handler.run_with_retry(
+                    self._moderator,
+                    {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "prior_dispositions": issue_history,  # Pass full history
+                        "disputed_issues": disputed_issues,  # Pass for escalation handling
+                    },
+                )
+                total_cost += moderator_retry_result.cost_usd
 
-                if not moderator_result.success:
+                if not moderator_retry_result.success:
                     # Check if spec files indicate success despite the error
                     files_ok, file_scores = self._check_spec_files_indicate_success(feature_id)
 
@@ -1222,7 +1241,7 @@ class Orchestrator:
 
                     self._log(
                         "moderator_failure",
-                        {"feature_id": feature_id, "error": moderator_result.errors},
+                        {"feature_id": feature_id, "error": moderator_retry_result.errors},
                         level="error",
                     )
                     self._update_phase(feature_id, FeaturePhase.BLOCKED)
@@ -1232,16 +1251,16 @@ class Orchestrator:
                         rounds_completed=round_num,
                         final_scores=final_scores,
                         total_cost_usd=total_cost,
-                        error=f"Spec moderator failed: {moderator_result.errors[0] if moderator_result.errors else 'Unknown error'}",
+                        error=f"Spec moderator failed: {moderator_retry_result.errors[0] if moderator_retry_result.errors else 'Unknown error'}",
                     )
 
                 # Extract dispositions from moderator result
-                current_dispositions = moderator_result.output.get("dispositions", [])
+                current_dispositions = moderator_retry_result.output.get("dispositions", [])
                 if current_dispositions:
                     issue_history.extend(current_dispositions)
 
                 # Log disposition summary
-                disp_counts = moderator_result.output.get("disposition_counts", {})
+                disp_counts = moderator_retry_result.output.get("disposition_counts", {})
                 self._log(
                     "round_dispositions",
                     {
@@ -1254,7 +1273,7 @@ class Orchestrator:
                     },
                 )
 
-                prev_scores = moderator_result.output.get("current_scores", scores)
+                prev_scores = moderator_retry_result.output.get("current_scores", scores)
             else:
                 prev_scores = scores
 
