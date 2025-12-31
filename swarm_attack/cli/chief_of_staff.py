@@ -20,6 +20,7 @@ from rich.table import Table
 from rich.panel import Panel
 
 from swarm_attack.cli.common import get_console, get_project_dir
+from swarm_attack.cli.ux import prompt_or_default, confirm_or_default
 from swarm_attack.chief_of_staff.daily_log import (
     DailyLogManager,
     DailySummary,
@@ -269,7 +270,8 @@ def standup_command(
             console.print("  0. Skip goal setting for now")
             console.print()
 
-            selection = typer.prompt("Select goals", default="0")
+            # Use prompt_or_default to handle non-interactive mode gracefully
+            selection = prompt_or_default("Select goals", "0")
 
             if selection != "0":
                 selected_indices = [int(x.strip()) - 1 for x in selection.split(",") if x.strip().isdigit()]
@@ -1455,10 +1457,11 @@ def feedback_clear(
             else:
                 entries_to_keep.append(fb)
 
-        # If using --all flag, require confirmation
+        # If using --all flag, require confirmation (proceeds in non-interactive mode)
         if all_feedback and cleared_count > 0:
             console.print(f"\n[yellow]Warning:[/yellow] This will clear {cleared_count} feedback entries.")
-            confirm = typer.confirm("Are you sure you want to continue?")
+            # Use confirm_or_default: in non-interactive mode, proceed since user explicitly requested --all
+            confirm = confirm_or_default("Are you sure you want to continue?", default=True)
             if not confirm:
                 console.print("\n[dim]Operation cancelled.[/dim]")
                 console.print()
