@@ -1,0 +1,3 @@
+{"ts": "2025-12-31T21:08:33.289832Z", "event": "issue_started", "issue": 2, "session": "sess_20251231_210833_288919"}
+{"ts": "2025-12-31T21:11:17.092423Z", "event": "retry_started", "issue": 2, "attempt": 1}
+{"ts": "2025-12-31T21:21:37.013778Z", "event": "issue_started", "issue": 1, "session": "sess_20251231_212137_012604"}

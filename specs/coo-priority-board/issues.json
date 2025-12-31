@@ -1,0 +1,241 @@
+{
+  "feature_id": "coo-priority-board",
+  "generated_at": "2025-12-31T19:30:00Z",
+  "issues": [
+    {
+      "title": "Create priority data models",
+      "body": "## Description\n\nCreate the core data models for the priority board system including panel types, proposals, submissions, and results.\n\n## Acceptance Criteria\n\n- [ ] Create `src/models/priority.py` with all dataclasses\n- [ ] `PanelType` enum with PRODUCT, CEO, ENGINEERING, DESIGN, OPERATIONS\n- [ ] `PanelWeight` dataclass with panel and weight fields\n- [ ] `PriorityProposal` dataclass with name, why, effort, scores, dependencies, risks\n- [ ] `PanelSubmission` dataclass with panel, expert_name, priorities, research fields\n- [ ] `PriorityDisposition` dataclass with classification (ACCEPT/REJECT/DEFER/PARTIAL)\n- [ ] `ConsensusResult` dataclass with reached, common_priorities, overlap_count, forced\n- [ ] `ExternalReviewResult` dataclass with outcome, feedback, challenged_priorities\n- [ ] `PrioritizationResult` dataclass with success, project, priorities, rounds, cost\n- [ ] Unit tests for all model serialization/deserialization\n\n## Technical Notes\n\n- Use Python dataclasses with `field(default_factory=list)` for mutable defaults\n- Follow existing COO model patterns in `src/models/`\n- Effort field uses S/M/L/XL string values\n- Scores are floats from 1-10\n\n## Interface Contract\n\n**Required Methods (for each dataclass):**\n- `to_dict(self) -> dict` - Serialize to dictionary\n- `from_dict(cls, data: dict) -> ClassName` - Deserialize from dictionary\n\n**Pattern Reference:** See existing COO models for serialization patterns",
+      "labels": [
+        "enhancement",
+        "backend",
+        "database"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Copy and adapt codex_client.py from swarm-attack",
+      "body": "## Description\n\nCopy the Codex CLI client from swarm-attack and adapt it for COO configuration.\n\n## Acceptance Criteria\n\n- [ ] Copy `swarm_attack/codex_client.py` to `src/codex_client.py`\n- [ ] Update imports to use COO config structure\n- [ ] Adapt configuration loading for COO's config.yaml pattern\n- [ ] Ensure `CodexCliRunner.run()` method works with COO logger\n- [ ] Add timeout parameter support (default 300s)\n- [ ] Unit tests for client initialization and basic execution\n\n## Technical Notes\n\n- Source file: `swarm_attack/codex_client.py`\n- COO config uses different structure than swarm-attack\n- Must support `--print` mode for prompt injection\n- Must support `--output-format json` for structured responses\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config, logger=None)` - Initialize with COO config\n- `run(self, prompt: str, timeout: int = 300) -> CodexResult` - Execute Codex with prompt\n\n**CodexResult fields:**\n- `success: bool`\n- `text: str`\n- `cost_usd: float`\n- `error: Optional[str]`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create SubAgentRunner for Librarian spawning",
+      "body": "## Description\n\nImplement the SubAgentRunner class that spawns sub-agents (like Librarian) to complete specific tasks during panel deliberation.\n\n## Acceptance Criteria\n\n- [ ] Create `src/sub_agent.py` with SubAgentRunner class\n- [ ] `SubAgentResult` dataclass with success, output, cost_usd, error\n- [ ] `spawn()` method runs Claude CLI as subprocess\n- [ ] Support skill loading and context injection via placeholders\n- [ ] Handle subprocess timeout and errors gracefully\n- [ ] Parse JSON output from Claude when available\n- [ ] Unit tests with mocked subprocess calls\n\n## Technical Notes\n\n- Uses Claude CLI: `claude --print PROMPT --output-format json --max-turns 5`\n- Context injection replaces `{placeholder}` in skill prompts\n- Default timeout: 120 seconds\n- Follow pattern from `swarm_attack/llm_clients.py:ClaudeCliRunner`\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config, skill_loader)` - Initialize with config and skill loader\n- `spawn(self, skill_name: str, context: dict, timeout: int = 120) -> SubAgentResult`\n- `_inject_context(self, prompt: str, context: dict) -> str` - Replace placeholders",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create Librarian skill definition",
+      "body": "## Description\n\nCreate the skill definition for the Librarian sub-agent that performs on-demand market research during panel deliberation.\n\n## Acceptance Criteria\n\n- [ ] Create `.claude/skills/librarian/SKILL.md`\n- [ ] Define Librarian persona as research assistant\n- [ ] Include web search and analysis capabilities\n- [ ] Specify output format with sources and confidence\n- [ ] Include example queries and expected responses\n- [ ] Document when panels should spawn Librarian\n\n## Technical Notes\n\n- Librarian is spawned by panels when research is needed\n- Should use web search tools to gather market data\n- Must return structured JSON with findings\n- Keep responses concise to fit in panel context\n\n## Skill Output Format\n\n```json\n{\n  \"query\": \"original research query\",\n  \"findings\": [\"finding 1\", \"finding 2\"],\n  \"sources\": [\"url1\", \"url2\"],\n  \"confidence\": 0.8,\n  \"summary\": \"brief summary\"\n}\n```",
+      "labels": [
+        "enhancement",
+        "documentation"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3
+      ],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create ConsensusChecker module",
+      "body": "## Description\n\nImplement the consensus detection logic that determines when panels have reached agreement on priorities.\n\n## Acceptance Criteria\n\n- [ ] Create `src/consensus_checker.py`\n- [ ] `check_consensus()` function with panel rankings, round number, thresholds\n- [ ] Natural consensus: 3+ common priorities in top 5 across 4+ panels\n- [ ] Score standard deviation calculation for agreement strength\n- [ ] Force consensus after max rounds (default 5)\n- [ ] `weighted_vote()` function for final ranking calculation\n- [ ] Comprehensive unit tests including edge cases\n\n## Technical Notes\n\n- Panel rankings are lists of priority names (top 10 each)\n- Extract top 5 from each panel for overlap calculation\n- Weights: Product 30%, CEO 30%, Eng 20%, Design 10%, Ops 10%\n- Higher rank = more points (10 for #1, 9 for #2, etc.)\n\n## Interface Contract\n\n**Required Functions:**\n- `check_consensus(panel_rankings: list[list[str]], round_number: int, max_rounds: int = 5, min_overlap: int = 3, max_std_dev: float = 1.5) -> ConsensusResult`\n- `weighted_vote(panel_rankings: dict[str, list[str]], weights: dict[str, float], top_n: int = 10) -> list[str]`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        1
+      ],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create PriorityPanel class",
+      "body": "## Description\n\nImplement the PriorityPanel class that represents individual expert panels (Product, CEO, Engineering, Design, Ops).\n\n## Acceptance Criteria\n\n- [ ] Create `src/priority_panel.py` with PriorityPanel class\n- [ ] Store panel name, expert name, title, and weight\n- [ ] `propose()` method generates top 10 priorities for a project\n- [ ] Support spawning Librarian sub-agent for research queries\n- [ ] Include expert personas with domain-specific perspectives\n- [ ] Handle round context (previous submissions, codex challenges)\n- [ ] Return `PanelProposalResult` with priorities, cost, success\n- [ ] Unit tests with mocked Claude CLI calls\n\n## Technical Notes\n\n- Each panel has a unique expert persona:\n  - Product: Dr. Maya Chen (CPO) - user needs, market fit\n  - CEO: Sarah Okonkwo - strategic vision, company goals\n  - Engineering: James Morrison (VP Eng) - technical feasibility\n  - Design: Marcus Williams (VP UX) - user experience\n  - Operations: Elena Vasquez (CoS) - operational efficiency\n- Uses Claude CLI to generate proposals\n- Can spawn Librarian mid-deliberation via SubAgentRunner\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config, logger, name: str, expert: str, title: str, weight: float)`\n- `propose(self, project: str, round_num: int, context: Optional[dict] = None) -> PanelProposalResult`\n\n**PanelProposalResult fields:**\n- `success: bool`\n- `priorities: list[dict]`\n- `cost_usd: float`\n- `research_performed: list[dict]`\n- `error: Optional[str]`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        3,
+        4
+      ],
+      "order": 6,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create PriorityModerator for weighted merge",
+      "body": "## Description\n\nImplement the PriorityModerator class that merges panel submissions and tracks dispositions using the ACCEPT/REJECT/DEFER/PARTIAL pattern from swarm-attack.\n\n## Acceptance Criteria\n\n- [ ] Create `src/priority_moderator.py` with PriorityModerator class\n- [ ] `merge_submissions()` method combines panel priorities\n- [ ] Apply weighted voting to produce merged ranking\n- [ ] Track `PriorityDisposition` for each priority across rounds\n- [ ] Semantic deduplication of similar priorities\n- [ ] Generate `semantic_key` for priority matching across panels\n- [ ] Unit tests for merge and disposition logic\n\n## Technical Notes\n\n- Reuse disposition pattern from `swarm_attack/agents/spec_moderator.py`\n- Classifications: ACCEPT (>=0.7 weighted score), REJECT (<0.3), DEFER (needs research), PARTIAL (split opinions)\n- Semantic keys normalize priority names (lowercase, remove punctuation)\n- Track which panels proposed/supported each priority\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config, logger=None)`\n- `merge_submissions(self, submissions: dict[str, PanelSubmission], round_num: int) -> MergeResult`\n- `get_disposition(self, priority_name: str) -> PriorityDisposition`\n- `get_all_dispositions(self) -> list[PriorityDisposition]`\n\n**MergeResult fields:**\n- `ranked_priorities: list[str]`\n- `dispositions: list[PriorityDisposition]`\n- `deferred: list[str]`\n- `rejected: list[str]`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        5
+      ],
+      "order": 7,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create PriorityOrchestrator (main debate loop)",
+      "body": "## Description\n\nImplement the main PriorityOrchestrator class that runs the full priority board debate loop, adapted from swarm-attack's `run_spec_debate_only()` pattern.\n\n## Acceptance Criteria\n\n- [ ] Create `src/priority_orchestrator.py` with PriorityOrchestrator class\n- [ ] Initialize 5 expert panels with correct weights\n- [ ] `run()` method executes full debate loop for a project\n- [ ] Each round: panels propose -> moderator merges -> check consensus\n- [ ] After consensus: required Codex external review\n- [ ] Handle Codex outcomes: APPROVE, CHALLENGE (retry), ESCALATE (fail)\n- [ ] Build Codex prompt with Thiel/PG frameworks\n- [ ] Track total cost across all panel and Codex calls\n- [ ] Comprehensive logging at each step\n- [ ] Integration tests with mocked panels and Codex\n\n## Technical Notes\n\n- Weights: Product 30%, CEO 30%, Eng 20%, Design 10%, Ops 10%\n- Max rounds default: 5\n- Consensus forced after max rounds\n- Codex review is REQUIRED (not optional)\n- On Codex CHALLENGE, inject challenges into next round context\n- On Codex error, default to APPROVE (don't block)\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config, logger=None, panels=None, moderator=None, codex=None)`\n- `run(self, project: str, max_rounds: int = 5, context: Optional[dict] = None) -> PrioritizationResult`\n\n**Private Methods:**\n- `_create_default_panels() -> dict[str, PriorityPanel]`\n- `_build_final_priorities(ranking, submissions) -> list[dict]`\n- `_run_codex_review(project, priorities) -> dict`\n- `_build_codex_prompt(project, priorities) -> str`\n- `_parse_codex_response(text) -> dict`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "large",
+      "dependencies": [
+        1,
+        2,
+        5,
+        6,
+        7
+      ],
+      "order": 8,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create PriorityOutputGenerator",
+      "body": "## Description\n\nImplement the output generator that creates per-project priority files and company-wide rollups in markdown format.\n\n## Acceptance Criteria\n\n- [ ] Create `src/priority_output.py` with PriorityOutputGenerator class\n- [ ] `generate_project_output()` creates `daily-logs/YYYY-MM-DD-priorities-{project}.md`\n- [ ] Include top 10 priorities with details (impact, effort, strategic fit)\n- [ ] Include panel scores table for each priority\n- [ ] Include deferred priorities section\n- [ ] Include debate summary (rounds, consensus, Codex feedback)\n- [ ] `generate_rollup()` creates `daily-logs/YYYY-MM-DD-priorities.md`\n- [ ] Rollup includes cross-project themes analysis\n- [ ] Unit tests for output formatting\n\n## Technical Notes\n\n- Date format: YYYY-MM-DD\n- Follow existing daily-logs markdown structure\n- Include cost in footer\n- Panel scores table: Panel | Rank | Score | Notes\n- Cross-project themes: identify common priorities across projects\n\n## Interface Contract\n\n**Required Methods:**\n- `__init__(self, config)`\n- `generate_project_output(self, result: PrioritizationResult) -> Path`\n- `generate_rollup(self) -> Path`\n\n**Output Locations:**\n- Per-project: `daily-logs/YYYY-MM-DD-priorities-{project}.md`\n- Rollup: `daily-logs/YYYY-MM-DD-priorities.md`",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        8
+      ],
+      "order": 9,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add CLI commands for prioritize",
+      "body": "## Description\n\nAdd the `prioritize` command to the COO CLI with all required flags and options.\n\n## Acceptance Criteria\n\n- [ ] Add `prioritize` command to `src/cli.py`\n- [ ] `--project NAME` flag for single project\n- [ ] `--projects A,B,C` flag for multiple projects\n- [ ] `--dry-run` flag to show what would run\n- [ ] `--max-rounds N` flag to override debate rounds\n- [ ] `--rollup-only` flag to generate rollup from existing files\n- [ ] Display progress during execution\n- [ ] Print results summary with consensus rounds and review outcome\n- [ ] Unit tests for CLI argument parsing\n\n## Technical Notes\n\n- Use typer for CLI (existing pattern)\n- Default: run for all projects in config\n- Projects come from `config.get_all_projects()`\n- Progress output: \"Running prioritization for {project}...\"\n- Success output: \"Consensus in N rounds\"\n- Error output to stderr\n\n## CLI Examples\n\n```bash\ncoo prioritize                           # All projects\ncoo prioritize --project miami           # Single project\ncoo prioritize --projects miami,moderndoc # Multiple\ncoo prioritize --dry-run                 # Preview\ncoo prioritize --max-rounds 3            # Limit rounds\ncoo prioritize --rollup-only             # Rollup only\n```",
+      "labels": [
+        "enhancement",
+        "backend",
+        "api"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        8,
+        9
+      ],
+      "order": 10,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Update dashboard generator for priorities",
+      "body": "## Description\n\nUpdate the GitHub Pages dashboard generator to include a Priorities section showing the latest priority boards.\n\n## Acceptance Criteria\n\n- [ ] Modify `scripts/generate-dashboard.py`\n- [ ] Add Priorities section to dashboard template\n- [ ] Display latest priorities per project (top 5)\n- [ ] Show consensus round count and Codex review outcome\n- [ ] Link to full priority file for each project\n- [ ] Show cross-project themes from rollup\n- [ ] Unit tests for dashboard generation\n\n## Technical Notes\n\n- Dashboard file: `docs/index.html`\n- Read from `daily-logs/YYYY-MM-DD-priorities-*.md`\n- Parse markdown to extract top priorities\n- Follow existing dashboard section patterns\n- Include date of last prioritization run\n\n## Dashboard Section Format\n\n```html\n<section id=\"priorities\">\n  <h2>Strategic Priorities</h2>\n  <p>Last updated: YYYY-MM-DD</p>\n  <div class=\"project\">\n    <h3>Project Name</h3>\n    <ol>\n      <li>Priority 1 (Score: X.X)</li>\n      ...\n    </ol>\n    <a href=\"daily-logs/...\">Full Report</a>\n  </div>\n</section>\n```",
+      "labels": [
+        "enhancement",
+        "frontend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        9
+      ],
+      "order": 11,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Update daily cron script for prioritize",
+      "body": "## Description\n\nUpdate the daily digest cron script to run the prioritize command after the Strategic Advisory Board.\n\n## Acceptance Criteria\n\n- [ ] Modify `scripts/daily-digest-cron.sh`\n- [ ] Add `coo prioritize` after `coo strategic-review`\n- [ ] Log prioritize output to daily log file\n- [ ] Handle prioritize errors gracefully (don't block other tasks)\n- [ ] Update cron comments to document the flow\n\n## Technical Notes\n\n- Current flow: digest \u2192 strategic-review \u2192 dashboard\n- New flow: digest \u2192 strategic-review \u2192 **prioritize** \u2192 dashboard\n- Use same logging pattern as other commands\n- Exit codes: 0 = success, non-zero = logged but continues\n\n## Cron Flow\n\n```bash\n# Daily COO workflow\ncoo digest              # Morning digest\ncoo strategic-review    # Advisory board (backward-looking)\ncoo prioritize          # Priority board (forward-looking)  <-- NEW\ncoo dashboard           # Generate dashboard\n```",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        10
+      ],
+      "order": 12,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create roadmap-prioritization-board skill definition",
+      "body": "## Description\n\nCreate the skill definition for the roadmap prioritization board that can be invoked as a skill from other agents.\n\n## Acceptance Criteria\n\n- [ ] Create `.claude/skills/roadmap-prioritization-board/SKILL.md`\n- [ ] Document skill purpose and capabilities\n- [ ] Specify input parameters (project, max_rounds, context)\n- [ ] Specify output format (PrioritizationResult JSON)\n- [ ] Include usage examples\n- [ ] Document when to invoke this skill\n\n## Technical Notes\n\n- This skill wraps the PriorityOrchestrator\n- Can be invoked by Campaign Planner for roadmap decisions\n- Returns structured JSON for programmatic use\n- Keep skill definition focused on interface, not implementation\n\n## Skill Interface\n\n**Inputs:**\n- `project`: Project identifier\n- `max_rounds`: Optional max debate rounds (default 5)\n- `context`: Optional additional context\n\n**Outputs:**\n- JSON with success, priorities, rounds, review outcome, cost",
+      "labels": [
+        "enhancement",
+        "documentation"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        8
+      ],
+      "order": 13,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create expert panel prompt templates",
+      "body": "## Description\n\nCreate detailed prompt templates for each of the 5 expert panels with their unique personas and evaluation criteria.\n\n## Acceptance Criteria\n\n- [ ] Create `src/prompts/` directory for panel prompts\n- [ ] Product panel prompt (Dr. Maya Chen, CPO)\n- [ ] CEO panel prompt (Sarah Okonkwo)\n- [ ] Engineering panel prompt (James Morrison, VP Eng)\n- [ ] Design panel prompt (Marcus Williams, VP UX)\n- [ ] Operations panel prompt (Elena Vasquez, CoS)\n- [ ] Each prompt includes persona, evaluation criteria, output format\n- [ ] Include round context handling (previous submissions, challenges)\n\n## Technical Notes\n\n- Prompts should be loadable by PriorityPanel class\n- Use {placeholders} for dynamic injection\n- Each panel evaluates priorities from their domain perspective:\n  - Product: user needs, market fit, competitive advantage\n  - CEO: strategic vision, company goals, resource allocation\n  - Engineering: technical feasibility, architecture impact, debt\n  - Design: user experience, accessibility, brand consistency\n  - Operations: operational efficiency, scalability, process impact\n\n## Output Format (same for all panels)\n\n```json\n{\n  \"expert\": \"Name\",\n  \"panel\": \"type\",\n  \"priorities\": [\n    {\n      \"name\": \"Priority Name\",\n      \"why\": \"reasoning\",\n      \"effort\": \"S/M/L/XL\",\n      \"impact_score\": 8.5,\n      \"feasibility_score\": 7.0,\n      \"strategic_fit\": 9.0\n    }\n  ],\n  \"research_queries\": [\"query if needed\"]\n}\n```",
+      "labels": [
+        "enhancement",
+        "documentation"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        6
+      ],
+      "order": 14,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Integration test: full prioritization flow",
+      "body": "## Description\n\nCreate end-to-end integration tests that verify the complete prioritization flow works correctly.\n\n## Acceptance Criteria\n\n- [ ] Create `tests/integration/test_priority_board.py`\n- [ ] Test single project prioritization with mocked LLM\n- [ ] Test multi-project with rollup generation\n- [ ] Test consensus detection (natural and forced)\n- [ ] Test Codex review handling (APPROVE, CHALLENGE, ESCALATE)\n- [ ] Test output file generation (per-project and rollup)\n- [ ] Test CLI command execution\n- [ ] All tests use fixtures, no real LLM calls\n\n## Technical Notes\n\n- Use pytest fixtures for config and mock responses\n- Mock subprocess calls to Claude CLI and Codex\n- Verify file outputs exist and have correct format\n- Test error handling and edge cases\n- Coverage target: >80% for new modules\n\n## Test Scenarios\n\n1. **Happy path**: 5 panels agree in round 2, Codex approves\n2. **Forced consensus**: No natural consensus, forced at round 5\n3. **Codex challenge**: First submission challenged, consensus on retry\n4. **Codex escalate**: Fundamental issues, returns error result\n5. **Panel failure**: One panel errors, returns gracefully",
+      "labels": [
+        "enhancement",
+        "tests"
+      ],
+      "estimated_size": "large",
+      "dependencies": [
+        8,
+        9,
+        10
+      ],
+      "order": 15,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Manual verification: end-to-end prioritization run",
+      "body": "## Description\n\nManually verify the complete prioritization system works end-to-end with real LLM calls.\n\n## Acceptance Criteria\n\n- [ ] Run `coo prioritize --project miami --dry-run` successfully\n- [ ] Run `coo prioritize --project miami` with real panels\n- [ ] Verify per-project output file generated correctly\n- [ ] Verify Codex review was called and logged\n- [ ] Run `coo prioritize --rollup-only` for company rollup\n- [ ] Verify dashboard includes priorities section\n- [ ] Document any issues found in test report\n\n## Test Commands\n\n```bash\n# Dry run\nPYTHONPATH=. python -m src.cli prioritize --project miami --dry-run\n\n# Real run\nPYTHONPATH=. python -m src.cli prioritize --project miami\n\n# Check output\ncat daily-logs/$(date +%Y-%m-%d)-priorities-miami.md\n\n# Generate rollup\nPYTHONPATH=. python -m src.cli prioritize --rollup-only\ncat daily-logs/$(date +%Y-%m-%d)-priorities.md\n\n# Dashboard\npython scripts/generate-dashboard.py\nopen docs/index.html\n```\n\n## Test Report Location\n\n`.swarm/qa/test-reports/coo-priority-board-YYYYMMDD-HHMMSS.md`",
+      "labels": [
+        "tests",
+        "documentation"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        11,
+        12,
+        13,
+        14,
+        15
+      ],
+      "order": 16,
+      "automation_type": "manual"
+    }
+  ]
+}

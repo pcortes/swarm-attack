@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm-prompt>
+  <metadata>
+    <title>Swarm Attack Bug Fix Sprint</title>
+    <created>2025-12-31</created>
+    <source-report>/Users/philipjcortes/Desktop/swarm-attack-bugs-20251231-181500.md</source-report>
+    <target-repo>/Users/philipjcortes/Desktop/swarm-attack</target-repo>
+    <methodology>TDD with Expert Subagent Teams</methodology>
+  </metadata>
+
+  <context>
+    <summary>
+      Four bugs were discovered during PM workflow testing of swarm-attack.
+      This prompt orchestrates expert subagent teams to root cause, plan, and fix each bug using TDD.
+    </summary>
+
+    <bugs>
+      <bug id="BUG-001" severity="MEDIUM" component="swarm_attack/cli/chief_of_staff.py">
+        <title>COS Standup Crashes in Non-Interactive Mode</title>
+        <description>When running `swarm-attack cos standup` in a non-interactive terminal, the command crashes with unhandled click.exceptions.Abort instead of graceful handling.</description>
+        <reproduction>swarm-attack cos standup 2>&amp;1 | head -80</reproduction>
+        <location>chief_of_staff.py:272 - typer.prompt("Select goals", default="0")</location>
+      </bug>
+
+      <bug id="BUG-002" severity="LOW" component="CLI alias registration">
+        <title>Top-Level approve Command Missing --auto/--manual Flags</title>
+        <description>The backward-compatible `swarm-attack approve` command is missing --auto/--manual flags that exist on `swarm-attack feature approve`.</description>
+        <reproduction>swarm-attack approve --help (compare to swarm-attack feature approve --help)</reproduction>
+        <location>CLI app.py alias registration</location>
+      </bug>
+
+      <bug id="BUG-003" severity="LOW" component="Checkpoint persistence">
+        <title>Stale Checkpoint Accumulation</title>
+        <description>29 stale test checkpoints accumulated over time. Checkpoints need TTL or auto-cleanup.</description>
+        <reproduction>swarm-attack cos checkpoints (observe stale entries)</reproduction>
+        <location>swarm_attack/chief_of_staff/checkpoints.py</location>
+      </bug>
+
+      <bug id="BUG-004" severity="INFO" component="Package management">
+        <title>Package Version Mismatch</title>
+        <description>Installed version shows 0.1.0 but CHANGELOG documents 0.3.0 features.</description>
+        <reproduction>pip show swarm-attack</reproduction>
+        <location>pyproject.toml version field</location>
+      </bug>
+    </bugs>
+  </context>
+
+  <instructions>
+    <phase id="0" name="Setup Worktree">
+      <description>Create an isolated worktree for this bug fix work</description>
+      <steps>
+        <step>Navigate to /Users/philipjcortes/Desktop/swarm-attack</step>
+        <step>Create worktree: git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-pm-bugs -b fix/pm-workflow-bugs</step>
+        <step>Change to worktree: cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-pm-bugs</step>
+        <step>Verify clean state: git status</step>
+        <step>All subsequent work happens in this worktree</step>
+      </steps>
+    </phase>
+
+    <phase id="1" name="Root Cause Analysis">
+      <description>Deploy expert subagents to investigate each bug</description>
+
+      <subagent role="RootCauseAnalyzer" bug="BUG-001">
+        <task>Investigate COS standup crash</task>
+        <investigation>
+          <step>Read swarm_attack/cli/chief_of_staff.py, focus on standup_command function</step>
+          <step>Identify all typer.prompt() calls that could fail in non-interactive mode</step>
+          <step>Check if there's existing non-interactive handling elsewhere in CLI</step>
+          <step>Document the exact exception flow from click through typer</step>
+          <step>Identify all interactive prompts in chief_of_staff.py that need fixing</step>
+        </investigation>
+        <output>Root cause document with exact line numbers and exception chain</output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="BUG-002">
+        <task>Investigate approve alias missing flags</task>
+        <investigation>
+          <step>Read swarm_attack/cli/app.py to find alias registration</step>
+          <step>Compare app.add_command() for approve vs feature approve</step>
+          <step>Check if alias forwards all parameters or just the command</step>
+          <step>Document how other aliases handle parameter forwarding</step>
+        </investigation>
+        <output>Root cause showing why flags don't propagate through alias</output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="BUG-003">
+        <task>Investigate checkpoint accumulation</task>
+        <investigation>
+          <step>Read swarm_attack/chief_of_staff/checkpoints.py</step>
+          <step>Find checkpoint creation and cleanup logic</step>
+          <step>Check if tests create checkpoints without cleanup</step>
+          <step>Identify if TTL/expiry exists or is missing</step>
+          <step>Check .swarm/chief-of-staff/checkpoints/ directory structure</step>
+        </investigation>
+        <output>Root cause with recommendation for cleanup strategy</output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="BUG-004">
+        <task>Investigate version mismatch</task>
+        <investigation>
+          <step>Read pyproject.toml version field</step>
+          <step>Read CHANGELOG.md version history</step>
+          <step>Check if __version__ exists in __init__.py</step>
+          <step>Verify installed package points to correct location</step>
+        </investigation>
+        <output>Root cause with version sync recommendation</output>
+      </subagent>
+    </phase>
+
+    <phase id="2" name="Fix Planning">
+      <description>Synthesize root causes into actionable fix plan</description>
+
+      <subagent role="FixPlanner">
+        <task>Create comprehensive fix plan from all root cause analyses</task>
+        <planning>
+          <step>Review all root cause outputs</step>
+          <step>Order fixes by dependency (which fixes enable others)</step>
+          <step>Identify shared patterns (e.g., all CLI issues might share solution)</step>
+          <step>Define test strategy for each fix</step>
+          <step>Estimate complexity (lines of code, files touched)</step>
+        </planning>
+        <output>
+          Fix plan document with:
+          - Ordered list of fixes
+          - Files to modify per fix
+          - Test files to create/modify per fix
+          - Acceptance criteria per fix
+        </output>
+      </subagent>
+    </phase>
+
+    <phase id="3" name="TDD Implementation">
+      <description>Fix each bug using strict TDD: RED → GREEN → REFACTOR</description>
+
+      <bug-fix id="BUG-001" priority="1">
+        <subagent role="TestEngineer">
+          <task>Write failing tests for non-interactive standup</task>
+          <red-phase>
+            <step>Create tests/unit/cli/test_cos_noninteractive.py</step>
+            <step>Test: standup with mocked non-interactive stdin should not crash</step>
+            <step>Test: standup with --skip-goals flag should skip prompt</step>
+            <step>Test: standup detects non-interactive and auto-skips</step>
+            <step>Run: PYTHONPATH=. pytest tests/unit/cli/test_cos_noninteractive.py -v</step>
+            <step>Verify tests FAIL (RED phase)</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Implement fix to pass tests</task>
+          <green-phase>
+            <step>Modify chief_of_staff.py standup_command</step>
+            <step>Add try/except around typer.prompt for Abort</step>
+            <step>Add --skip-goals flag option</step>
+            <step>Add sys.stdin.isatty() check for auto-detection</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+
+        <subagent role="Reviewer">
+          <task>Refactor and verify</task>
+          <refactor-phase>
+            <step>Check for similar prompts in same file that need same fix</step>
+            <step>Extract common non-interactive handling if pattern repeats</step>
+            <step>Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+            <step>Verify no regressions</step>
+          </refactor-phase>
+        </subagent>
+      </bug-fix>
+
+      <bug-fix id="BUG-002" priority="2">
+        <subagent role="TestEngineer">
+          <task>Write failing tests for approve alias flags</task>
+          <red-phase>
+            <step>Create tests/unit/cli/test_approve_alias.py</step>
+            <step>Test: swarm-attack approve --auto should be recognized</step>
+            <step>Test: swarm-attack approve --manual should be recognized</step>
+            <step>Test: flags should have same effect as feature approve flags</step>
+            <step>Run tests - verify FAIL</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Fix alias to include flags</task>
+          <green-phase>
+            <step>Modify app.py alias registration</step>
+            <step>Ensure approve alias uses same function as feature approve</step>
+            <step>Or add --auto/--manual to the alias wrapper</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+      </bug-fix>
+
+      <bug-fix id="BUG-003" priority="3">
+        <subagent role="TestEngineer">
+          <task>Write failing tests for checkpoint cleanup</task>
+          <red-phase>
+            <step>Create tests/unit/chief_of_staff/test_checkpoint_cleanup.py</step>
+            <step>Test: checkpoints older than 7 days should be marked stale</step>
+            <step>Test: cleanup_stale() should remove old checkpoints</step>
+            <step>Test: test checkpoints should have test_ prefix for easy cleanup</step>
+            <step>Run tests - verify FAIL</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Implement checkpoint TTL and cleanup</task>
+          <green-phase>
+            <step>Add created_at timestamp to checkpoint if missing</step>
+            <step>Add is_stale() method with 7-day default TTL</step>
+            <step>Enhance cleanup_stale() to use TTL</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+      </bug-fix>
+
+      <bug-fix id="BUG-004" priority="4">
+        <subagent role="Coder">
+          <task>Sync version numbers</task>
+          <implementation>
+            <step>Update pyproject.toml version to "0.3.0"</step>
+            <step>Verify swarm_attack/__init__.py has __version__ = "0.3.0"</step>
+            <step>Run: pip show swarm-attack to verify after reinstall</step>
+          </implementation>
+        </subagent>
+      </bug-fix>
+    </phase>
+
+    <phase id="4" name="Integration Verification">
+      <description>Verify all fixes work together</description>
+      <steps>
+        <step>Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+        <step>Manual test: swarm-attack cos standup 2>&amp;1 | head -80 (should not crash)</step>
+        <step>Manual test: swarm-attack approve --help (should show --auto/--manual)</step>
+        <step>Manual test: swarm-attack cos checkpoints (should show cleaner output)</step>
+        <step>Manual test: pip show swarm-attack (should show 0.3.0)</step>
+      </steps>
+    </phase>
+
+    <phase id="5" name="Commit and Merge">
+      <description>Create atomic commits and prepare for merge</description>
+      <steps>
+        <step>Create commit for BUG-001: "fix(cli): handle non-interactive mode in cos standup"</step>
+        <step>Create commit for BUG-002: "fix(cli): add --auto/--manual flags to approve alias"</step>
+        <step>Create commit for BUG-003: "fix(cos): add TTL-based checkpoint cleanup"</step>
+        <step>Create commit for BUG-004: "chore: sync version to 0.3.0"</step>
+        <step>Push branch: git push origin fix/pm-workflow-bugs</step>
+        <step>Return to main repo and merge: git checkout master &amp;&amp; git merge fix/pm-workflow-bugs</step>
+        <step>Clean up worktree: git worktree remove worktrees/fix-pm-bugs</step>
+      </steps>
+    </phase>
+  </instructions>
+
+  <acceptance-criteria>
+    <criterion bug="BUG-001">COS standup completes without crash when piped or in non-interactive mode</criterion>
+    <criterion bug="BUG-002">swarm-attack approve --help shows --auto and --manual flags</criterion>
+    <criterion bug="BUG-003">Checkpoints older than 7 days are automatically cleaned up</criterion>
+    <criterion bug="BUG-004">pip show swarm-attack displays version 0.3.0</criterion>
+    <criterion global="true">All existing tests continue to pass (no regressions)</criterion>
+    <criterion global="true">New tests added for each bug fix</criterion>
+  </acceptance-criteria>
+
+  <constraints>
+    <constraint>All work must happen in the worktree, not main repo</constraint>
+    <constraint>Each bug fix must have tests written BEFORE implementation (TDD)</constraint>
+    <constraint>No changes to code without corresponding test coverage</constraint>
+    <constraint>Atomic commits - one logical change per commit</constraint>
+    <constraint>Run full test suite before each commit</constraint>
+  </constraints>
+</llm-prompt>

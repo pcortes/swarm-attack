@@ -1,0 +1,632 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm-prompt>
+  <metadata>
+    <title>Living Spec System - Spec-Driven Development Infrastructure</title>
+    <created>2025-12-31</created>
+    <version>1.0.0</version>
+    <methodology>Spec-Driven Development + TDD + Expert Team Validation</methodology>
+    <meta-note>Using spec-driven development to build spec-driven development</meta-note>
+  </metadata>
+
+  <team-structure>
+    <role name="SpecArchitect">
+      <responsibility>Design the overall spec format, versioning, and storage approach</responsibility>
+      <expertise>System design, version control, document formats</expertise>
+    </role>
+    <role name="EdgeCaseHunter">
+      <responsibility>Find every edge case that could break the system</responsibility>
+      <expertise>QA mindset, adversarial thinking, real-world chaos</expertise>
+    </role>
+    <role name="IntegrationSpecialist">
+      <responsibility>Ensure seamless integration with existing swarm-attack pipeline</responsibility>
+      <expertise>Swarm-attack internals, Verifier, Issue Creator, Orchestrator</expertise>
+    </role>
+    <role name="TDDEnforcer">
+      <responsibility>Design test strategy, ensure all requirements are testable</responsibility>
+      <expertise>pytest, test design, coverage, regression testing</expertise>
+    </role>
+    <role name="DeveloperAdvocate">
+      <responsibility>Ensure the system is simple to use and doesn't slow developers down</responsibility>
+      <expertise>UX, CLI design, developer workflows</expertise>
+    </role>
+  </team-structure>
+
+  <prd>
+    <problem-statement>
+      Swarm-attack currently has no link between specs, issues, and implemented code.
+      Specs are written once, issues are created, code is written, but:
+      - Specs are never updated to reflect what was actually built
+      - No way to know which spec sections are implemented vs pending
+      - No spec history for regression analysis
+      - QA agent has no reliable source of truth
+      - Parallel agents can't coordinate on spec state
+    </problem-statement>
+
+    <solution-overview>
+      Implement a "Living Spec System" where:
+      1. Specs have unique requirement IDs (REQ-001, REQ-002, etc.)
+      2. Issues link to specific spec sections
+      3. On merge to main, specs are auto-updated to mark sections as implemented
+      4. Spec history is preserved via git for regression analysis
+      5. QA agent reads spec as authoritative source of truth
+    </solution-overview>
+
+    <user-stories>
+      <story id="US-001" priority="P0">
+        <as-a>Developer using swarm-attack</as-a>
+        <i-want>specs to automatically update when my PR merges</i-want>
+        <so-that>I don't have to manually track what's implemented</so-that>
+      </story>
+
+      <story id="US-002" priority="P0">
+        <as-a>QA agent</as-a>
+        <i-want>to read the spec and know exactly what behavior to expect</i-want>
+        <so-that>I can detect regressions against the documented contract</so-that>
+      </story>
+
+      <story id="US-003" priority="P0">
+        <as-a>PM or developer</as-a>
+        <i-want>to see which spec sections are done vs pending</i-want>
+        <so-that>I know what's left to build</so-that>
+      </story>
+
+      <story id="US-004" priority="P1">
+        <as-a>Developer debugging a regression</as-a>
+        <i-want>to see what the spec said at a previous release</i-want>
+        <so-that>I can understand what the expected behavior was</so-that>
+      </story>
+
+      <story id="US-005" priority="P1">
+        <as-a>Developer extending an existing feature</as-a>
+        <i-want>to add new requirements to an existing spec</i-want>
+        <so-that>issue creator only creates issues for the new sections</so-that>
+      </story>
+
+      <story id="US-006" priority="P1">
+        <as-a>Developer who wrote my own spec</as-a>
+        <i-want>the system to work with my manually-written spec</i-want>
+        <so-that>I'm not forced to use a specific format</so-that>
+      </story>
+
+      <story id="US-007" priority="P2">
+        <as-a>Team lead</as-a>
+        <i-want>to see a dashboard of all specs and their completion status</i-want>
+        <so-that>I can track progress across features</so-that>
+      </story>
+    </user-stories>
+  </prd>
+
+  <spec>
+    <section id="1" title="Spec Format">
+      <requirement id="REQ-001" priority="P0">
+        <description>Specs MUST support unique requirement IDs in format REQ-NNN</description>
+        <rationale>Enables linking issues to specific requirements</rationale>
+        <acceptance-criteria>
+          <criterion>Parser extracts all REQ-NNN patterns from spec markdown</criterion>
+          <criterion>Duplicate IDs within a spec cause validation error</criterion>
+          <criterion>IDs are stable across spec edits (not auto-generated)</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-002" priority="P0">
+        <description>Each requirement MUST have a status field: PENDING, IN_PROGRESS, IMPLEMENTED</description>
+        <acceptance-criteria>
+          <criterion>Status is stored in YAML frontmatter per requirement</criterion>
+          <criterion>Default status for new requirements is PENDING</criterion>
+          <criterion>Status changes are tracked with timestamp and PR number</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-003" priority="P1">
+        <description>Specs MUST support EARS notation for testable requirements</description>
+        <ears-format>WHEN [trigger] THE SYSTEM SHALL [response]</ears-format>
+        <acceptance-criteria>
+          <criterion>Parser identifies WHEN...SHALL patterns</criterion>
+          <criterion>Non-EARS requirements allowed but flagged as "not machine-testable"</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-004" priority="P1">
+        <description>System MUST support user-written specs without REQ-IDs</description>
+        <rationale>Don't break existing workflows</rationale>
+        <acceptance-criteria>
+          <criterion>If no REQ-IDs found, system auto-generates based on headers</criterion>
+          <criterion>Auto-generated IDs use format AUTO-001, AUTO-002</criterion>
+          <criterion>Warning shown: "Consider adding explicit REQ-IDs for better tracking"</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="2" title="Issue-Spec Linking">
+      <requirement id="REQ-005" priority="P0">
+        <description>Issue Creator MUST link issues to spec requirements</description>
+        <acceptance-criteria>
+          <criterion>Issue body includes "Implements: specs/feature/spec.md#REQ-001"</criterion>
+          <criterion>Issue labels include "spec:feature-name" and "req:REQ-001"</criterion>
+          <criterion>Issue metadata JSON includes spec_section field</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-006" priority="P0">
+        <description>Issue Creator MUST only create issues for PENDING requirements</description>
+        <acceptance-criteria>
+          <criterion>Requirements with status IMPLEMENTED are skipped</criterion>
+          <criterion>Requirements with status IN_PROGRESS are skipped if issue exists</criterion>
+          <criterion>Report shows "Skipped N already-implemented requirements"</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-007" priority="P1">
+        <description>When issue is created, requirement status MUST change to IN_PROGRESS</description>
+        <acceptance-criteria>
+          <criterion>Spec file is updated with status: IN_PROGRESS</criterion>
+          <criterion>Issue number is recorded in requirement metadata</criterion>
+          <criterion>Spec change is committed: "docs: mark REQ-001 in progress (#issue)"</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="3" title="Post-Merge Spec Update">
+      <requirement id="REQ-008" priority="P0">
+        <description>When PR merges to main, Verifier MUST update spec status to IMPLEMENTED</description>
+        <acceptance-criteria>
+          <criterion>Verifier reads closed issues from PR</criterion>
+          <criterion>For each issue with spec_section, updates requirement status</criterion>
+          <criterion>Adds implementation metadata: pr_number, commit_sha, date</criterion>
+          <criterion>Commits spec change: "docs: mark REQ-001 implemented (#PR)"</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-009" priority="P0">
+        <description>Spec update MUST be atomic with merge</description>
+        <rationale>Prevents drift between code and spec</rationale>
+        <acceptance-criteria>
+          <criterion>Spec update happens in same commit as merge OR immediately after</criterion>
+          <criterion>If spec update fails, warning is logged but merge not blocked</criterion>
+          <criterion>Failed updates are queued for retry</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-010" priority="P1">
+        <description>System MUST handle PRs that implement multiple requirements</description>
+        <acceptance-criteria>
+          <criterion>All linked requirements are updated in single commit</criterion>
+          <criterion>Commit message lists all updated REQ-IDs</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-011" priority="P1">
+        <description>System MUST handle PRs that partially implement a requirement</description>
+        <acceptance-criteria>
+          <criterion>Requirement stays IN_PROGRESS if issue not closed</criterion>
+          <criterion>Implementation notes can be added without changing status</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="4" title="Spec History and Regression">
+      <requirement id="REQ-012" priority="P0">
+        <description>Spec history MUST be queryable by git tag/release</description>
+        <acceptance-criteria>
+          <criterion>CLI command: swarm-attack spec show feature --at v1.2.0</criterion>
+          <criterion>Returns spec content as it existed at that tag</criterion>
+          <criterion>Error if tag doesn't exist</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-013" priority="P0">
+        <description>QA agent MUST use spec at last release as regression baseline</description>
+        <acceptance-criteria>
+          <criterion>QA context includes spec_at_release field</criterion>
+          <criterion>Regression findings reference the spec version</criterion>
+          <criterion>Finding evidence includes: "Expected per spec@v1.2.0: ..."</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-014" priority="P1">
+        <description>CLI MUST show spec diff between versions</description>
+        <acceptance-criteria>
+          <criterion>Command: swarm-attack spec diff feature --from v1.1.0 --to v1.2.0</criterion>
+          <criterion>Shows added/removed/modified requirements</criterion>
+          <criterion>Highlights status changes</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="5" title="Spec Status Dashboard">
+      <requirement id="REQ-015" priority="P0">
+        <description>CLI MUST show spec completion status</description>
+        <acceptance-criteria>
+          <criterion>Command: swarm-attack spec status feature</criterion>
+          <criterion>Output shows: total reqs, implemented, in-progress, pending</criterion>
+          <criterion>Lists each requirement with status and linked issue/PR</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-016" priority="P1">
+        <description>CLI MUST show cross-feature spec dashboard</description>
+        <acceptance-criteria>
+          <criterion>Command: swarm-attack spec dashboard</criterion>
+          <criterion>Table: feature | total | done | progress | pending | % complete</criterion>
+          <criterion>Sorted by completion percentage ascending (least done first)</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="6" title="Edge Cases">
+      <requirement id="REQ-017" priority="P0">
+        <description>System MUST handle spec with no requirements</description>
+        <acceptance-criteria>
+          <criterion>Warning: "Spec has no parseable requirements"</criterion>
+          <criterion>Issue creation skipped with explanation</criterion>
+          <criterion>Spec status shows "0 requirements found"</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-018" priority="P0">
+        <description>System MUST handle missing spec file</description>
+        <acceptance-criteria>
+          <criterion>Verifier continues without spec update if file missing</criterion>
+          <criterion>Warning logged: "No spec found for feature X"</criterion>
+          <criterion>Does not block merge</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-019" priority="P0">
+        <description>System MUST handle concurrent spec edits from parallel agents</description>
+        <acceptance-criteria>
+          <criterion>Each agent updates only its own requirement section</criterion>
+          <criterion>Git merge conflicts in spec trigger human review</criterion>
+          <criterion>Lock file prevents simultaneous writes to same requirement</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-020" priority="P1">
+        <description>System MUST handle user manually editing spec status</description>
+        <acceptance-criteria>
+          <criterion>Manual status changes are respected</criterion>
+          <criterion>If user marks IMPLEMENTED without PR, audit log notes "manual override"</criterion>
+          <criterion>System doesn't revert manual changes</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-021" priority="P1">
+        <description>System MUST handle renamed/moved spec files</description>
+        <acceptance-criteria>
+          <criterion>Issue links use spec path at creation time</criterion>
+          <criterion>If spec moved, warning on status check: "Spec path changed"</criterion>
+          <criterion>CLI can update issue links: swarm-attack spec relocate old new</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-022" priority="P1">
+        <description>System MUST handle deleted requirements</description>
+        <acceptance-criteria>
+          <criterion>If requirement removed from spec, linked issues flagged as orphaned</criterion>
+          <criterion>Warning: "Issue #X references deleted requirement REQ-001"</criterion>
+          <criterion>Orphaned issues suggested for closure or re-linking</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-023" priority="P2">
+        <description>System MUST handle spec imported from external source</description>
+        <acceptance-criteria>
+          <criterion>swarm-attack import-spec supports --preserve-ids flag</criterion>
+          <criterion>Imported specs validated for REQ-ID format</criterion>
+          <criterion>Duplicate IDs across features are allowed (scoped to feature)</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+
+    <section id="7" title="Integration Points">
+      <requirement id="REQ-024" priority="P0">
+        <description>SpecParser class MUST be importable by all agents</description>
+        <interface>
+          <method>parse(spec_path: Path) -> Spec</method>
+          <method>get_requirement(spec: Spec, req_id: str) -> Requirement</method>
+          <method>update_status(spec: Spec, req_id: str, status: Status, metadata: dict)</method>
+          <method>save(spec: Spec, commit_message: str)</method>
+        </interface>
+      </requirement>
+
+      <requirement id="REQ-025" priority="P0">
+        <description>Spec model MUST integrate with existing QAContext</description>
+        <acceptance-criteria>
+          <criterion>QAContext.spec_requirements: list[Requirement]</criterion>
+          <criterion>QAContext.spec_version: str (git ref)</criterion>
+          <criterion>QAContext.baseline_spec_version: str (last release tag)</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-026" priority="P0">
+        <description>Issue Creator MUST use SpecParser for requirement extraction</description>
+        <acceptance-criteria>
+          <criterion>Replaces current ad-hoc spec reading</criterion>
+          <criterion>Issues created only for parsed requirements</criterion>
+          <criterion>Unparseable specs fall back to current behavior</criterion>
+        </acceptance-criteria>
+      </requirement>
+
+      <requirement id="REQ-027" priority="P0">
+        <description>Verifier MUST call SpecParser.update_status on PR merge</description>
+        <acceptance-criteria>
+          <criterion>Integrated into existing verify() flow</criterion>
+          <criterion>Runs after test validation, before completion message</criterion>
+          <criterion>Failure does not block verification success</criterion>
+        </acceptance-criteria>
+      </requirement>
+    </section>
+  </spec>
+
+  <implementation-plan>
+    <phase number="1" name="Core Parser" priority="P0">
+      <description>Build SpecParser that can read/write specs with requirement tracking</description>
+      <issues>
+        <issue title="Implement SpecParser.parse() for requirement extraction">
+          <implements>REQ-001, REQ-002, REQ-003, REQ-004</implements>
+          <acceptance-criteria>
+            <criterion>Parses REQ-NNN IDs from markdown</criterion>
+            <criterion>Extracts status from YAML frontmatter or inline markers</criterion>
+            <criterion>Handles EARS notation parsing</criterion>
+            <criterion>Auto-generates IDs for user-written specs without IDs</criterion>
+          </acceptance-criteria>
+          <tests>
+            <test>test_parse_extracts_req_ids</test>
+            <test>test_parse_extracts_status</test>
+            <test>test_parse_ears_notation</test>
+            <test>test_parse_auto_generates_ids</test>
+            <test>test_parse_handles_no_requirements</test>
+          </tests>
+        </issue>
+
+        <issue title="Implement SpecParser.update_status() and save()">
+          <implements>REQ-002, REQ-008, REQ-009, REQ-010, REQ-011</implements>
+          <tests>
+            <test>test_update_status_changes_requirement</test>
+            <test>test_update_status_adds_metadata</test>
+            <test>test_save_commits_changes</test>
+            <test>test_update_multiple_requirements</test>
+            <test>test_partial_implementation_stays_in_progress</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="2" name="Issue Creator Integration" priority="P0">
+      <description>Modify Issue Creator to use SpecParser and link issues to requirements</description>
+      <issues>
+        <issue title="Issue Creator uses SpecParser for requirement extraction">
+          <implements>REQ-005, REQ-006, REQ-007, REQ-026</implements>
+          <tests>
+            <test>test_issue_includes_spec_link</test>
+            <test>test_issue_has_req_label</test>
+            <test>test_skips_implemented_requirements</test>
+            <test>test_skips_in_progress_with_issue</test>
+            <test>test_marks_req_in_progress_on_issue_create</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="3" name="Verifier Integration" priority="P0">
+      <description>Modify Verifier to update spec on PR merge</description>
+      <issues>
+        <issue title="Verifier updates spec status on merge">
+          <implements>REQ-008, REQ-009, REQ-027</implements>
+          <tests>
+            <test>test_verifier_updates_spec_on_merge</test>
+            <test>test_spec_update_includes_pr_metadata</test>
+            <test>test_spec_update_atomic_with_merge</test>
+            <test>test_spec_update_failure_does_not_block</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="4" name="CLI Commands" priority="P0">
+      <description>Add CLI commands for spec status and history</description>
+      <issues>
+        <issue title="Implement swarm-attack spec status command">
+          <implements>REQ-015</implements>
+          <tests>
+            <test>test_spec_status_shows_counts</test>
+            <test>test_spec_status_lists_requirements</test>
+            <test>test_spec_status_shows_linked_issues</test>
+          </tests>
+        </issue>
+
+        <issue title="Implement swarm-attack spec show --at command">
+          <implements>REQ-012</implements>
+          <tests>
+            <test>test_spec_show_at_tag</test>
+            <test>test_spec_show_at_invalid_tag_errors</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="5" name="QA Integration" priority="P0">
+      <description>QA agent uses spec as source of truth for regression testing</description>
+      <issues>
+        <issue title="QA context includes spec requirements and baseline">
+          <implements>REQ-013, REQ-025</implements>
+          <tests>
+            <test>test_qa_context_includes_spec_requirements</test>
+            <test>test_qa_context_includes_baseline_version</test>
+            <test>test_regression_finding_references_spec</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="6" name="Edge Cases" priority="P1">
+      <description>Handle all edge cases for robustness</description>
+      <issues>
+        <issue title="Handle edge cases: no spec, no requirements, concurrent edits">
+          <implements>REQ-017, REQ-018, REQ-019, REQ-020</implements>
+          <tests>
+            <test>test_handles_no_spec_file</test>
+            <test>test_handles_empty_spec</test>
+            <test>test_concurrent_edits_use_locking</test>
+            <test>test_manual_status_override_respected</test>
+          </tests>
+        </issue>
+
+        <issue title="Handle spec file operations: rename, delete requirements">
+          <implements>REQ-021, REQ-022, REQ-023</implements>
+          <tests>
+            <test>test_detects_moved_spec</test>
+            <test>test_detects_deleted_requirement</test>
+            <test>test_import_preserves_ids</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+
+    <phase number="7" name="Dashboard" priority="P2">
+      <description>Cross-feature spec dashboard</description>
+      <issues>
+        <issue title="Implement swarm-attack spec dashboard">
+          <implements>REQ-016</implements>
+          <tests>
+            <test>test_dashboard_shows_all_features</test>
+            <test>test_dashboard_calculates_percentages</test>
+            <test>test_dashboard_sorts_by_completion</test>
+          </tests>
+        </issue>
+
+        <issue title="Implement swarm-attack spec diff command">
+          <implements>REQ-014</implements>
+          <tests>
+            <test>test_diff_shows_added_requirements</test>
+            <test>test_diff_shows_removed_requirements</test>
+            <test>test_diff_shows_status_changes</test>
+          </tests>
+        </issue>
+      </issues>
+    </phase>
+  </implementation-plan>
+
+  <instructions>
+    <section name="Worktree Setup">
+      <step order="1">Create a new worktree for this feature:
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack</command>
+        <command>git worktree add worktrees/living-spec-system -b feature/living-spec-system</command>
+      </step>
+      <step order="2">Verify worktree:
+        <command>cd worktrees/living-spec-system</command>
+        <command>git branch  # Should show: * feature/living-spec-system</command>
+      </step>
+    </section>
+
+    <section name="Implementation Approach">
+      <rule>ALL implementation MUST follow TDD:</rule>
+      <tdd-cycle>
+        <step>1. Write failing test first</step>
+        <step>2. Run test, confirm it fails for the right reason</step>
+        <step>3. Write minimal code to pass test</step>
+        <step>4. Run test, confirm it passes</step>
+        <step>5. Refactor if needed</step>
+        <step>6. Repeat for next test</step>
+      </tdd-cycle>
+
+      <rule>Use swarm-attack for implementation:</rule>
+      <commands>
+        <command>swarm-attack init living-spec-system  # Already done via this spec</command>
+        <command>swarm-attack approve living-spec-system  # Approve this spec</command>
+        <command>swarm-attack issues living-spec-system  # Create GitHub issues</command>
+        <command>swarm-attack greenlight living-spec-system  # Enable implementation</command>
+        <command>swarm-attack run living-spec-system  # Run implementation agents</command>
+      </commands>
+    </section>
+
+    <section name="Expert Team Validation">
+      <instruction>Before implementation, have expert team validate the spec:</instruction>
+
+      <expert-review name="SpecArchitect">
+        <question>Is the spec format flexible enough for different project types?</question>
+        <question>Is YAML frontmatter the right choice vs inline markers?</question>
+        <question>Should we support JSON specs for programmatic generation?</question>
+      </expert-review>
+
+      <expert-review name="EdgeCaseHunter">
+        <question>What happens if two PRs merge simultaneously updating same requirement?</question>
+        <question>What if someone force-pushes and rewrites spec history?</question>
+        <question>What if spec file is in a submodule?</question>
+        <question>What if feature has multiple spec files?</question>
+      </expert-review>
+
+      <expert-review name="IntegrationSpecialist">
+        <question>Does this break any existing swarm-attack workflows?</question>
+        <question>How does this interact with Chief of Staff autopilot?</question>
+        <question>What about specs for bug fixes vs features?</question>
+      </expert-review>
+
+      <expert-review name="TDDEnforcer">
+        <question>Are all acceptance criteria testable?</question>
+        <question>What mocking strategy for git operations in tests?</question>
+        <question>How do we test concurrent edit scenarios?</question>
+      </expert-review>
+
+      <expert-review name="DeveloperAdvocate">
+        <question>Is the REQ-ID format too verbose?</question>
+        <question>Can we auto-generate IDs so devs don't have to think about it?</question>
+        <question>Is the CLI intuitive? Should `spec status` be the default?</question>
+      </expert-review>
+    </section>
+
+    <section name="File Structure">
+      <tree>
+swarm_attack/
+  spec/
+    __init__.py
+    parser.py           # SpecParser class
+    models.py           # Spec, Requirement, Status dataclasses
+    updater.py          # Logic for updating spec status
+    history.py          # Git-based spec history queries
+  cli/
+    spec_commands.py    # CLI commands for spec management
+  agents/
+    issue_creator.py    # Modified to use SpecParser
+    verifier.py         # Modified to update spec on merge
+
+tests/
+  unit/
+    spec/
+      test_parser.py
+      test_updater.py
+      test_history.py
+    cli/
+      test_spec_commands.py
+  integration/
+    test_spec_issue_linking.py
+    test_spec_verifier_update.py
+    test_spec_qa_integration.py
+      </tree>
+    </section>
+
+    <section name="Definition of Done">
+      <criterion>All P0 requirements implemented with passing tests</criterion>
+      <criterion>Test coverage > 90% for new code</criterion>
+      <criterion>No regressions in existing swarm-attack functionality</criterion>
+      <criterion>CLI commands documented in README</criterion>
+      <criterion>This spec updated to show all requirements as IMPLEMENTED</criterion>
+      <criterion>Dogfooding: This very spec tracks its own implementation</criterion>
+    </section>
+  </instructions>
+
+  <constraints>
+    <constraint>ALL work in /Users/philipjcortes/Desktop/swarm-attack/worktrees/living-spec-system</constraint>
+    <constraint>TDD is MANDATORY - no code without failing test first</constraint>
+    <constraint>Use swarm-attack pipeline for implementation</constraint>
+    <constraint>Do not modify files outside swarm_attack/ and tests/ directories</constraint>
+    <constraint>Maintain backwards compatibility - existing specs without REQ-IDs must still work</constraint>
+  </constraints>
+
+  <success-metrics>
+    <metric>Time from spec approval to first issue: &lt; 5 minutes</metric>
+    <metric>Time from PR merge to spec update: &lt; 30 seconds</metric>
+    <metric>Spec status accuracy: 100% (no drift between code and spec)</metric>
+    <metric>Developer overhead: &lt; 1 minute to add REQ-ID to requirement</metric>
+  </success-metrics>
+</llm-prompt>

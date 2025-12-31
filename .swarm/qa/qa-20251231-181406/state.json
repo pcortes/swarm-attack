@@ -1,0 +1,124 @@
+{
+  "session_id": "qa-20251231-181406",
+  "trigger": "user_command",
+  "depth": "shallow",
+  "status": "completed",
+  "context": {
+    "feature_id": null,
+    "issue_number": null,
+    "bug_id": null,
+    "spec_path": null,
+    "target_files": [],
+    "target_endpoints": [
+      {
+        "method": "GET",
+        "path": "/health",
+        "auth_required": false
+      },
+      {
+        "method": "GET",
+        "path": "/healthz",
+        "auth_required": false
+      },
+      {
+        "method": "GET",
+        "path": "/api/health",
+        "auth_required": false
+      }
+    ],
+    "base_url": null,
+    "environment": {},
+    "git_diff": null,
+    "spec_content": null,
+    "related_tests": []
+  },
+  "result": {
+    "tests_run": 3,
+    "tests_passed": 0,
+    "tests_failed": 3,
+    "tests_skipped": 0,
+    "endpoints_tested": [],
+    "findings": [
+      {
+        "finding_id": "BT-001",
+        "severity": "critical",
+        "category": "behavioral",
+        "endpoint": "GET /health",
+        "test_type": "happy_path",
+        "title": "Request failed",
+        "description": "Test 'happy_path' failed for endpoint GET /health",
+        "expected": {
+          "status": 200
+        },
+        "actual": {
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106e36710>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "evidence": {
+          "request": "curl -X GET http://localhost:8000/health",
+          "response": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106e36710>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "recommendation": "Investigate server error immediately. Check logs for stack traces.",
+        "confidence": 0.9
+      },
+      {
+        "finding_id": "BT-002",
+        "severity": "critical",
+        "category": "behavioral",
+        "endpoint": "GET /healthz",
+        "test_type": "happy_path",
+        "title": "Request failed",
+        "description": "Test 'happy_path' failed for endpoint GET /healthz",
+        "expected": {
+          "status": 200
+        },
+        "actual": {
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /healthz (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106e80e90>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "evidence": {
+          "request": "curl -X GET http://localhost:8000/healthz",
+          "response": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /healthz (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106e80e90>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "recommendation": "Investigate server error immediately. Check logs for stack traces.",
+        "confidence": 0.9
+      },
+      {
+        "finding_id": "BT-003",
+        "severity": "critical",
+        "category": "behavioral",
+        "endpoint": "GET /api/health",
+        "test_type": "happy_path",
+        "title": "Request failed",
+        "description": "Test 'happy_path' failed for endpoint GET /api/health",
+        "expected": {
+          "status": 200
+        },
+        "actual": {
+          "error": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106b8ad50>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "evidence": {
+          "request": "curl -X GET http://localhost:8000/api/health",
+          "response": "HTTPConnectionPool(host='localhost', port=8000): Max retries exceeded with url: /api/health (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x106b8ad50>: Failed to establish a new connection: [Errno 61] Connection refused'))"
+        },
+        "recommendation": "Investigate server error immediately. Check logs for stack traces.",
+        "confidence": 0.9
+      }
+    ],
+    "critical_count": 3,
+    "moderate_count": 0,
+    "minor_count": 0,
+    "recommendation": "block",
+    "confidence": 0.9,
+    "endpoints_discovered": 0,
+    "coverage_percentage": 0.0,
+    "coverage_delta": 0.0
+  },
+  "created_at": "2025-12-31T18:14:06.388924Z",
+  "started_at": "2025-12-31T18:14:06.388928Z",
+  "completed_at": "2025-12-31T18:14:09.417879Z",
+  "cost_usd": 0.0,
+  "error": null,
+  "coverage_report": null,
+  "regression_report": null,
+  "is_baseline": false,
+  "baseline_session_id": null
+}

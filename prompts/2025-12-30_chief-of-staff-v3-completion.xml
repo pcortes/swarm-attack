@@ -1,0 +1,502 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<expert_team_prompt>
+  <metadata>
+    <title>Chief-of-Staff-v3 Feature Completion</title>
+    <created>2025-12-30</created>
+    <priority>P1 - Feature Completion</priority>
+    <estimated_effort>15-20 hours</estimated_effort>
+    <worktree_branch>feature/cos-v3-completion</worktree_branch>
+    <feature_id>chief-of-staff-v3</feature_id>
+  </metadata>
+
+  <problem_statement>
+    <summary>8 BACKLOG issues remain for chief-of-staff-v3 feature + 5 issues have test/implementation problems</summary>
+    <context>
+      Chief-of-Staff is an autonomous AI Tech Lead that manages daily development workflow.
+      The v3 implementation adds campaigns, progress tracking, feedback incorporation, and
+      continue-on-block execution strategy.
+    </context>
+    <current_state>
+      <item>24 issues DONE</item>
+      <item>8 issues in BACKLOG</item>
+      <item>3 issues SKIPPED (intentional)</item>
+      <item>5 DONE issues have test failures or API mismatches</item>
+      <item>Total cost so far: $12.13 USD</item>
+    </current_state>
+    <goal>Complete all BACKLOG issues and fix problematic DONE issues via TDD</goal>
+  </problem_statement>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/cos-v3-completion -b feature/cos-v3-completion
+cd worktrees/cos-v3-completion
+      ]]>
+    </commands>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/cos-v3-completion</working_directory>
+    <verify_command>git status && pwd && PYTHONPATH=. pytest --collect-only 2>&amp;1 | tail -3</verify_command>
+  </worktree_setup>
+
+  <expert_team>
+    <lead role="Campaign System Architect" focus="Issues 7,8,9,10">
+      <responsibilities>
+        <item>Implement CampaignPlanner with backward planning algorithm</item>
+        <item>Implement CampaignExecutor for daily goal execution</item>
+        <item>Create campaign CLI commands</item>
+        <item>Ensure campaigns integrate with existing AutopilotRunner</item>
+      </responsibilities>
+      <key_files>
+        <file>swarm_attack/chief_of_staff/campaigns.py</file>
+        <file>swarm_attack/chief_of_staff/autopilot_runner.py</file>
+        <file>swarm_attack/cli/chief_of_staff.py</file>
+      </key_files>
+    </lead>
+
+    <specialist role="Feedback System Engineer" focus="Issues 34,35">
+      <responsibilities>
+        <item>Implement cos feedback list command</item>
+        <item>Implement cos feedback add command</item>
+        <item>Implement cos feedback clear command</item>
+        <item>Add integration tests for feedback CLI</item>
+      </responsibilities>
+      <key_files>
+        <file>swarm_attack/chief_of_staff/feedback.py</file>
+        <file>swarm_attack/cli/chief_of_staff.py</file>
+      </key_files>
+    </specialist>
+
+    <specialist role="Test Coverage Engineer" focus="Issue 31">
+      <responsibilities>
+        <item>Write comprehensive unit tests for continue-on-block execution</item>
+        <item>Test edge cases: empty goals, all blocked, dependency chains</item>
+        <item>Test budget exhaustion scenarios</item>
+        <item>Test callback invocation order</item>
+      </responsibilities>
+      <key_files>
+        <file>swarm_attack/chief_of_staff/autopilot_runner.py</file>
+        <file>tests/generated/chief-of-staff-v3/test_issue_31.py</file>
+      </key_files>
+    </specialist>
+
+    <specialist role="Bug Fixer" focus="Issues 1,11,14,15,16">
+      <responsibilities>
+        <item>Fix Issue #1: EpisodeStore.find_similar() - 7 test failures</item>
+        <item>Fix Issue #11: standup_campaigns.py implementation incomplete</item>
+        <item>Fix Issues #14,15,16: Critic API mismatches between tests and implementation</item>
+      </responsibilities>
+      <diagnostic_commands>
+        <![CDATA[
+# Check Issue #1 test failures
+PYTHONPATH=. pytest tests/generated/chief-of-staff-v3/test_issue_1.py -v
+
+# Check Issue #11
+PYTHONPATH=. pytest tests/generated/chief-of-staff-v3/test_issue_11.py -v
+
+# Check Critic issues
+PYTHONPATH=. pytest tests/generated/chief-of-staff-v3/test_issue_14.py tests/generated/chief-of-staff-v3/test_issue_15.py tests/generated/chief-of-staff-v3/test_issue_16.py -v
+        ]]>
+      </diagnostic_commands>
+    </specialist>
+  </expert_team>
+
+  <existing_classes>
+    <description>These classes already exist - IMPORT, DO NOT RECREATE</description>
+
+    <class file="swarm_attack/chief_of_staff/campaigns.py">
+      <name>Campaign</name>
+      <name>CampaignState</name>
+      <name>Milestone</name>
+      <name>DayPlan</name>
+      <name>CampaignStore</name>
+    </class>
+
+    <class file="swarm_attack/chief_of_staff/feedback.py">
+      <name>HumanFeedback</name>
+      <name>FeedbackStore</name>
+      <name>FeedbackIncorporator</name>
+    </class>
+
+    <class file="swarm_attack/chief_of_staff/autopilot_runner.py">
+      <name>ExecutionStrategy</name>
+      <name>DependencyGraph</name>
+      <name>GoalExecutionResult</name>
+      <name>AutopilotRunResult</name>
+      <name>SessionContext</name>
+      <name>AutopilotRunner</name>
+    </class>
+
+    <class file="swarm_attack/chief_of_staff/critics.py">
+      <name>CriticFocus</name>
+      <name>CriticScore</name>
+      <name>Critic</name>
+      <name>SpecCritic</name>
+      <name>CodeCritic</name>
+      <name>SuiteCritic</name>
+    </class>
+
+    <class file="swarm_attack/chief_of_staff/episodes.py">
+      <name>Episode</name>
+      <name>EpisodeStore</name>
+      <name>PreferenceSignal</name>
+      <name>PreferenceLearner</name>
+    </class>
+  </existing_classes>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests that verify the feature works</description>
+      <test_location>tests/generated/chief-of-staff-v3/test_issue_{N}.py</test_location>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass the test</description>
+      <constraints>
+        <item>Implement ONE issue at a time</item>
+        <item>Run tests after each change</item>
+        <item>Commit after each issue passes</item>
+      </constraints>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up while keeping tests green</description>
+    </phase>
+
+    <phase name="VERIFY" order="4">
+      <description>Run full test suite to confirm no regressions</description>
+      <command>PYTHONPATH=. pytest tests/ -v --tb=short -x 2>&amp;1 | tee test-results.txt</command>
+    </phase>
+  </tdd_protocol>
+
+  <implementation_order>
+    <phase name="FIX_EXISTING" priority="1">
+      <description>Fix existing issues with test failures before adding new code</description>
+
+      <issue number="1" title="Fix EpisodeStore.find_similar()" effort="1-2 hrs">
+        <problem>7 test failures in test_issue_1.py</problem>
+        <file>swarm_attack/chief_of_staff/episodes.py</file>
+        <steps>
+          <step>Run tests to see exact failures</step>
+          <step>Read test expectations</step>
+          <step>Fix implementation to match test interface</step>
+          <step>Ensure all 7 tests pass</step>
+        </steps>
+      </issue>
+
+      <issue number="11" title="Fix standup_campaigns.py" effort="1 hr">
+        <problem>Coder wrote tests but incomplete implementation</problem>
+        <file>swarm_attack/chief_of_staff/standup_campaigns.py</file>
+        <steps>
+          <step>Read test_issue_11.py to understand expected interface</step>
+          <step>Implement missing methods in standup_campaigns.py</step>
+          <step>Run tests until all pass</step>
+        </steps>
+      </issue>
+
+      <issue number="14" title="Fix SpecCritic API mismatch" effort="30 min">
+        <problem>Test/implementation API mismatch</problem>
+        <file>swarm_attack/chief_of_staff/critics.py</file>
+        <steps>
+          <step>Compare test expectations with implementation</step>
+          <step>Align implementation to match tests OR update tests if implementation is correct</step>
+        </steps>
+      </issue>
+
+      <issue number="15" title="Fix CodeCritic API mismatch" effort="30 min">
+        <problem>Test/implementation API mismatch</problem>
+        <file>swarm_attack/chief_of_staff/critics.py</file>
+      </issue>
+
+      <issue number="16" title="Fix TestCritic API mismatch" effort="30 min">
+        <problem>Test/implementation API mismatch - Note: class renamed to SuiteCritic</problem>
+        <file>swarm_attack/chief_of_staff/critics.py</file>
+        <note>TestCritic was renamed to SuiteCritic for pytest compatibility</note>
+      </issue>
+    </phase>
+
+    <phase name="CAMPAIGN_SYSTEM" priority="2">
+      <description>Implement campaign planning and execution (critical path)</description>
+
+      <issue number="7" title="CampaignPlanner.plan() with backward planning" effort="3-4 hrs" size="large">
+        <dependencies>Issue #5 (Campaign dataclasses - DONE)</dependencies>
+        <interface_contract>
+          <![CDATA[
+class CampaignPlanner:
+    def __init__(self, config: ChiefOfStaffConfig): ...
+
+    def plan(
+        self,
+        campaign: Campaign,
+        available_hours_per_day: float = 6.0,
+    ) -> Campaign:
+        """
+        Generate day plans using backward planning from deadline.
+
+        Args:
+            campaign: Campaign with milestones defined
+            available_hours_per_day: Hours available for work each day
+
+        Returns:
+            Campaign with day_plans populated
+
+        Algorithm:
+            1. Start from deadline, work backwards
+            2. Assign milestones to days based on estimated effort
+            3. Each DayPlan contains goals for that day
+            4. Buffer time for unexpected issues
+        """
+          ]]>
+        </interface_contract>
+        <test_first>
+          <![CDATA[
+# tests/generated/chief-of-staff-v3/test_issue_7.py
+import pytest
+from datetime import date, timedelta
+from swarm_attack.chief_of_staff.campaigns import Campaign, Milestone, DayPlan, CampaignState
+
+class TestCampaignPlannerExists:
+    def test_planner_class_exists(self):
+        from swarm_attack.chief_of_staff.campaigns import CampaignPlanner
+        assert CampaignPlanner is not None
+
+class TestCampaignPlannerPlan:
+    def test_plan_generates_day_plans(self):
+        from swarm_attack.chief_of_staff.campaigns import CampaignPlanner
+        # ... test that plan() populates day_plans
+
+    def test_plan_respects_deadline(self):
+        # All day_plans should be before deadline
+
+    def test_plan_backward_from_deadline(self):
+        # Last milestone should be scheduled closest to deadline
+
+    def test_plan_distributes_work_evenly(self):
+        # Hours per day should not exceed available_hours_per_day
+          ]]>
+        </test_first>
+      </issue>
+
+      <issue number="8" title="CampaignPlanner.replan()" effort="2 hrs" size="medium">
+        <dependencies>Issue #7</dependencies>
+        <interface_contract>
+          <![CDATA[
+def replan(
+    self,
+    campaign: Campaign,
+    completed_milestones: list[str],
+    days_elapsed: int,
+) -> Campaign:
+    """
+    Adjust campaign plan based on actual progress.
+
+    Args:
+        campaign: Current campaign state
+        completed_milestones: IDs of completed milestones
+        days_elapsed: Days since campaign start
+
+    Returns:
+        Campaign with updated day_plans
+
+    Logic:
+        1. Mark completed milestones
+        2. Redistribute remaining work across remaining days
+        3. Flag if campaign is behind schedule
+    """
+          ]]>
+        </interface_contract>
+      </issue>
+
+      <issue number="9" title="CampaignExecutor.execute_day()" effort="3-4 hrs" size="large">
+        <dependencies>Issues #5, #6, #8</dependencies>
+        <interface_contract>
+          <![CDATA[
+class CampaignExecutor:
+    def __init__(
+        self,
+        config: ChiefOfStaffConfig,
+        campaign_store: CampaignStore,
+        autopilot_runner: AutopilotRunner,
+    ): ...
+
+    def execute_day(
+        self,
+        campaign_id: str,
+        day: date = None,  # defaults to today
+    ) -> DayExecutionResult:
+        """
+        Execute goals for a specific day in a campaign.
+
+        Returns:
+            DayExecutionResult with:
+                - goals_completed: int
+                - goals_blocked: list[str]
+                - cost_usd: float
+                - needs_replan: bool
+        """
+          ]]>
+        </interface_contract>
+      </issue>
+
+      <issue number="10" title="Campaign CLI commands" effort="2 hrs" size="medium">
+        <dependencies>Issues #6, #9</dependencies>
+        <commands>
+          <command>cos campaign create &lt;name&gt; --deadline YYYY-MM-DD</command>
+          <command>cos campaign list</command>
+          <command>cos campaign status &lt;campaign-id&gt;</command>
+          <command>cos campaign run &lt;campaign-id&gt;</command>
+          <command>cos campaign replan &lt;campaign-id&gt;</command>
+        </commands>
+        <file>swarm_attack/cli/chief_of_staff.py</file>
+      </issue>
+    </phase>
+
+    <phase name="FEEDBACK_CLI" priority="3">
+      <description>Complete feedback management CLI</description>
+
+      <issue number="34" title="cos feedback list and add commands" effort="2 hrs" size="medium">
+        <dependencies>Issue #33 (DONE)</dependencies>
+        <commands>
+          <command>cos feedback list [--limit N] [--tag TAG]</command>
+          <command>cos feedback add "feedback text" [--tag TAG] [--context CONTEXT]</command>
+        </commands>
+        <interface_contract>
+          <![CDATA[
+# In swarm_attack/cli/chief_of_staff.py
+
+@cos_app.command()
+def feedback_list(
+    limit: int = typer.Option(10, "--limit", "-n"),
+    tag: str = typer.Option(None, "--tag", "-t"),
+):
+    """List recorded feedback."""
+
+@cos_app.command()
+def feedback_add(
+    text: str = typer.Argument(...),
+    tag: str = typer.Option(None, "--tag", "-t"),
+    context: str = typer.Option(None, "--context", "-c"),
+):
+    """Add new feedback."""
+          ]]>
+        </interface_contract>
+      </issue>
+
+      <issue number="35" title="cos feedback clear + integration tests" effort="1.5 hrs" size="medium">
+        <dependencies>Issue #34</dependencies>
+        <commands>
+          <command>cos feedback clear [--before YYYY-MM-DD] [--tag TAG] [--all]</command>
+        </commands>
+        <tests>
+          <item>Integration test: add feedback, list it, clear it, verify empty</item>
+          <item>Test --before flag filters by date</item>
+          <item>Test --tag flag filters by tag</item>
+          <item>Test --all requires confirmation</item>
+        </tests>
+      </issue>
+    </phase>
+
+    <phase name="TEST_COVERAGE" priority="4">
+      <description>Add comprehensive test coverage</description>
+
+      <issue number="31" title="Unit tests for continue-on-block strategy" effort="2-3 hrs" size="medium">
+        <dependencies>Issue #30 (DONE)</dependencies>
+        <test_cases>
+          <case>Empty goals list returns (0, 0.0, set())</case>
+          <case>All goals succeed returns correct count and cost</case>
+          <case>Blocked goal is added to blocked_ids set</case>
+          <case>Dependent goals skipped when dependency blocked</case>
+          <case>Budget exhaustion stops execution</case>
+          <case>on_goal_start callback called for each executed goal</case>
+          <case>on_goal_complete callback called with result</case>
+          <case>Hiccup checkpoint created on goal failure</case>
+          <case>Mixed success/failure returns correct counts</case>
+          <case>Independent goals continue after one blocks</case>
+        </test_cases>
+        <file>tests/generated/chief-of-staff-v3/test_issue_31.py</file>
+      </issue>
+    </phase>
+  </implementation_order>
+
+  <success_criteria>
+    <criterion id="1" priority="MUST">All 8 BACKLOG issues implemented with passing tests</criterion>
+    <criterion id="2" priority="MUST">All 5 problematic DONE issues fixed (tests pass)</criterion>
+    <criterion id="3" priority="MUST">Full test suite passes (4300+ tests, 0 failures)</criterion>
+    <criterion id="4" priority="MUST">Campaign CLI commands work end-to-end</criterion>
+    <criterion id="5" priority="SHOULD">Feedback CLI commands work end-to-end</criterion>
+    <criterion id="6" priority="SHOULD">No new PytestCollectionWarnings</criterion>
+  </success_criteria>
+
+  <commit_protocol>
+    <format>
+      <![CDATA[
+git commit -m "$(cat <<'EOF'
+feat(cos-v3): Issue #N - Short description
+
+- Bullet point of what changed
+- Another bullet point
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+      ]]>
+    </format>
+    <frequency>Commit after each issue is complete and tests pass</frequency>
+  </commit_protocol>
+
+  <state_update>
+    <description>After completing each issue, update the feature state</description>
+    <file>.swarm/state/chief-of-staff-v3.json</file>
+    <fields_to_update>
+      <field>tasks[N].stage = "DONE"</field>
+      <field>tasks[N].blocked_reason = null</field>
+      <field>tasks[N].outputs = {files_created, classes_defined}</field>
+      <field>tasks[N].completion_summary = "..."</field>
+    </fields_to_update>
+  </state_update>
+
+  <emergency_rollback>
+    <description>If fixes cause more problems than they solve</description>
+    <commands>
+      <![CDATA[
+# Abandon worktree changes
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree remove worktrees/cos-v3-completion --force
+
+# Or reset specific commits
+git revert HEAD~N..HEAD
+      ]]>
+    </commands>
+  </emergency_rollback>
+
+  <post_completion>
+    <merge_commands>
+      <![CDATA[
+# Push branch
+git -C /Users/philipjcortes/Desktop/swarm-attack/worktrees/cos-v3-completion push origin feature/cos-v3-completion
+
+# Merge to master (after approval)
+cd /Users/philipjcortes/Desktop/swarm-attack
+git fetch origin feature/cos-v3-completion
+git checkout master
+git merge origin/feature/cos-v3-completion --no-edit
+git push origin master
+
+# Cleanup
+git worktree remove worktrees/cos-v3-completion
+git branch -d feature/cos-v3-completion
+      ]]>
+    </merge_commands>
+    <state_update>
+      <![CDATA[
+# Update feature state to COMPLETE
+# .swarm/state/chief-of-staff-v3.json
+{
+  "phase": "COMPLETE",
+  ...
+}
+      ]]>
+    </state_update>
+  </post_completion>
+</expert_team_prompt>

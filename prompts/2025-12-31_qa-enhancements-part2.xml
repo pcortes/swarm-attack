@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm-prompt>
+  <metadata>
+    <title>QA Agent Enhancement Sprint - PART 2 (Finalization)</title>
+    <created>2025-12-31</created>
+    <original-prompt>/Users/philipjcortes/Desktop/swarm-attack/prompts/2025-12-31_qa-enhancements-continuation.xml</original-prompt>
+    <target-worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</target-worktree>
+    <branch>enhance/qa-pm-ux</branch>
+    <methodology>TDD with Expert Subagent Teams</methodology>
+    <status>PART 2 - Implementation complete, needs finalization</status>
+  </metadata>
+
+  <previous-session-summary>
+    <completed-bugs>
+      <bug id="QA-BUG-001" status="IMPLEMENTED">
+        <description>qa probe command for ad-hoc endpoint testing</description>
+        <files-created>
+          <file>swarm_attack/cli/qa.py</file>
+          <file>tests/unit/cli/test_qa_probe.py</file>
+        </files-created>
+        <tests-passing>10/10</tests-passing>
+      </bug>
+      <bug id="QA-BUG-002" status="IMPLEMENTED">
+        <description>Enhanced qa report display with Tests/Findings/Duration/Depth columns</description>
+        <files-modified>
+          <file>swarm_attack/cli/display.py</file>
+        </files-modified>
+        <files-created>
+          <file>tests/unit/cli/test_qa_report_display.py</file>
+        </files-created>
+        <tests-passing>10/10</tests-passing>
+      </bug>
+      <bug id="QA-BUG-003" status="IMPLEMENTED">
+        <description>Enhanced qa bugs display with session context and action suggestions</description>
+        <files-modified>
+          <file>swarm_attack/qa/models.py (added session_id, created_at to QAFinding)</file>
+          <file>swarm_attack/cli/display.py (added get_action_suggestion, format_qa_bugs_table)</file>
+        </files-modified>
+        <files-created>
+          <file>tests/unit/cli/test_qa_bugs_display.py</file>
+        </files-created>
+        <tests-passing>11/11</tests-passing>
+      </bug>
+      <bug id="QA-BUG-004" status="IMPLEMENTED">
+        <description>P1 edge case tests for resilience testing</description>
+        <files-created>
+          <file>tests/unit/qa/test_edge_cases.py</file>
+        </files-created>
+        <tests-passing>11/11</tests-passing>
+      </bug>
+    </completed-bugs>
+    <total-new-tests>42</total-new-tests>
+    <all-new-tests-passing>true</all-new-tests-passing>
+  </previous-session-summary>
+
+  <remaining-work>
+    <phase id="1" name="Full Test Suite Verification" priority="HIGH">
+      <step>Run the FULL test suite to ensure no regressions</step>
+      <command>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements && PYTHONPATH=. pytest tests/ -v --tb=short</command>
+      <success-criteria>All tests pass with no regressions</success-criteria>
+    </phase>
+
+    <phase id="2" name="Atomic Commits" priority="HIGH">
+      <description>Create four atomic commits for each bug fix</description>
+
+      <commit number="1">
+        <message>feat(qa): add probe command for ad-hoc endpoint testing</message>
+        <files>
+          <file>swarm_attack/cli/qa.py</file>
+          <file>swarm_attack/cli/app.py</file>
+          <file>tests/unit/cli/__init__.py</file>
+          <file>tests/unit/cli/test_qa_probe.py</file>
+        </files>
+        <description>Adds swarm-attack qa probe command for lightweight HTTP endpoint testing</description>
+      </commit>
+
+      <commit number="2">
+        <message>enhance(qa): add test counts and duration to report display</message>
+        <files>
+          <file>swarm_attack/cli/display.py</file>
+          <file>tests/unit/cli/test_qa_report_display.py</file>
+        </files>
+        <description>Adds Tests, Findings, Duration, Depth columns to qa report output</description>
+      </commit>
+
+      <commit number="3">
+        <message>enhance(qa): add session and timestamp to bugs display</message>
+        <files>
+          <file>swarm_attack/qa/models.py</file>
+          <file>tests/unit/cli/test_qa_bugs_display.py</file>
+        </files>
+        <description>Adds session_id and created_at fields to QAFinding, enhanced bugs display</description>
+      </commit>
+
+      <commit number="4">
+        <message>test(qa): add P1 edge case tests for resilience</message>
+        <files>
+          <file>tests/unit/qa/test_edge_cases.py</file>
+        </files>
+        <description>Adds 11 edge case tests for malformed data, timeouts, rate limits</description>
+      </commit>
+    </phase>
+
+    <phase id="3" name="Documentation Update" priority="MEDIUM">
+      <description>Update CLI documentation with new QA commands</description>
+      <file-to-update>docs/cli.md (if exists) or README.md</file-to-update>
+      <content-to-add>
+        - Document `swarm-attack qa probe` command
+        - Document `swarm-attack qa report` command enhancements
+        - Document `swarm-attack qa bugs` command enhancements
+      </content-to-add>
+    </phase>
+
+    <phase id="4" name="Push Changes" priority="HIGH">
+      <step>Push all commits to remote</step>
+      <command>git push origin enhance/qa-pm-ux</command>
+    </phase>
+
+    <phase id="5" name="Create Pull Request" priority="MEDIUM">
+      <description>Create PR with summary of all changes</description>
+      <pr-title>feat(qa): QA Agent PM/UX Enhancements</pr-title>
+      <pr-body>
+## Summary
+- Added `qa probe` command for ad-hoc HTTP endpoint testing
+- Enhanced `qa report` with Tests, Findings, Duration, Depth columns
+- Enhanced `qa bugs` with Session, Timestamp columns and action suggestions
+- Added 42 new tests including 11 P1 edge case tests
+
+## Changes
+- New file: `swarm_attack/cli/qa.py`
+- Modified: `swarm_attack/cli/display.py` (new QA formatters)
+- Modified: `swarm_attack/qa/models.py` (session_id, created_at fields)
+- New tests: `tests/unit/cli/test_qa_*.py`, `tests/unit/qa/test_edge_cases.py`
+
+## Test Plan
+- [x] All 42 new tests pass
+- [x] No regressions in existing test suite
+- [ ] Manual verification of `swarm-attack qa probe http://localhost:8080/api/health`
+      </pr-body>
+    </phase>
+  </remaining-work>
+
+  <worktree-setup>
+    <location>/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</location>
+    <branch>enhance/qa-pm-ux</branch>
+    <verification-commands>
+      <cmd>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</cmd>
+      <cmd>pwd  # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</cmd>
+      <cmd>git branch  # Must show: * enhance/qa-pm-ux</cmd>
+    </verification-commands>
+  </worktree-setup>
+
+  <current-git-status>
+    <modified>
+      <file>swarm_attack/cli/app.py</file>
+      <file>swarm_attack/cli/display.py</file>
+      <file>swarm_attack/qa/models.py</file>
+    </modified>
+    <untracked>
+      <file>swarm_attack/cli/qa.py</file>
+      <file>tests/unit/cli/__init__.py</file>
+      <file>tests/unit/cli/test_qa_probe.py</file>
+      <file>tests/unit/cli/test_qa_report_display.py</file>
+      <file>tests/unit/cli/test_qa_bugs_display.py</file>
+      <file>tests/unit/qa/test_edge_cases.py</file>
+    </untracked>
+  </current-git-status>
+
+  <instructions>
+    <critical-note>
+      All work MUST happen in the worktree at /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements
+      The branch MUST be enhance/qa-pm-ux
+    </critical-note>
+
+    <step order="1">Verify worktree and branch are correct</step>
+    <step order="2">Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+    <step order="3">Fix any failing tests (if any)</step>
+    <step order="4">Create atomic commits in order (commit 1, 2, 3, 4)</step>
+    <step order="5">Update documentation if docs/cli.md exists</step>
+    <step order="6">Push to remote: git push origin enhance/qa-pm-ux</step>
+    <step order="7">Create PR using gh CLI</step>
+  </instructions>
+
+  <acceptance-criteria>
+    <criterion>All 42 new tests pass</criterion>
+    <criterion>No regressions in existing test suite (933+ tests)</criterion>
+    <criterion>4 atomic commits created with proper messages</criterion>
+    <criterion>Changes pushed to enhance/qa-pm-ux branch</criterion>
+    <criterion>PR created with summary</criterion>
+  </acceptance-criteria>
+
+  <constraints>
+    <constraint>ALL work in /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</constraint>
+    <constraint>Use proper commit message format: type(scope): description</constraint>
+    <constraint>Do not modify files outside the scope of QA enhancements</constraint>
+  </constraints>
+</llm-prompt>
