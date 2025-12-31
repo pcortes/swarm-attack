@@ -2,6 +2,17 @@
 
 All notable changes to Swarm Attack are documented here.
 
+## [0.3.1] - 2025-12-31
+
+### Bug Fixes
+
+- **BUG-001 (cli)**: Fixed COS standup crash in non-interactive mode. Now uses `prompt_or_default()` from ux.py to gracefully handle pipes, CI, and cron environments.
+- **BUG-002 (cli)**: Added missing `--auto/--manual` flags to top-level `swarm-attack approve` command. Now matches `swarm-attack feature approve` signature.
+- **BUG-003 (cos)**: Added automatic checkpoint cleanup at autopilot session start. Stale checkpoints older than 7 days are now auto-removed.
+- **BUG-004 (chore)**: Synced package version to 0.3.0 in pyproject.toml and __init__.py.
+
+---
+
 ## [0.3.0] - 2025-12-29
 
 ### Major Features
