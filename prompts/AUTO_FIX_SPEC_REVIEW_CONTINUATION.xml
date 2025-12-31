@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<continuation_prompt>
+  <metadata>
+    <title>Auto-Fix Spec Review Continuation</title>
+    <created>2025-12-31</created>
+    <objective>Review critic feedback and revise the auto-fix spec</objective>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack-integration</working_directory>
+  </metadata>
+
+  <context>
+    <spec_path>specs/auto-fix/spec-draft.md</spec_path>
+    <critic_review_path>specs/auto-fix/critic-review.json</critic_review_path>
+    <prd_path>.claude/prds/auto-fix.md</prd_path>
+    <feature_status>SPEC_IN_PROGRESS (needs revision)</feature_status>
+  </context>
+
+  <critic_summary>
+    <overall_score>0.74</overall_score>
+    <recommendation>REVISE</recommendation>
+    <pass_threshold>0.85</pass_threshold>
+
+    <scores>
+      <clarity>0.85</clarity>
+      <coverage>0.75</coverage>
+      <architecture>0.65</architecture>
+      <risk>0.70</risk>
+    </scores>
+
+    <critical_issues count="4">
+      <issue id="1">
+        <title>Circuit Breaker Pattern</title>
+        <problem>Enterprise pattern (Netflix/Hystrix) for a CLI tool</problem>
+        <suggestion>Remove. Simple max_iterations counter is enough.</suggestion>
+      </issue>
+      <issue id="2">
+        <title>Hourly Rate Limiting</title>
+        <problem>"Max 10 fixes per hour" - enterprise paranoia for a local CLI</problem>
+        <suggestion>Remove. max_iterations per run is sufficient.</suggestion>
+      </issue>
+      <issue id="3">
+        <title>Cron Scheduler</title>
+        <problem>Building cron into a CLI tool reinvents the wheel</problem>
+        <suggestion>Remove scheduled triggers. Let users use actual cron.</suggestion>
+      </issue>
+      <issue id="4">
+        <title>Auto-Watch Daemon Mode</title>
+        <problem>Background service adds complexity (PIDs, process management)</problem>
+        <suggestion>Remove. Stick to run-once CLI commands.</suggestion>
+      </issue>
+    </critical_issues>
+
+    <moderate_issues count="4">
+      <issue>Too many config options (20+) - cut to 5 essentials</issue>
+      <issue>8 eligibility criteria - simplify to 3</issue>
+      <issue>Missing graceful handling when tools not installed</issue>
+      <issue>Event system may be over-abstraction</issue>
+    </moderate_issues>
+
+    <strengths>
+      <strength>Reuses existing BugOrchestrator and QAOrchestrator</strength>
+      <strength>Identifies critical gap in qa create-bugs</strength>
+      <strength>Conservative default (auto_approve=False)</strength>
+      <strength>Clear CLI interface design</strength>
+      <strength>Reasonable effort estimate</strength>
+    </strengths>
+  </critic_summary>
+
+  <your_options>
+    <option name="A: Accept All Feedback">
+      <description>Revise spec to address all critical and moderate issues</description>
+      <actions>
+        <action>Remove auto-watch daemon mode</action>
+        <action>Remove scheduled triggers/cron</action>
+        <action>Remove circuit breaker and rate limiting</action>
+        <action>Simplify config to 5 options</action>
+        <action>Simplify safety criteria to 3 checks</action>
+        <action>Add tool-not-found graceful handling</action>
+      </actions>
+      <command>Run /feature-spec-moderator auto-fix to generate revised spec</command>
+    </option>
+
+    <option name="B: Partial Accept">
+      <description>Accept some feedback, push back on others</description>
+      <discussion_points>
+        <point>Circuit breaker: Is it really over-engineering or prudent safety?</point>
+        <point>Scheduled triggers: Valuable for CI/CD integration?</point>
+        <point>Config options: Are defaults enough or do users need control?</point>
+      </discussion_points>
+      <action>Discuss with team, then revise selectively</action>
+    </option>
+
+    <option name="C: Reject Feedback">
+      <description>Argue that the complexity is justified</description>
+      <required_justification>
+        <item>Why do we need daemon mode for a CLI?</item>
+        <item>Who are the users that need 20+ config options?</item>
+        <item>What's the cost of shipping simpler first?</item>
+      </required_justification>
+    </option>
+
+    <option name="D: Split the Feature">
+      <description>Ship simple version first, add complexity later</description>
+      <phase_1>
+        <name>MVP Auto-Fix</name>
+        <scope>
+          <item>swarm-attack analyze all (detect bugs)</item>
+          <item>swarm-attack analyze all --create-bugs</item>
+          <item>swarm-attack qa auto-fix (one-shot, no daemon)</item>
+        </scope>
+        <config>enabled, max_iterations, dry_run, auto_approve</config>
+        <effort>8-10 hours</effort>
+      </phase_1>
+      <phase_2>
+        <name>Advanced Auto-Fix (if needed)</name>
+        <scope>
+          <item>Watch mode</item>
+          <item>Scheduled triggers</item>
+          <item>Advanced safety controls</item>
+        </scope>
+        <trigger>Ship Phase 1, see if users ask for more</trigger>
+      </phase_2>
+    </option>
+  </your_options>
+
+  <recommended_path>
+    <choice>Option D: Split the Feature</choice>
+    <rationale>
+      Ship the simple version this week. See if anyone actually needs daemon mode
+      or scheduled triggers. Probably they won't. The core value is:
+      "detect bugs → create bug entries → fix them" - everything else is speculative.
+    </rationale>
+  </recommended_path>
+
+  <next_steps>
+    <step order="1">
+      <action>Review critic feedback in detail</action>
+      <command>cat specs/auto-fix/critic-review.json | python -m json.tool</command>
+    </step>
+    <step order="2">
+      <action>Decide on approach (A, B, C, or D)</action>
+      <human_decision>true</human_decision>
+    </step>
+    <step order="3" if="option_A_or_D">
+      <action>Run moderator to revise spec</action>
+      <command>swarm-attack run auto-fix</command>
+      <or_manual>Edit specs/auto-fix/spec-draft.md directly</or_manual>
+    </step>
+    <step order="4">
+      <action>Re-run critic on revised spec</action>
+      <command>swarm-attack run auto-fix (will run critic again)</command>
+      <target_score>≥ 0.85</target_score>
+    </step>
+    <step order="5" if="score_passes">
+      <action>Approve spec</action>
+      <command>swarm-attack approve auto-fix</command>
+    </step>
+    <step order="6">
+      <action>Create implementation issues</action>
+      <command>swarm-attack issues auto-fix</command>
+    </step>
+  </next_steps>
+
+  <simplified_spec_outline>
+    <description>If you choose Option D (recommended), here's the MVP spec:</description>
+    <spec>
+      <![CDATA[
+# Auto-Fix MVP Specification
+
+## Overview
+Detect bugs via static analysis and feed them into Bug Bash pipeline.
+
+## Components
+
+### 1. StaticBugDetector (~150 LOC)
+```python
+class StaticBugDetector:
+    def detect_from_tests(path=None) -> list[BugReport]  # pytest --json-report
+    def detect_from_types(path=None) -> list[BugReport]  # mypy --output=json
+    def detect_from_lint(path=None) -> list[BugReport]   # ruff --output-format=json
+```
+
+### 2. CLI Commands
+```bash
+swarm-attack analyze all              # Run all three tools
+swarm-attack analyze all --create-bugs # Create bug bash entries
+swarm-attack analyze tests            # pytest only
+swarm-attack analyze types            # mypy only
+swarm-attack analyze lint             # ruff only
+swarm-attack qa auto-fix <target>     # Detection-fix loop (one-shot)
+swarm-attack qa auto-fix <target> --dry-run
+swarm-attack qa auto-fix <target> --approve-all
+```
+
+### 3. Config (5 options only)
+```yaml
+auto_fix:
+  enabled: false
+  max_iterations: 3
+  dry_run: false
+  auto_approve: false
+  blocklist: ["*.env*", "*secret*"]
+```
+
+### 4. Safety (3 criteria)
+1. Severity ≤ MODERATE
+2. File not in blocklist
+3. Attempts < max_iterations
+
+## What's NOT in MVP
+- No daemon/watch mode
+- No scheduled triggers
+- No circuit breaker
+- No rate limiting
+- No hourly limits
+
+## Effort: 8-10 hours
+      ]]>
+    </spec>
+  </simplified_spec_outline>
+
+  <commands_reference>
+    <command name="View critic review">cat specs/auto-fix/critic-review.json | python -m json.tool</command>
+    <command name="View current spec">cat specs/auto-fix/spec-draft.md</command>
+    <command name="Run moderator">swarm-attack run auto-fix</command>
+    <command name="Check status">swarm-attack status auto-fix</command>
+    <command name="Approve spec">swarm-attack approve auto-fix</command>
+    <command name="Create issues">swarm-attack issues auto-fix</command>
+  </commands_reference>
+</continuation_prompt>
