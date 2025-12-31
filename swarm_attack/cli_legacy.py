@@ -248,10 +248,20 @@ def approve(
         ...,
         help="Feature ID to approve the spec for.",
     ),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help="Enable auto-approval mode (disable manual mode).",
+    ),
+    manual: bool = typer.Option(
+        False,
+        "--manual",
+        help="Enable manual mode (require human approval for all decisions).",
+    ),
 ) -> None:
     """Approve a spec that is ready for approval."""
     from swarm_attack.cli.feature import approve as feature_approve
-    feature_approve(feature_id)
+    feature_approve(feature_id, auto, manual)
 
 
 @app.command()
