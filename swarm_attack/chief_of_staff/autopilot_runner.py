@@ -870,6 +870,10 @@ class AutopilotRunner:
         # Reset daily cost at session start (Issue #12 requirement)
         self.checkpoint_system.reset_daily_cost()
 
+        # BUG-003: Auto-cleanup stale checkpoints at session start
+        # This prevents accumulation of old HICCUP checkpoints from test runs
+        self.checkpoint_system.store.cleanup_stale_checkpoints_sync(max_age_days=7)
+
         # Start progress tracking
         self.progress_tracker.start_session(total_goals=len(goals))
 
