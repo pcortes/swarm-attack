@@ -69,8 +69,21 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "src/sub_agent.py"
+        ],
+        "classes_defined": {
+          "src/sub_agent.py": [
+            "SkillLoaderProtocol",
+            "SubAgentError",
+            "SubAgentResult",
+            "SubAgentRunner"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 1 file(s): src/sub_agent.py; Defined: SkillLoaderProtocol, SubAgentError, SubAgentResult, SubAgentRunner",
       "parent_issue": null,
       "child_issues": []
     },
@@ -92,7 +105,7 @@
     },
     {
       "issue_number": 5,
-      "stage": "BACKLOG",
+      "stage": "DONE",
       "title": "Create ConsensusChecker module",
       "dependencies": [
         1
@@ -304,11 +317,11 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20251231_212418_457942",
+  "current_session": "sess_20251231_212833_688564",
   "created_at": "2025-12-31T20:58:32.451293Z",
-  "updated_at": "2025-12-31T21:23:22.400833Z",
-  "cost_total_usd": 0.3335281,
+  "updated_at": "2025-12-31T21:28:19.581285Z",
+  "cost_total_usd": 1.4566527000000002,
   "cost_by_phase": {
-    "IMPLEMENTATION": 0.3335281
+    "IMPLEMENTATION": 1.4566527000000002
   }
 }

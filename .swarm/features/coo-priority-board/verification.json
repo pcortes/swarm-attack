@@ -1,6 +1,6 @@
 {
   "feature_id": "coo-priority-board",
-  "last_updated": "2025-12-31T13:22:47.808151",
+  "last_updated": "2025-12-31T13:27:54.027087",
   "issues": [
     {
       "issue_number": 1,
@@ -8,6 +8,13 @@
       "status": "passing",
       "test_count": 62,
       "last_verified": "2025-12-31T13:22:47.808151"
+    },
+    {
+      "issue_number": 5,
+      "title": "",
+      "status": "passing",
+      "test_count": 95,
+      "last_verified": "2025-12-31T13:27:54.027087"
     }
   ]
 }
