@@ -638,16 +638,20 @@ class TestGoalErrorCountUpdated:
     """Test that goal.error_count is updated correctly during recovery."""
 
     def test_error_count_incremented_on_each_failure(self):
-        """goal.error_count is incremented on each failed attempt."""
+        """goal.error_count is incremented once per failed execution (not per retry).
+
+        AutopilotRunner consolidates retries into a single error count from the
+        user's perspective - one execution attempt = one potential error.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             config = ChiefOfStaffConfig()
             checkpoint_system = CheckpointSystem(config=config)
             session_store = AutopilotSessionStore(base_path=Path(tmpdir))
-            
+
             orchestrator = MockOrchestrator(
                 should_raise=LLMError("timeout", error_type=LLMErrorType.TIMEOUT)
             )
-            
+
             runner = AutopilotRunner(
                 config=config,
                 checkpoint_system=checkpoint_system,
@@ -656,33 +660,37 @@ class TestGoalErrorCountUpdated:
             )
             runner.recovery_manager.backoff_base_seconds = 0
             runner.recovery_manager.backoff_multiplier = 1
-            
+
             goal = make_goal(linked_feature="test-feature", linked_issue=1)
             assert goal.error_count == 0
-            
+
             runner._execute_goal(goal)
-            
-            # Should have 3 errors (MAX_RETRIES)
-            assert goal.error_count == 3
+
+            # One failed execution = one error increment (retries are consolidated)
+            assert goal.error_count == 1
 
     def test_error_count_correct_after_eventual_success(self):
-        """goal.error_count reflects failures before eventual success."""
+        """goal.error_count is not incremented on eventual success.
+
+        AutopilotRunner resets error_count to original on success - from the
+        user's perspective, a successful execution means no error occurred.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             config = ChiefOfStaffConfig()
             checkpoint_system = CheckpointSystem(config=config)
             session_store = AutopilotSessionStore(base_path=Path(tmpdir))
-            
+
             call_count = [0]
-            
+
             def run_issue_session(feature_id: str, issue_number: int):
                 call_count[0] += 1
                 if call_count[0] < 3:
                     raise LLMError("timeout", error_type=LLMErrorType.TIMEOUT)
                 return MagicMock(status="success", cost_usd=0.10, message="")
-            
+
             orchestrator = MagicMock()
             orchestrator.run_issue_session = run_issue_session
-            
+
             runner = AutopilotRunner(
                 config=config,
                 checkpoint_system=checkpoint_system,
@@ -691,9 +699,10 @@ class TestGoalErrorCountUpdated:
             )
             runner.recovery_manager.backoff_base_seconds = 0
             runner.recovery_manager.backoff_multiplier = 1
-            
+
             goal = make_goal(linked_feature="test-feature", linked_issue=1)
             result = runner._execute_goal(goal)
-            
+
             assert result.success is True
-            assert goal.error_count == 2  # 2 failures before success
+            # Success resets error_count - no error from user's perspective
+            assert goal.error_count == 0

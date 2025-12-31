@@ -73,10 +73,13 @@ class IssueValidatorAgent(BaseAgent):
     def codex(self) -> CodexCliRunner:
         """Get the Codex runner (lazy initialization)."""
         if self._codex is None:
+            # Invert check_codex_auth: True means DO check (skip=False), False means DON'T check (skip=True)
+            skip_auth = not self.config.preflight.check_codex_auth
             self._codex = CodexCliRunner(
                 config=self.config,
                 logger=self.logger,
                 checkpoint_callback=lambda: self.checkpoint("pre_codex_call"),
+                skip_auth_classification=skip_auth,
             )
         return self._codex
 

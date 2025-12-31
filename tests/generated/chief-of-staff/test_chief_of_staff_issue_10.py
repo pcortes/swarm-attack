@@ -71,21 +71,26 @@ def runner(
 
 @pytest.fixture
 def sample_goals() -> list[DailyGoal]:
-    """Create sample goals for testing."""
+    """Create sample goals for testing.
+
+    Note: Goals must NOT have linked_bug/linked_feature/linked_spec with
+    actual values unless the corresponding orchestrator is mocked,
+    otherwise they will fail due to missing orchestrators.
+    """
     return [
         DailyGoal(
             goal_id="goal-1",
             description="Complete feature X",
             priority=GoalPriority.HIGH,
             estimated_minutes=60,
-            linked_feature="feature-x",
+            # No linked_feature - allows stub execution
         ),
         DailyGoal(
             goal_id="goal-2",
             description="Fix bug Y",
             priority=GoalPriority.MEDIUM,
             estimated_minutes=30,
-            linked_bug="bug-y",
+            # No linked_bug - allows stub execution
         ),
         DailyGoal(
             goal_id="goal-3",
@@ -153,8 +158,7 @@ class TestAutopilotRunnerStart:
         result = runner.start(sample_goals)
 
         assert result.session is not None
-        # Session ID is an 8-character UUID substring
-        assert len(result.session.session_id) == 8
+        assert result.session.session_id.startswith("auto-")
         assert result.session.state == AutopilotState.COMPLETED
 
     def test_start_executes_all_goals(
@@ -190,14 +194,12 @@ class TestAutopilotRunnerStart:
     def test_start_dry_run(
         self, runner: AutopilotRunner, sample_goals: list[DailyGoal]
     ):
-        """Test dry run mode sets flag (execution is stubbed in tests anyway)."""
+        """Test dry run mode doesn't execute."""
         result = runner.start(sample_goals, dry_run=True)
 
-        # dry_run flag is set but stub execution still runs (no real work done)
-        # Verify dry_run was accepted and goals_total is correct
+        assert result.goals_completed == 0
         assert result.goals_total == 3
-        # Session completes even in dry_run since stub has no actual work
-        assert result.session.state == AutopilotState.COMPLETED
+        assert result.session.state == AutopilotState.RUNNING
 
     def test_start_with_custom_budget(
         self, runner: AutopilotRunner, sample_goals: list[DailyGoal]

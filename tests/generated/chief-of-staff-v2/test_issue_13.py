@@ -20,6 +20,7 @@ from swarm_attack.chief_of_staff.recovery import (
     BACKOFF_SECONDS,
 )
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalPriority
+from swarm_attack.errors import LLMError, LLMErrorType
 
 
 class TestRecoveryLevelEnum:
@@ -108,7 +109,7 @@ class TestExecuteWithRecovery:
         async def action():
             call_count[0] += 1
             if call_count[0] == 1:
-                raise Exception("First attempt failed")
+                raise LLMError("First attempt failed", error_type=LLMErrorType.RATE_LIMIT)
             return "success_on_retry"
 
         # Mock sleep to not actually wait
@@ -140,7 +141,7 @@ class TestExecuteWithRecovery:
             estimated_minutes=30,
         )
 
-        action = AsyncMock(side_effect=Exception("Always fails"))
+        action = AsyncMock(side_effect=LLMError("Always fails", error_type=LLMErrorType.RATE_LIMIT))
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(asyncio, "sleep", AsyncMock())
@@ -171,7 +172,7 @@ class TestExecuteWithRecovery:
         )
         goal.error_count = 0
 
-        action = AsyncMock(side_effect=Exception("Fails"))
+        action = AsyncMock(side_effect=LLMError("Fails", error_type=LLMErrorType.RATE_LIMIT))
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(asyncio, "sleep", AsyncMock())

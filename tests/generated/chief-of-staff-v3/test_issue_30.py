@@ -147,6 +147,8 @@ class TestAutopilotRunnerStartUsesExecutionStrategy:
         mock = MagicMock()
         mock.reset_daily_cost = MagicMock()
         mock.update_daily_cost = MagicMock()
+        # check_triggers is called before check_before_execution - must return None to continue
+        mock.check_triggers = MagicMock(return_value=None)
         # Make check_before_execution return a simple result
         mock_result = MagicMock()
         mock_result.requires_approval = False

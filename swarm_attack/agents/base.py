@@ -159,6 +159,19 @@ class BaseAgent(ABC):
     # Agent name used in logs and checkpoints (override in subclasses)
     name: str = "base_agent"
 
+    # Default tools available to all agents for codebase research
+    DEFAULT_TOOLS: list[str] = ["Read", "Glob", "Grep"]
+
+    @classmethod
+    def get_tools(cls) -> list[str]:
+        """
+        Get the default tools for this agent class.
+
+        Returns:
+            List of tool names available to this agent.
+        """
+        return cls.DEFAULT_TOOLS.copy()
+
     def __init__(
         self,
         config: SwarmConfig,

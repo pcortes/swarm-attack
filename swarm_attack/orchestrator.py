@@ -100,6 +100,10 @@ KNOWN_EXTERNAL_IMPORTS: dict[str, str] = {
 }
 
 
+# Maximum number of retries for critic failures (0-indexed, so 2 means 3 total attempts)
+MAX_CRITIC_RETRIES = 2
+
+
 @dataclass
 class PipelineResult:
     """
@@ -866,26 +870,43 @@ class Orchestrator:
                     )
 
             # Step 2: Critic reviews spec (with rejection context for round 2+)
+            # Retry logic for critic failures
             self._emit_progress("critic_start", {"feature_id": feature_id, "round": round_num})
-            self._critic.reset()
-            # Build rejection context from prior dispositions
             rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
-            critic_result = self._critic.run({
-                "feature_id": feature_id,
-                "rejection_context": rejection_context,
-            })
-            total_cost += critic_result.cost_usd
 
-            if critic_result.success:
-                self._emit_progress("critic_complete", {
+            critic_result = None
+            for attempt in range(MAX_CRITIC_RETRIES + 1):  # 0, 1, 2 = 3 total attempts
+                self._critic.reset()
+                critic_result = self._critic.run({
                     "feature_id": feature_id,
-                    "round": round_num,
-                    "scores": critic_result.output.get("scores", {}),
-                    "recommendation": critic_result.output.get("recommendation", ""),
-                    "issue_counts": critic_result.output.get("issue_counts", {}),
-                    "cost_usd": critic_result.cost_usd,
+                    "rejection_context": rejection_context,
                 })
+                total_cost += critic_result.cost_usd
 
+                if critic_result.success:
+                    self._emit_progress("critic_complete", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "scores": critic_result.output.get("scores", {}),
+                        "recommendation": critic_result.output.get("recommendation", ""),
+                        "issue_counts": critic_result.output.get("issue_counts", {}),
+                        "cost_usd": critic_result.cost_usd,
+                    })
+                    break  # Success, exit retry loop
+
+                # Log retry attempt (before retrying, not after final failure)
+                if attempt < MAX_CRITIC_RETRIES:
+                    self._log(
+                        "critic_retry",
+                        {
+                            "feature_id": feature_id,
+                            "attempt": attempt + 1,
+                            "max_retries": MAX_CRITIC_RETRIES,
+                            "error": critic_result.errors[0] if critic_result.errors else "Unknown error",
+                        },
+                    )
+
+            # Check if all attempts failed
             if not critic_result.success:
                 self._log(
                     "critic_failure",
@@ -899,7 +920,7 @@ class Orchestrator:
                     rounds_completed=round_num - 1,
                     final_scores=final_scores,
                     total_cost_usd=total_cost,
-                    error=f"Spec critic failed to review: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
+                    error=f"Spec critic failed after {MAX_CRITIC_RETRIES + 1} attempts: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
                 )
 
             # Extract scores and issues from critic result
@@ -1143,15 +1164,34 @@ class Orchestrator:
             self._log("round_start", {"feature_id": feature_id, "round": round_num})
 
             # Step 1: Critic reviews spec (with rejection context for round 2+)
-            self._critic.reset()
-            # Build rejection context from prior dispositions
+            # Retry logic for critic failures
             rejection_context = self._build_rejection_context_for_critic(feature_id) if round_num > 1 else ""
-            critic_result = self._critic.run({
-                "feature_id": feature_id,
-                "rejection_context": rejection_context,
-            })
-            total_cost += critic_result.cost_usd
 
+            critic_result = None
+            for attempt in range(MAX_CRITIC_RETRIES + 1):  # 0, 1, 2 = 3 total attempts
+                self._critic.reset()
+                critic_result = self._critic.run({
+                    "feature_id": feature_id,
+                    "rejection_context": rejection_context,
+                })
+                total_cost += critic_result.cost_usd
+
+                if critic_result.success:
+                    break  # Success, exit retry loop
+
+                # Log retry attempt (before retrying, not after final failure)
+                if attempt < MAX_CRITIC_RETRIES:
+                    self._log(
+                        "critic_retry",
+                        {
+                            "feature_id": feature_id,
+                            "attempt": attempt + 1,
+                            "max_retries": MAX_CRITIC_RETRIES,
+                            "error": critic_result.errors[0] if critic_result.errors else "Unknown error",
+                        },
+                    )
+
+            # Check if all attempts failed
             if not critic_result.success:
                 self._log(
                     "critic_failure",
@@ -1165,7 +1205,7 @@ class Orchestrator:
                     rounds_completed=round_num - 1,
                     final_scores=final_scores,
                     total_cost_usd=total_cost,
-                    error=f"Spec critic failed to review: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
+                    error=f"Spec critic failed after {MAX_CRITIC_RETRIES + 1} attempts: {critic_result.errors[0] if critic_result.errors else 'Unknown error'}",
                 )
 
             # Extract scores and issues from critic result

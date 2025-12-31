@@ -268,10 +268,11 @@ class ComplexityGateAgent(BaseAgent):
         prompt = self._build_estimation_prompt(issue, criteria_count, method_count, spec_content)
 
         try:
-            # Use Haiku for cheap estimation
+            # Use Haiku for cheap estimation with research tools for codebase exploration
+            from swarm_attack.agents.tool_sets import get_tools_for_agent
             result = self.llm.run(
                 prompt,
-                allowed_tools=[],
+                allowed_tools=get_tools_for_agent("ComplexityGateAgent"),
                 max_turns=1,
                 model="haiku",  # Cheap, fast model
             )

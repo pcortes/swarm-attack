@@ -14,6 +14,7 @@ IMPORTANT: Codex CLI has a known bug where it crashes on rate limits
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -91,6 +92,7 @@ class CodexCliRunner:
     config: SwarmConfig
     logger: Optional[SwarmLogger] = None
     checkpoint_callback: Optional[Callable[[], None]] = None
+    skip_auth_classification: bool = False
 
     def _build_command(
         self,
@@ -227,7 +229,9 @@ class CodexCliRunner:
             returncode=returncode,
         )
 
-        if error_type == LLMErrorType.AUTH_REQUIRED:
+        # When skip_auth_classification is True, treat auth errors as generic
+        # invocation errors instead of raising CodexAuthError
+        if error_type == LLMErrorType.AUTH_REQUIRED and not self.skip_auth_classification:
             raise CodexAuthError(
                 "Codex authentication required",
                 stderr=stderr,
@@ -324,6 +328,7 @@ class CodexCliRunner:
                 text=True,
                 cwd=cwd,
                 timeout=timeout_seconds,
+                env=os.environ.copy(),
             )
 
             # Check for errors first

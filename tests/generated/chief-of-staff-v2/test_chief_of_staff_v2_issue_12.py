@@ -90,6 +90,8 @@ class TestCheckBeforeExecution:
         """Test that check_before_execution is called before each goal."""
         config = ChiefOfStaffConfig()
         checkpoint_system = MagicMock(spec=CheckpointSystem)
+        # check_triggers is called before check_before_execution - must return None to continue
+        checkpoint_system.check_triggers = MagicMock(return_value=None)
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
@@ -187,6 +189,8 @@ class TestUpdateDailyCost:
         """Test that update_daily_cost is called after each goal execution."""
         config = ChiefOfStaffConfig()
         checkpoint_system = MagicMock(spec=CheckpointSystem)
+        # check_triggers is called before check_before_execution - must return None to continue
+        checkpoint_system.check_triggers = MagicMock(return_value=None)
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
@@ -269,6 +273,8 @@ class TestExecutionLoopBreaksOnCheckpointPending:
             return CheckpointResult(requires_approval=False, approved=True)
 
         checkpoint_system = MagicMock(spec=CheckpointSystem)
+        # check_triggers is called before check_before_execution - must return None to continue
+        checkpoint_system.check_triggers = MagicMock(return_value=None)
         checkpoint_system.check_before_execution = mock_check
         session_store = MagicMock()
         session_store.save = MagicMock()
@@ -335,6 +341,8 @@ class TestCheckpointCallback:
         )
 
         checkpoint_system = MagicMock(spec=CheckpointSystem)
+        # check_triggers is called before check_before_execution - must return None to continue
+        checkpoint_system.check_triggers = MagicMock(return_value=None)
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(
                 requires_approval=True,

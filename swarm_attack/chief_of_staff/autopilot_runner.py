@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from swarm_attack.chief_of_staff.autopilot import AutopilotSession, AutopilotState
 from swarm_attack.chief_of_staff.autopilot_store import AutopilotSessionStore
-from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger
+from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger, TriggerCheckResult
 from swarm_attack.chief_of_staff.checkpoint_ux import CheckpointUX, CheckpointDecision
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalStatus
 from swarm_attack.chief_of_staff.budget import check_budget, get_effective_cost
@@ -152,7 +152,7 @@ class AutopilotRunResult:
     goals_total: int
     total_cost_usd: float
     duration_seconds: int
-    trigger: Optional[CheckpointTrigger] = None
+    trigger: Optional[TriggerCheckResult] = None
     error: Optional[str] = None
 
 
@@ -393,6 +393,10 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Save original error_count - RecoveryManager increments per retry,
+        # but from the user's perspective, one call = one error increment
+        original_error_count = goal.error_count
+
         # Create async execute function for recovery manager
         async def execute_fn():
             # Execute synchronously within async wrapper
@@ -403,20 +407,34 @@ class AutopilotRunner:
             loop = asyncio.get_running_loop()
             import nest_asyncio
             nest_asyncio.apply()
-            result = loop.run_until_complete(
+            recovery_result = loop.run_until_complete(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
         except RuntimeError:
             # No running loop - create a new one
-            result = asyncio.run(
+            recovery_result = asyncio.run(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
 
-        return result
+        # Extract action_result from RecoveryResult (which is GoalExecutionResult on success)
+        if recovery_result.success and recovery_result.action_result is not None:
+            # Success - restore original error_count (no failures for this call)
+            goal.error_count = original_error_count
+            return recovery_result.action_result
+
+        # On failure, set error_count to original + 1 (one failure for this call)
+        goal.error_count = original_error_count + 1
+        return GoalExecutionResult(
+            success=False,
+            cost_usd=0.0,
+            duration_seconds=0,
+            error=recovery_result.error or "Unknown error",
+            output="",
+        )
 
     def _execute_goal_with_budget_check(
         self,
@@ -513,6 +531,10 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Save original error_count - RecoveryManager increments per retry,
+        # but from the user's perspective, one call = one error increment
+        original_error_count = goal.error_count
+
         # Create async execute function for recovery manager
         async def execute_fn():
             # Execute synchronously within async wrapper
@@ -523,20 +545,34 @@ class AutopilotRunner:
             loop = asyncio.get_running_loop()
             import nest_asyncio
             nest_asyncio.apply()
-            result = loop.run_until_complete(
+            recovery_result = loop.run_until_complete(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
         except RuntimeError:
             # No running loop - create a new one
-            result = asyncio.run(
+            recovery_result = asyncio.run(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
 
-        return result
+        # Extract action_result from RecoveryResult (which is GoalExecutionResult on success)
+        if recovery_result.success and recovery_result.action_result is not None:
+            # Success - restore original error_count (no failures for this call)
+            goal.error_count = original_error_count
+            return recovery_result.action_result
+
+        # On failure, set error_count to original + 1 (one failure for this call)
+        goal.error_count = original_error_count + 1
+        return GoalExecutionResult(
+            success=False,
+            cost_usd=0.0,
+            duration_seconds=0,
+            error=recovery_result.error or "Unknown error",
+            output="",
+        )
 
     def _execute_spec_goal_sync(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a spec goal via Orchestrator.run_spec_pipeline (synchronous).
@@ -603,6 +639,10 @@ class AutopilotRunner:
                 output="",
             )
 
+        # Save original error_count - RecoveryManager increments per retry,
+        # but from the user's perspective, one call = one error increment
+        original_error_count = goal.error_count
+
         # Create async execute function for recovery manager
         async def execute_fn():
             # Execute synchronously within async wrapper
@@ -613,20 +653,34 @@ class AutopilotRunner:
             loop = asyncio.get_running_loop()
             import nest_asyncio
             nest_asyncio.apply()
-            result = loop.run_until_complete(
+            recovery_result = loop.run_until_complete(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
         except RuntimeError:
             # No running loop - create a new one
-            result = asyncio.run(
+            recovery_result = asyncio.run(
                 self.recovery_manager.execute_with_recovery(
                     goal, execute_fn, episode_store=self.episode_store
                 )
             )
 
-        return result
+        # Extract action_result from RecoveryResult (which is GoalExecutionResult on success)
+        if recovery_result.success and recovery_result.action_result is not None:
+            # Success - restore original error_count (no failures for this call)
+            goal.error_count = original_error_count
+            return recovery_result.action_result
+
+        # On failure, set error_count to original + 1 (one failure for this call)
+        goal.error_count = original_error_count + 1
+        return GoalExecutionResult(
+            success=False,
+            cost_usd=0.0,
+            duration_seconds=0,
+            error=recovery_result.error or "Unknown error",
+            output="",
+        )
 
     def _execute_generic_goal(self, goal: DailyGoal) -> GoalExecutionResult:
         """Execute a generic goal (no linked artifact).
@@ -873,8 +927,8 @@ class AutopilotRunner:
         # Start progress tracking
         self.progress_tracker.start_session(total_goals=len(goals))
 
-        # Create new session
-        session_id = str(uuid.uuid4())[:8]
+        # Create new session with "auto-" prefix as expected by tests
+        session_id = f"auto-{uuid.uuid4().hex[:8]}"
         session = AutopilotSession(
             session_id=session_id,
             state=AutopilotState.RUNNING,
@@ -885,6 +939,18 @@ class AutopilotRunner:
             budget_usd=budget_usd,
             duration_minutes=duration_minutes,
         )
+
+        # Check for dry run mode - skip execution and return immediately
+        if self._dry_run:
+            # Save session in RUNNING state for dry run
+            self.session_store.save(session)
+            return AutopilotRunResult(
+                session=session,
+                goals_completed=0,
+                goals_total=len(goals),
+                total_cost_usd=0.0,
+                duration_seconds=0,
+            )
 
         # Check execution strategy from config
         execution_strategy = self.config.autopilot.execution_strategy
@@ -929,8 +995,27 @@ class AutopilotRunner:
         checkpoint_pending = False
         completed_goal_ids: set[str] = set()
         blocked_goal_ids: set[str] = set()
+        detected_trigger: Optional[TriggerCheckResult] = None
 
         for i, goal in enumerate(goals):
+            # Check triggers BEFORE execution (cost, approval, high-risk)
+            # Create session context for trigger check
+            session_context = SessionContext(
+                total_cost_usd=total_cost,
+                elapsed_minutes=(time.time() - start_time) / 60.0,
+                stop_trigger=stop_trigger,
+            )
+            trigger_result = self.checkpoint_system.check_triggers(
+                session_context, goal.description
+            )
+            if trigger_result is not None:
+                detected_trigger = trigger_result
+                session.state = AutopilotState.PAUSED
+                # Fire callback if registered
+                if self.on_checkpoint:
+                    self.on_checkpoint(trigger_result)
+                break
+
             session.current_goal_index = i
 
             # Pre-flight validation (risk + budget + dependencies)
@@ -1040,6 +1125,7 @@ class AutopilotRunner:
             goals_total=len(goals),
             total_cost_usd=total_cost,
             duration_seconds=duration,
+            trigger=detected_trigger,
         )
 
     def resume(self, session_id: str) -> AutopilotRunResult:

@@ -133,6 +133,8 @@ class CoderAgent(BaseAgent):
         'sqlalchemy', 'alembic', 'databases',
         # Common utilities
         'pydantic', 'attrs', 'cattrs',
+        # Import and module utilities
+        'importlib',
     ])
 
     def __init__(
@@ -141,10 +143,123 @@ class CoderAgent(BaseAgent):
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
+        memory_store: Optional[Any] = None,
     ) -> None:
-        """Initialize the Coder agent."""
+        """Initialize the Coder agent.
+
+        Args:
+            config: SwarmConfig with paths and settings.
+            logger: Optional logger for recording operations.
+            llm_runner: Optional Claude CLI runner (created if not provided).
+            state_store: Optional state store for persistence.
+            memory_store: Optional MemoryStore for schema drift warnings.
+        """
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
+        self._memory: Optional[Any] = memory_store
+
+    def _extract_potential_classes(self, issue_body: str) -> list[str]:
+        """
+        Extract potential class names from issue body.
+
+        Looks for class names in:
+        - Interface Contract section (``ClassName``)
+        - Acceptance criteria (``ClassName``)
+        - Any backtick-quoted PascalCase identifiers
+        - Method calls like ``ClassName.method()``
+
+        Args:
+            issue_body: The issue body text.
+
+        Returns:
+            List of class names found in the issue body.
+        """
+        if not issue_body:
+            return []
+
+        classes: list[str] = []
+
+        # Pattern for backtick-quoted identifiers that look like class names (PascalCase)
+        # Matches:
+        # - `AutopilotSession` - class name alone
+        # - `ResultParser.parse()` - class name with method call
+        # - `DailyGoal` - class name alone
+        pattern = r"`([A-Z][a-zA-Z0-9]*)(?:\.[a-z_][a-zA-Z0-9_]*\([^)]*\))?`"
+        matches = re.findall(pattern, issue_body)
+
+        for match in matches:
+            # Filter out common non-class names
+            if match not in classes and len(match) > 1:
+                classes.append(match)
+
+        return classes
+
+    def _get_schema_warnings(self, class_names: list[str]) -> list[dict[str, Any]]:
+        """
+        Get schema drift warnings for potential class names.
+
+        Queries memory store for past schema drift entries related to
+        the given class names.
+
+        Args:
+            class_names: List of class names to check.
+
+        Returns:
+            List of warning dicts with class_name, existing_file, existing_issue.
+        """
+        if not self._memory or not class_names:
+            return []
+
+        warnings: list[dict[str, Any]] = []
+
+        # Query memory for schema_drift entries
+        try:
+            entries = self._memory.query(category="schema_drift")
+            for entry in entries:
+                content = entry.content if hasattr(entry, 'content') else {}
+                entry_class = content.get("class_name", "")
+                if entry_class in class_names:
+                    warnings.append({
+                        "class_name": entry_class,
+                        "existing_file": content.get("existing_file", ""),
+                        "existing_issue": content.get("existing_issue", 0),
+                    })
+        except Exception:
+            # If query fails, return empty warnings
+            pass
+
+        return warnings
+
+    def _format_schema_warnings(self, warnings: list[dict[str, Any]]) -> str:
+        """
+        Format schema warnings for inclusion in prompt.
+
+        Args:
+            warnings: List of warning dicts from _get_schema_warnings().
+
+        Returns:
+            Formatted warning text, or empty string if no warnings.
+        """
+        if not warnings:
+            return ""
+
+        lines = [
+            "## Schema Drift Warnings",
+            "",
+            "The following classes have caused schema drift issues in the past.",
+            "**DO NOT recreate these classes - import them instead:**",
+            "",
+        ]
+
+        for warning in warnings:
+            class_name = warning.get("class_name", "Unknown")
+            existing_file = warning.get("existing_file", "unknown")
+            existing_issue = warning.get("existing_issue", "?")
+            lines.append(f"- `{class_name}` already exists in `{existing_file}` (Issue #{existing_issue})")
+            lines.append(f"  Import: `from {existing_file.replace('/', '.').replace('.py', '')} import {class_name}`")
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _is_protected_path(self, file_path: str, feature_id: str = "") -> bool:
         """
@@ -1130,7 +1245,13 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
                         content = read_file(full_path)
                         classes = self._extract_classes_from_content(path, content)
                         if classes:
-                            classes_defined[path] = classes
+                            # Merge with existing classes if same file is in both lists
+                            if path in classes_defined:
+                                existing = set(classes_defined[path])
+                                existing.update(classes)
+                                classes_defined[path] = sorted(existing)
+                            else:
+                                classes_defined[path] = classes
                 except Exception:
                     # Skip files that can't be read (nonexistent, permission errors, etc.)
                     pass
@@ -1154,21 +1275,67 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         classes: list[str] = []
 
         if path.endswith(".py"):
-            # Parse Python files for class definitions
-            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            # Parse Python files for class definitions (including nested/indented classes)
+            # Use \s* to match any indentation before 'class'
+            matches = re.findall(r"^\s*class\s+(\w+)", content, re.MULTILINE)
             classes.extend(matches)
         elif path.endswith(".dart"):
-            # Parse Dart files for class definitions
-            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            # Parse Dart files for class definitions (including abstract classes)
+            matches = re.findall(r"^(?:abstract\s+)?class\s+(\w+)", content, re.MULTILINE)
             classes.extend(matches)
         elif path.endswith(".ts") or path.endswith(".tsx"):
-            # Parse TypeScript files for class/interface definitions
-            class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
+            # Parse TypeScript files for class/interface definitions (including abstract and export)
+            class_matches = re.findall(r"^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)", content, re.MULTILINE)
             interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
             classes.extend(class_matches)
             classes.extend(interface_matches)
 
         return classes
+
+    def _parse_modified_files(self, response: str) -> list[str]:
+        """
+        Parse modified file patterns from LLM response.
+
+        Extracts file paths from patterns like:
+        - # MODIFIED FILE: path/to/file.py
+        - Modified: `path/to/file.py`
+        - Updated: path/to/file.py
+
+        Only matches Python files (.py extension).
+
+        Args:
+            response: Raw LLM response text.
+
+        Returns:
+            List of unique file paths (deduplicated).
+        """
+        if not response:
+            return []
+
+        modified_files: set[str] = set()
+
+        # Pattern 1: # MODIFIED FILE: path/to/file.py or #MODIFIED FILE: path.py
+        modified_marker_pattern = r'#\s*MODIFIED\s+FILE:\s*([^\n`]+\.py)'
+        for match in re.finditer(modified_marker_pattern, response, re.IGNORECASE):
+            file_path = match.group(1).strip()
+            if file_path:
+                modified_files.add(file_path)
+
+        # Pattern 2: Modified: `path/to/file.py` or Modified:`path.py` or Modified: path.py
+        modified_pattern = r'Modified:\s*`?([^\n`]+\.py)`?'
+        for match in re.finditer(modified_pattern, response, re.IGNORECASE):
+            file_path = match.group(1).strip()
+            if file_path:
+                modified_files.add(file_path)
+
+        # Pattern 3: Updated: path/to/file.py or Updated: `path.py`
+        updated_pattern = r'Updated:\s*`?([^\n`]+\.py)`?'
+        for match in re.finditer(updated_pattern, response, re.IGNORECASE):
+            file_path = match.group(1).strip()
+            if file_path:
+                modified_files.add(file_path)
+
+        return list(modified_files)
 
     def _build_prompt(
         self,
@@ -1732,6 +1899,22 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         for dir_file, content in directory_files.items():
             if dir_file not in files:
                 files[dir_file] = content
+
+        # CRITICAL: Validate that we have parseable file outputs (not just .gitkeep)
+        # Filter out .gitkeep files to get real_files with actual content
+        real_files = {k: v for k, v in files.items() if not k.endswith('.gitkeep')}
+        if not real_files:
+            # No parseable file outputs - LLM returned prose without file markers
+            self._log("coder_no_files_generated", {
+                "error": "LLM response contained no parseable file outputs",
+                "response_length": len(result.text),
+                "response_preview": result.text[:300] if result.text else "(empty)",
+            }, level="error")
+            return AgentResult.failure_result(
+                "No implementation generated: LLM response contained no parseable file outputs. "
+                "Expected # FILE: markers but found none.",
+                cost_usd=cost,
+            )
 
         # CRITICAL: Validate that test imports are satisfied by implementation
         # This catches incomplete implementations before we write files and return success.

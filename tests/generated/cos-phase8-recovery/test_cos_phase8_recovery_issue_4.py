@@ -27,6 +27,7 @@ from swarm_attack.chief_of_staff.recovery import (
     ErrorCategory,
     RecoveryManager,
     RecoveryLevel,
+    RecoveryResult,
     RetryStrategy,
     classify_error,
 )
@@ -306,13 +307,13 @@ class TestLevel4Escalate:
 
 
 class TestGoalExecutionResultReturn:
-    """Test that execute_with_recovery returns GoalExecutionResult."""
+    """Test that execute_with_recovery returns RecoveryResult wrapping GoalExecutionResult."""
 
     @pytest.mark.asyncio
     async def test_returns_goal_execution_result_on_success(
         self, recovery_manager, sample_goal
     ):
-        """Success should return GoalExecutionResult with success=True."""
+        """Success should return RecoveryResult with success=True and action_result."""
         expected_result = GoalExecutionResult(
             success=True,
             cost_usd=2.5,
@@ -326,15 +327,15 @@ class TestGoalExecutionResultReturn:
             sample_goal, successful_action
         )
 
-        assert isinstance(result, GoalExecutionResult)
+        assert isinstance(result, RecoveryResult)
         assert result.success is True
-        assert result.cost_usd == 2.5
+        assert result.action_result.cost_usd == 2.5
 
     @pytest.mark.asyncio
     async def test_returns_goal_execution_result_on_failure(
         self, recovery_manager, sample_goal
     ):
-        """Failure should return GoalExecutionResult with success=False."""
+        """Failure should return RecoveryResult with success=False and error."""
         async def failing_action():
             raise LLMError("Fatal error", error_type=LLMErrorType.AUTH_REQUIRED)
 
@@ -342,7 +343,7 @@ class TestGoalExecutionResultReturn:
             sample_goal, failing_action
         )
 
-        assert isinstance(result, GoalExecutionResult)
+        assert isinstance(result, RecoveryResult)
         assert result.success is False
         assert result.error is not None
 

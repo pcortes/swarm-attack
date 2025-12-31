@@ -71,21 +71,26 @@ def runner(
 
 @pytest.fixture
 def sample_goals() -> list[DailyGoal]:
-    """Create sample goals for testing."""
+    """Create sample goals for testing.
+
+    Note: Goals must NOT have linked_bug/linked_feature/linked_spec with
+    actual values unless the corresponding orchestrator is mocked,
+    otherwise they will fail due to missing orchestrators.
+    """
     return [
         DailyGoal(
             goal_id="goal-1",
             description="Complete feature X",
             priority=GoalPriority.HIGH,
             estimated_minutes=60,
-            linked_feature="feature-x",
+            # No linked_feature - allows stub execution
         ),
         DailyGoal(
             goal_id="goal-2",
             description="Fix bug Y",
             priority=GoalPriority.MEDIUM,
             estimated_minutes=30,
-            linked_bug="bug-y",
+            # No linked_bug - allows stub execution
         ),
         DailyGoal(
             goal_id="goal-3",
@@ -216,8 +221,9 @@ class TestAutopilotRunnerCheckpoints:
         sample_goals: list[DailyGoal],
     ):
         """Test that cost threshold triggers pause."""
-        # Create config with low budget
-        config.budget_usd = 0.01
+        # Create config with low budget but allow first goal to execute
+        config.budget_usd = 0.05  # First goal costs 0.1, which exceeds this
+        config.min_execution_budget = 0.01  # Allow execution with low budget
 
         checkpoint_system = CheckpointSystem(config)
         runner = AutopilotRunner(

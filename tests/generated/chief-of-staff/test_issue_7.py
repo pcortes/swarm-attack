@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger
+from swarm_attack.chief_of_staff.checkpoints import CheckpointSystem, CheckpointTrigger, TriggerCheckResult
 from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 
 
@@ -357,55 +357,55 @@ class TestTriggerOrder:
 
 
 class TestCheckpointTrigger:
-    """Tests for CheckpointTrigger dataclass."""
+    """Tests for TriggerCheckResult dataclass (returned by check_triggers)."""
 
     def test_trigger_has_required_fields(self):
-        """CheckpointTrigger should have required fields."""
-        trigger = CheckpointTrigger(
+        """TriggerCheckResult should have required fields."""
+        trigger = TriggerCheckResult(
             trigger_type="cost",
             reason="Budget exceeded",
             action="pause session"
         )
-        
+
         assert trigger.trigger_type == "cost"
         assert trigger.reason == "Budget exceeded"
         assert trigger.action == "pause session"
 
     def test_trigger_from_dict(self):
-        """CheckpointTrigger should be creatable from dict."""
+        """TriggerCheckResult should be creatable from dict."""
         data = {
             "trigger_type": "time",
             "reason": "Duration exceeded",
             "action": "notify user"
         }
-        trigger = CheckpointTrigger.from_dict(data)
-        
+        trigger = TriggerCheckResult.from_dict(data)
+
         assert trigger.trigger_type == "time"
         assert trigger.reason == "Duration exceeded"
         assert trigger.action == "notify user"
 
     def test_trigger_to_dict(self):
-        """CheckpointTrigger should be convertible to dict."""
-        trigger = CheckpointTrigger(
+        """TriggerCheckResult should be convertible to dict."""
+        trigger = TriggerCheckResult(
             trigger_type="errors",
             reason="Too many errors",
             action="stop execution"
         )
         data = trigger.to_dict()
-        
+
         assert data["trigger_type"] == "errors"
         assert data["reason"] == "Too many errors"
         assert data["action"] == "stop execution"
 
     def test_trigger_roundtrip(self):
-        """CheckpointTrigger should roundtrip through dict."""
-        original = CheckpointTrigger(
+        """TriggerCheckResult should roundtrip through dict."""
+        original = TriggerCheckResult(
             trigger_type="high_risk",
             reason="Risky operation",
             action="require approval"
         )
-        roundtrip = CheckpointTrigger.from_dict(original.to_dict())
-        
+        roundtrip = TriggerCheckResult.from_dict(original.to_dict())
+
         assert roundtrip.trigger_type == original.trigger_type
         assert roundtrip.reason == original.reason
         assert roundtrip.action == original.action

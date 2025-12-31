@@ -1,0 +1,29 @@
+{
+  "checkpoint_id": "hiccup-b4ed4756",
+  "trigger": "HICCUP",
+  "context": "Goal failed after recovery attempts.\n\nGoal: Test goal\nError: timeout\nTotal errors: 3",
+  "options": [
+    {
+      "label": "Skip this goal",
+      "description": "Mark goal as skipped and continue",
+      "is_recommended": false
+    },
+    {
+      "label": "Retry with modifications",
+      "description": "Provide additional context and retry",
+      "is_recommended": false
+    },
+    {
+      "label": "Handle manually",
+      "description": "I'll handle this myself",
+      "is_recommended": false
+    }
+  ],
+  "recommendation": "Review the error and decide how to proceed.",
+  "created_at": "2025-12-31T14:32:47.396474",
+  "goal_id": "test-goal-1",
+  "status": "pending",
+  "chosen_option": null,
+  "human_notes": null,
+  "resolved_at": null
+}

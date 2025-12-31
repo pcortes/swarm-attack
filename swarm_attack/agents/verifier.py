@@ -15,8 +15,10 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import uuid4
 
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
 from swarm_attack.utils.fs import file_exists
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
     from swarm_attack.llm_clients import ClaudeCliRunner
     from swarm_attack.logger import SwarmLogger
+    from swarm_attack.memory.store import MemoryStore
     from swarm_attack.state_store import StateStore
 
 
@@ -48,10 +51,20 @@ class VerifierAgent(BaseAgent):
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
+        memory_store: Optional[MemoryStore] = None,
     ) -> None:
-        """Initialize the Verifier agent."""
+        """Initialize the Verifier agent.
+
+        Args:
+            config: SwarmConfig with paths and settings.
+            logger: Optional logger for recording operations.
+            llm_runner: Optional Claude CLI runner.
+            state_store: Optional state store for persistence.
+            memory_store: Optional memory store for recording schema drift events.
+        """
         super().__init__(config, logger, llm_runner, state_store)
         self._test_timeout = config.tests.timeout_seconds
+        self._memory_store = memory_store
 
     def _get_default_test_path(self, feature_id: str, issue_number: int) -> Path:
         """Get the default path for generated tests."""
@@ -426,6 +439,53 @@ class VerifierAgent(BaseAgent):
 
         return conflicts
 
+    def _store_schema_drift_in_memory(
+        self,
+        conflict: dict[str, Any],
+        feature_id: str,
+        issue_number: Optional[int],
+    ) -> None:
+        """
+        Store a schema drift event in the memory store.
+
+        Records the schema drift for cross-session learning, enabling the system
+        to learn from past drift patterns and warn about similar issues.
+
+        Args:
+            conflict: Dictionary with conflict details from _check_duplicate_classes.
+            feature_id: The feature ID where drift was detected.
+            issue_number: The issue number being verified.
+        """
+        if self._memory_store is None:
+            return
+
+        from swarm_attack.memory.store import MemoryEntry
+
+        entry = MemoryEntry(
+            id=str(uuid4()),
+            category="schema_drift",
+            feature_id=feature_id,
+            issue_number=issue_number,
+            content={
+                "class_name": conflict["class_name"],
+                "existing_file": conflict["existing_file"],
+                "new_file": conflict["new_file"],
+                "existing_issue": conflict.get("existing_issue"),
+            },
+            outcome="blocked",
+            created_at=datetime.now().isoformat(),
+            tags=["schema_drift", conflict["class_name"]],
+        )
+
+        self._memory_store.add(entry)
+        self._memory_store.save()
+
+        self._log("schema_drift_stored", {
+            "class_name": conflict["class_name"],
+            "feature_id": feature_id,
+            "issue_number": issue_number,
+        })
+
     def _analyze_failure_with_llm(
         self,
         test_output: str,
@@ -593,6 +653,14 @@ class VerifierAgent(BaseAgent):
                     "issue_number": issue_number,
                     "conflicts": len(schema_conflicts),
                 }, level="error")
+
+                # Store each schema drift event in memory for cross-session learning
+                for conflict in schema_conflicts:
+                    self._store_schema_drift_in_memory(
+                        conflict=conflict,
+                        feature_id=feature_id,
+                        issue_number=issue_number,
+                    )
 
                 return AgentResult(
                     success=False,
