@@ -44,6 +44,7 @@ from swarm_attack.bug_models import (
     RootCauseDebateResult,
 )
 from swarm_attack.bug_state_store import BugStateStore
+from swarm_attack.debate_retry import DebateRetryHandler
 from swarm_attack.events.bus import get_event_bus
 from swarm_attack.events.types import EventType, SwarmEvent
 
@@ -113,6 +114,17 @@ class BugOrchestrator:
         self._planner = planner
         self._critic = critic
         self._moderator = moderator
+
+        # Debate retry handler for transient error recovery
+        retry_config = getattr(config, 'debate_retry', None)
+        if retry_config:
+            self._debate_retry_handler = DebateRetryHandler(
+                max_retries=retry_config.max_retries,
+                backoff_base_seconds=retry_config.backoff_base_seconds,
+                backoff_multiplier=retry_config.backoff_multiplier,
+            )
+        else:
+            self._debate_retry_handler = DebateRetryHandler()
 
     @property
     def state_store(self) -> BugStateStore:
@@ -281,27 +293,30 @@ class BugOrchestrator:
                     f"Critic reviewing analysis..."
                 )
 
-            # Step 1: Critic reviews the analysis
-            self.critic.reset()
-            critic_result = self.critic.run({
-                "bug_id": state.bug_id,
-                "mode": "root_cause",
-                "root_cause": current_root_cause,
-                "bug_description": state.report.description,
-                "reproduction_summary": state.reproduction.notes if state.reproduction else "",
-            })
+            # Step 1: Critic reviews the analysis (with retry for transient errors)
+            critic_retry_result = self._debate_retry_handler.run_with_retry(
+                self.critic,
+                {
+                    "bug_id": state.bug_id,
+                    "mode": "root_cause",
+                    "root_cause": current_root_cause,
+                    "bug_description": state.report.description,
+                    "reproduction_summary": state.reproduction.notes if state.reproduction else "",
+                },
+            )
 
-            if not critic_result.success:
-                # Critic failed (likely auth error) - stop debate
+            if not critic_retry_result.success:
+                # Critic failed (auth error or exhausted retries) - stop debate
                 self._log("root_cause_debate_critic_failed", {
-                    "error": critic_result.errors[0] if critic_result.errors else "Unknown",
+                    "error": critic_retry_result.errors[0] if critic_retry_result.errors else "Unknown",
                     "round": round_num,
+                    "retry_count": critic_retry_result.retry_count,
                 })
                 # Return current analysis without improvement
                 break
 
-            total_cost += critic_result.cost_usd
-            review = critic_result.output
+            total_cost += critic_retry_result.cost_usd
+            review = critic_retry_result.output
 
             # Build debate result
             issues = [
@@ -318,7 +333,7 @@ class BugOrchestrator:
                 scores=review.get("scores", {}),
                 issues=issues,
                 recommendation=review.get("recommendation", "REVISE"),
-                critic_cost_usd=critic_result.cost_usd,
+                critic_cost_usd=critic_retry_result.cost_usd,
             )
 
             # Check if we meet thresholds
@@ -353,22 +368,25 @@ class BugOrchestrator:
                     f"Moderator improving analysis..."
                 )
 
-            self.moderator.reset()
-            moderator_result = self.moderator.run({
-                "bug_id": state.bug_id,
-                "mode": "root_cause",
-                "root_cause": current_root_cause,
-                "review": review,
-                "bug_description": state.report.description,
-                "reproduction_summary": state.reproduction.notes if state.reproduction else "",
-                "round": round_num,
-            })
+            # Moderator with retry for transient errors
+            moderator_retry_result = self._debate_retry_handler.run_with_retry(
+                self.moderator,
+                {
+                    "bug_id": state.bug_id,
+                    "mode": "root_cause",
+                    "root_cause": current_root_cause,
+                    "review": review,
+                    "bug_description": state.report.description,
+                    "reproduction_summary": state.reproduction.notes if state.reproduction else "",
+                    "round": round_num,
+                },
+            )
 
-            total_cost += moderator_result.cost_usd
-            debate_result.moderator_cost_usd = moderator_result.cost_usd
+            total_cost += moderator_retry_result.cost_usd
+            debate_result.moderator_cost_usd = moderator_retry_result.cost_usd
 
-            if moderator_result.success:
-                improved = moderator_result.output.get("improved_content", {})
+            if moderator_retry_result.success:
+                improved = moderator_retry_result.output.get("improved_content", {})
                 if improved:
                     # Update root cause with improvements
                     current_root_cause = RootCauseAnalysis(
@@ -382,7 +400,7 @@ class BugOrchestrator:
                         confidence=improved.get("confidence", current_root_cause.confidence),
                         alternative_hypotheses=improved.get("alternative_hypotheses", current_root_cause.alternative_hypotheses),
                     )
-                debate_result.improvements = moderator_result.output.get("improvements", [])
+                debate_result.improvements = moderator_retry_result.output.get("improvements", [])
 
             state.debate_history.root_cause_rounds.append(debate_result)
 
@@ -451,26 +469,29 @@ class BugOrchestrator:
                     f"Critic reviewing plan..."
                 )
 
-            # Step 1: Critic reviews the plan
-            self.critic.reset()
-            critic_result = self.critic.run({
-                "bug_id": state.bug_id,
-                "mode": "fix_plan",
-                "fix_plan": current_fix_plan,
-                "bug_description": state.report.description,
-                "root_cause_summary": state.root_cause.summary if state.root_cause else "",
-            })
+            # Step 1: Critic reviews the plan (with retry for transient errors)
+            critic_retry_result = self._debate_retry_handler.run_with_retry(
+                self.critic,
+                {
+                    "bug_id": state.bug_id,
+                    "mode": "fix_plan",
+                    "fix_plan": current_fix_plan,
+                    "bug_description": state.report.description,
+                    "root_cause_summary": state.root_cause.summary if state.root_cause else "",
+                },
+            )
 
-            if not critic_result.success:
+            if not critic_retry_result.success:
                 # Critic failed - stop debate
                 self._log("fix_plan_debate_critic_failed", {
-                    "error": critic_result.errors[0] if critic_result.errors else "Unknown",
+                    "error": critic_retry_result.errors[0] if critic_retry_result.errors else "Unknown",
                     "round": round_num,
+                    "retry_count": critic_retry_result.retry_count,
                 })
                 break
 
-            total_cost += critic_result.cost_usd
-            review = critic_result.output
+            total_cost += critic_retry_result.cost_usd
+            review = critic_retry_result.output
 
             # Build debate result
             issues = [
@@ -487,7 +508,7 @@ class BugOrchestrator:
                 scores=review.get("scores", {}),
                 issues=issues,
                 recommendation=review.get("recommendation", "REVISE"),
-                critic_cost_usd=critic_result.cost_usd,
+                critic_cost_usd=critic_retry_result.cost_usd,
             )
 
             # Check if we meet thresholds
@@ -522,22 +543,25 @@ class BugOrchestrator:
                     f"Moderator improving plan..."
                 )
 
-            self.moderator.reset()
-            moderator_result = self.moderator.run({
-                "bug_id": state.bug_id,
-                "mode": "fix_plan",
-                "fix_plan": current_fix_plan,
-                "review": review,
-                "bug_description": state.report.description,
-                "root_cause_summary": state.root_cause.summary if state.root_cause else "",
-                "round": round_num,
-            })
+            # Moderator with retry for transient errors
+            moderator_retry_result = self._debate_retry_handler.run_with_retry(
+                self.moderator,
+                {
+                    "bug_id": state.bug_id,
+                    "mode": "fix_plan",
+                    "fix_plan": current_fix_plan,
+                    "review": review,
+                    "bug_description": state.report.description,
+                    "root_cause_summary": state.root_cause.summary if state.root_cause else "",
+                    "round": round_num,
+                },
+            )
 
-            total_cost += moderator_result.cost_usd
-            debate_result.moderator_cost_usd = moderator_result.cost_usd
+            total_cost += moderator_retry_result.cost_usd
+            debate_result.moderator_cost_usd = moderator_retry_result.cost_usd
 
-            if moderator_result.success:
-                improved = moderator_result.output.get("improved_content", {})
+            if moderator_retry_result.success:
+                improved = moderator_retry_result.output.get("improved_content", {})
                 if improved:
                     # Update fix plan with improvements
                     from swarm_attack.bug_models import FileChange, TestCase
@@ -573,7 +597,7 @@ class BugOrchestrator:
                         rollback_plan=improved.get("rollback_plan", current_fix_plan.rollback_plan),
                         estimated_effort=improved.get("estimated_effort", current_fix_plan.estimated_effort),
                     )
-                debate_result.improvements = moderator_result.output.get("improvements", [])
+                debate_result.improvements = moderator_retry_result.output.get("improvements", [])
 
             state.debate_history.fix_plan_rounds.append(debate_result)
 
