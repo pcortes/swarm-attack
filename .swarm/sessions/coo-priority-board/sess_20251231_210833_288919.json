@@ -1,0 +1,28 @@
+{
+  "session_id": "sess_20251231_210833_288919",
+  "feature_id": "coo-priority-board",
+  "issue_number": 2,
+  "started_at": "2025-12-31T21:08:33.288945Z",
+  "status": "completed",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2025-12-31T21:11:16.655856Z",
+      "commit": null,
+      "cost_usd": 0.84295625
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2025-12-31T21:11:17.091954Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": "2025-12-31T21:15:00.000000Z",
+  "end_status": "success",
+  "cost_usd": 0.84295625,
+  "worktree_path": null,
+  "commits": []
+}

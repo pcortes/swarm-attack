@@ -1,0 +1,9 @@
+{"ts": "2025-12-31T21:08:33.289832Z", "event": "issue_started", "issue": 2, "session": "sess_20251231_210833_288919"}
+{"ts": "2025-12-31T21:11:17.092423Z", "event": "retry_started", "issue": 2, "attempt": 1}
+{"ts": "2025-12-31T21:21:37.013778Z", "event": "issue_started", "issue": 1, "session": "sess_20251231_212137_012604"}
+{"ts": "2025-12-31T21:23:16.258378Z", "event": "issue_done", "issue": 1, "commit": "80819480ec98c410ee7b47a5fc15a8a84d82b5cc", "cost_usd": 0.3335281}
+{"ts": "2025-12-31T21:24:18.459311Z", "event": "issue_started", "issue": 5, "session": "sess_20251231_212418_457942"}
+{"ts": "2025-12-31T21:26:15.583021Z", "event": "retry_started", "issue": 5, "attempt": 1}
+{"ts": "2025-12-31T21:28:16.165567Z", "event": "issue_done", "issue": 5, "commit": "752a5d4fe0bdcde04eac37bb3ee21b19df67f83d", "cost_usd": 1.1231246000000001}
+{"ts": "2025-12-31T21:28:33.689545Z", "event": "issue_started", "issue": 3, "session": "sess_20251231_212833_688564"}
+{"ts": "2025-12-31T21:30:31.304027Z", "event": "retry_started", "issue": 3, "attempt": 1}

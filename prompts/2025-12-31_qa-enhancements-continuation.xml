@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm-prompt>
+  <metadata>
+    <title>QA Agent Enhancement Sprint - CONTINUATION</title>
+    <created>2025-12-31</created>
+    <original-prompt>/Users/philipjcortes/Desktop/swarm-attack/prompts/2025-12-31_qa-agent-bug-fixes.xml</original-prompt>
+    <target-worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</target-worktree>
+    <branch>enhance/qa-pm-ux</branch>
+    <methodology>TDD with Expert Subagent Teams</methodology>
+    <status>CONTINUATION - Previous agents got stuck in file creation loops</status>
+  </metadata>
+
+  <previous-session-summary>
+    <problem>Previous agents spent excessive tokens trying to create test files but got stuck in infinite loops due to shell/write permission issues</problem>
+    <worktree-status>Clean - no commits made yet</worktree-status>
+    <tests-created>None - tests/unit/cli/ directory was not created</tests-created>
+    <implementation>None - no code changes were made</implementation>
+  </previous-session-summary>
+
+  <bugs-to-fix>
+    <bug id="QA-BUG-001" severity="MEDIUM" priority="1">
+      <title>No Direct QA Test Command for Arbitrary Endpoints</title>
+      <description>Need a simple `qa probe` command for ad-hoc endpoint testing</description>
+      <desired-usage>swarm-attack qa probe http://localhost:8080/api/users --method GET --expect 200</desired-usage>
+      <files-to-create>
+        <file>swarm_attack/cli/qa.py</file>
+        <file>tests/unit/cli/test_qa_probe.py</file>
+      </files-to-create>
+    </bug>
+
+    <bug id="QA-BUG-002" severity="LOW" priority="2">
+      <title>QA Session Results Not Human-Readable</title>
+      <description>qa report output is terse - missing test counts, duration, findings count</description>
+      <current-output>Session ID | Status (only two columns)</current-output>
+      <desired-output>Session ID | Status | Tests | Findings | Duration | Depth</desired-output>
+      <files-to-modify>
+        <file>swarm_attack/cli/qa.py (report command)</file>
+        <file>swarm_attack/cli/display.py (new formatting functions)</file>
+      </files-to-modify>
+      <files-to-create>
+        <file>tests/unit/cli/test_qa_report_display.py</file>
+      </files-to-create>
+    </bug>
+
+    <bug id="QA-BUG-003" severity="LOW" priority="3">
+      <title>QA Bugs Display Lacks Context</title>
+      <description>qa bugs output lacks session ID, timestamp, and suggested actions</description>
+      <model-changes>
+        <change>Add session_id: str = "" to QAFinding dataclass</change>
+        <change>Add created_at: str = "" to QAFinding dataclass</change>
+        <change>Update QAFinding.from_dict() to parse new fields</change>
+        <change>Update QAFinding.to_dict() to include new fields</change>
+      </model-changes>
+      <files-to-modify>
+        <file>swarm_attack/qa/models.py (QAFinding dataclass)</file>
+        <file>swarm_attack/cli/qa.py (bugs command)</file>
+        <file>swarm_attack/cli/display.py (get_action_suggestion helper)</file>
+      </files-to-modify>
+      <files-to-create>
+        <file>tests/unit/cli/test_qa_bugs_display.py</file>
+      </files-to-create>
+    </bug>
+
+    <bug id="QA-BUG-004" severity="INFO" priority="4">
+      <title>Edge Cases Documented but Not Tested</title>
+      <description>Add P1 edge case tests for malformed schemas, timeouts, rate limits</description>
+      <files-to-create>
+        <file>tests/unit/qa/test_edge_cases.py</file>
+      </files-to-create>
+    </bug>
+  </bugs-to-fix>
+
+  <worktree-setup>
+    <location>/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</location>
+    <branch>enhance/qa-pm-ux</branch>
+    <base-commit>797da3f (docs: add Campaign and Feedback CLI documentation for v0.3.0)</base-commit>
+    <verification-commands>
+      <cmd>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</cmd>
+      <cmd>pwd  # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</cmd>
+      <cmd>git branch  # Must show: * enhance/qa-pm-ux</cmd>
+      <cmd>git status  # Should show: nothing to commit, working tree clean</cmd>
+    </verification-commands>
+  </worktree-setup>
+
+  <existing-codebase-structure>
+    <cli-files>
+      <file>swarm_attack/cli/app.py - Main CLI app with typer</file>
+      <file>swarm_attack/cli/display.py - Rich table/panel formatting utilities</file>
+      <file>swarm_attack/cli/bug.py - Bug commands (pattern to follow)</file>
+      <file>swarm_attack/cli/feature.py - Feature commands</file>
+    </cli-files>
+    <qa-files>
+      <file>swarm_attack/qa/models.py - QASession, QAResult, QAFinding, etc.</file>
+      <file>swarm_attack/qa/orchestrator.py - QAOrchestrator class</file>
+      <file>swarm_attack/qa/agents/behavioral.py - HTTP testing patterns</file>
+    </qa-files>
+    <test-files>
+      <file>tests/unit/qa/test_models.py - Existing model tests (pattern to follow)</file>
+      <file>tests/unit/test_cli_approve_flags.py - CLI test patterns</file>
+      <file>tests/cli/test_ux.py - Integration CLI tests</file>
+    </test-files>
+  </existing-codebase-structure>
+
+  <instructions>
+    <critical-note>
+      All work MUST happen in the worktree at /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements
+      NOT in /Users/philipjcortes/Desktop/swarm-attack-qa-agent (which is a different worktree)
+    </critical-note>
+
+    <phase id="1" name="Environment Setup">
+      <step>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</step>
+      <step>Verify: pwd shows /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</step>
+      <step>Verify: git branch shows * enhance/qa-pm-ux</step>
+      <step>Create test directories: mkdir -p tests/unit/cli</step>
+      <step>Create __init__.py files for test packages</step>
+    </phase>
+
+    <phase id="2" name="QA-BUG-001: qa probe command (TDD)">
+      <subagent role="TestEngineer">
+        <red-phase>
+          <step>Create tests/unit/cli/test_qa_probe.py with 10 failing tests</step>
+          <step>Test categories: valid URL, POST method, expect status, headers, error handling</step>
+          <step>Run: PYTHONPATH=. pytest tests/unit/cli/test_qa_probe.py -v</step>
+          <step>Verify all tests FAIL (import errors are OK for RED phase)</step>
+        </red-phase>
+      </subagent>
+
+      <subagent role="Coder">
+        <green-phase>
+          <step>Create swarm_attack/cli/qa.py with qa_app typer app</step>
+          <step>Implement probe_command with URL, --method, --expect, --headers, --body, --timeout options</step>
+          <step>Use httpx or requests for HTTP calls</step>
+          <step>Format output with Rich panels</step>
+          <step>Register qa_app in swarm_attack/cli/app.py</step>
+          <step>Run tests until GREEN</step>
+        </green-phase>
+      </subagent>
+    </phase>
+
+    <phase id="3" name="QA-BUG-002: Enhanced qa report (TDD)">
+      <subagent role="TestEngineer">
+        <red-phase>
+          <step>Create tests/unit/cli/test_qa_report_display.py</step>
+          <step>Test: format_qa_session_table() returns table with Tests column</step>
+          <step>Test: format_qa_session_table() returns table with Findings column</step>
+          <step>Test: format_qa_session_table() returns table with Duration column</step>
+          <step>Test: format_qa_session_table() returns table with Depth column</step>
+          <step>Test: format_test_results() formats X/Y correctly</step>
+          <step>Test: format_duration() formats human-readable</step>
+        </red-phase>
+      </subagent>
+
+      <subagent role="Coder">
+        <green-phase>
+          <step>Add helper functions to swarm_attack/cli/display.py</step>
+          <step>Add report_command to swarm_attack/cli/qa.py</step>
+          <step>Run tests until GREEN</step>
+        </green-phase>
+      </subagent>
+    </phase>
+
+    <phase id="4" name="QA-BUG-003: Enhanced qa bugs (TDD)">
+      <subagent role="TestEngineer">
+        <red-phase>
+          <step>Create tests/unit/cli/test_qa_bugs_display.py</step>
+          <step>Test: QAFinding accepts session_id parameter</step>
+          <step>Test: QAFinding accepts created_at parameter</step>
+          <step>Test: QAFinding.to_dict() includes session_id</step>
+          <step>Test: QAFinding.from_dict() parses session_id</step>
+          <step>Test: get_action_suggestion("critical") returns action text</step>
+        </red-phase>
+      </subagent>
+
+      <subagent role="Coder">
+        <green-phase>
+          <step>Modify swarm_attack/qa/models.py - add session_id and created_at to QAFinding</step>
+          <step>Update to_dict() and from_dict() methods</step>
+          <step>Add get_action_suggestion() to swarm_attack/cli/display.py</step>
+          <step>Add bugs_command to swarm_attack/cli/qa.py</step>
+          <step>Run tests until GREEN</step>
+        </green-phase>
+      </subagent>
+    </phase>
+
+    <phase id="5" name="QA-BUG-004: Edge Case Tests">
+      <subagent role="TestEngineer">
+        <step>Create tests/unit/qa/test_edge_cases.py</step>
+        <step>Add 11 P1 priority tests for: malformed JSON, timeouts, rate limits, empty responses</step>
+        <step>These tests validate existing behavior - they should PASS</step>
+      </subagent>
+    </phase>
+
+    <phase id="6" name="Integration and Commit">
+      <step>Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+      <step>Fix any failures</step>
+      <step>Create atomic commits:
+        1. feat(qa): add probe command for ad-hoc endpoint testing
+        2. enhance(qa): add test counts and duration to report display
+        3. enhance(qa): add session and timestamp to bugs display
+        4. test(qa): add P1 edge case tests for resilience
+      </step>
+    </phase>
+  </instructions>
+
+  <acceptance-criteria>
+    <criterion bug="QA-BUG-001">swarm-attack qa probe URL works and shows formatted result</criterion>
+    <criterion bug="QA-BUG-001">qa probe --expect flag validates response status</criterion>
+    <criterion bug="QA-BUG-002">qa report shows Tests, Findings, Duration, Depth columns</criterion>
+    <criterion bug="QA-BUG-003">qa bugs shows Session, Timestamp columns and action suggestions</criterion>
+    <criterion bug="QA-BUG-003">QAFinding has session_id and created_at fields</criterion>
+    <criterion bug="QA-BUG-004">At least 5 new edge case tests added and passing</criterion>
+    <criterion global="true">All existing tests continue to pass</criterion>
+  </acceptance-criteria>
+
+  <constraints>
+    <constraint>ALL work must happen in /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</constraint>
+    <constraint>Each enhancement must have tests written BEFORE implementation (strict TDD)</constraint>
+    <constraint>Atomic commits - one logical change per commit</constraint>
+    <constraint>qa probe must not require full QAOrchestrator setup (keep it lightweight)</constraint>
+    <constraint>Use Write tool for file creation, not cat/echo/heredoc</constraint>
+  </constraints>
+
+  <key-reference-files>
+    <file purpose="CLI pattern">swarm_attack/cli/bug.py</file>
+    <file purpose="Display utilities">swarm_attack/cli/display.py</file>
+    <file purpose="QA models">swarm_attack/qa/models.py</file>
+    <file purpose="Test patterns">tests/unit/qa/test_models.py</file>
+    <file purpose="CLI test patterns">tests/unit/test_cli_approve_flags.py</file>
+  </key-reference-files>
+</llm-prompt>

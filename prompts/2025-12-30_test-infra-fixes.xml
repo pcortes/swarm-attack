@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<expert_team_prompt>
+  <metadata>
+    <title>Test Infrastructure TDD Fix Session</title>
+    <created>2025-12-30</created>
+    <priority>P0 - BLOCKING</priority>
+    <estimated_effort>4-6 hours</estimated_effort>
+    <worktree_branch>fix/test-infra-p0</worktree_branch>
+  </metadata>
+
+  <problem_statement>
+    <summary>27 test collection errors block the entire pytest suite (3,704 tests cannot run)</summary>
+    <impact>
+      <item>Cannot validate any code changes</item>
+      <item>TDD workflow broken - Implementation Agent cannot verify tests</item>
+      <item>CI/CD pipeline non-functional</item>
+      <item>All development blocked until resolved</item>
+    </impact>
+    <root_causes>
+      <cause id="BUG-2">LLM explanations leaked into generated test files (syntax errors)</cause>
+      <cause id="BUG-6">Import collisions from duplicate test file basenames across features</cause>
+      <cause id="BUG-13">Production class TestState conflicts with pytest discovery</cause>
+      <cause id="BUG-14">Multiple Test* prefixed production classes cause pytest warnings</cause>
+      <cause id="BUG-17">Missing pytest-asyncio configuration causes deprecation errors</cause>
+    </root_causes>
+  </problem_statement>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/test-infra-p0 -b fix/test-infra-p0
+cd worktrees/test-infra-p0
+      ]]>
+    </commands>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/test-infra-p0</working_directory>
+    <verify_command>git status && pwd</verify_command>
+  </worktree_setup>
+
+  <expert_team>
+    <lead role="Test Infrastructure Architect" focus="BUG-17, BUG-6">
+      <responsibilities>
+        <item>Configure pytest properly in pyproject.toml</item>
+        <item>Ensure test isolation between feature directories</item>
+        <item>Add __init__.py to all test/generated/* directories</item>
+        <item>Validate all tests collect without errors</item>
+      </responsibilities>
+      <first_action>Add pytest-asyncio configuration (BUG-17) - quick win</first_action>
+    </lead>
+
+    <specialist role="Code Extraction Engineer" focus="BUG-2">
+      <responsibilities>
+        <item>Fix LLM output parsing in swarm_attack/agents/coder.py</item>
+        <item>Add AST validation before writing test files</item>
+        <item>Ensure only code blocks are extracted, not explanations</item>
+        <item>Regenerate corrupted test files</item>
+      </responsibilities>
+      <corrupted_files>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_29.py" line="564">
+          Contains: "Now I'll output the implementation. Since I need to add a method..."
+        </file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_1.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_2.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_4.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_5.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_6.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_11.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_12.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_13.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_14.py">Syntax error from truncation</file>
+        <file path="tests/generated/chief-of-staff-v3/test_issue_15.py">Syntax error from truncation</file>
+      </corrupted_files>
+    </specialist>
+
+    <specialist role="Refactoring Engineer" focus="BUG-13, BUG-14">
+      <responsibilities>
+        <item>Rename all Test* prefixed production classes</item>
+        <item>Update all imports referencing renamed classes</item>
+        <item>Ensure no pytest collection warnings</item>
+      </responsibilities>
+      <rename_table>
+        <rename old="TestState" new="SuiteMetrics" file="swarm_attack/chief_of_staff/state_gatherer.py:76"/>
+        <rename old="TestCritic" new="SuiteCritic" file="swarm_attack/chief_of_staff/critics.py"/>
+        <rename old="TestValidationGate" new="SuiteValidationGate" file="swarm_attack/chief_of_staff/validation_gates.py"/>
+        <rename old="TestRunnerConfig" new="RunnerConfig" file="swarm_attack/config.py"/>
+        <rename old="TestRunResult" new="SuiteRunResult" file="swarm_attack/chief_of_staff/recovery.py"/>
+        <rename old="TestCase" new="BugTestCase" file="swarm_attack/bug_models.py"/>
+        <rename old="TestFailureError" new="FailureError" file="swarm_attack/edge_cases.py"/>
+        <rename old="TestFailureHandler" new="FailureHandler" file="swarm_attack/edge_cases.py"/>
+        <rename old="TestRunner" new="SuiteRunner" file="swarm_attack/recovery.py"/>
+        <rename old="TestFailureDiscoveryAgent" new="FailureDiscoveryAgent" file="swarm_attack/chief_of_staff/backlog_discovery/"/>
+      </rename_table>
+    </specialist>
+  </expert_team>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests that verify the bug is fixed</description>
+      <test_locations>
+        <location bug="BUG-17">tests/unit/test_pytest_config.py</location>
+        <location bug="BUG-2">tests/unit/test_code_extraction.py</location>
+        <location bug="BUG-6">tests/unit/test_test_isolation.py</location>
+        <location bug="BUG-13,14">tests/unit/test_no_test_prefix_classes.py</location>
+      </test_locations>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal fix to pass the test</description>
+      <constraints>
+        <item>Fix ONE bug at a time</item>
+        <item>Commit after each bug fix</item>
+        <item>Run pytest --collect-only after each fix to verify progress</item>
+      </constraints>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up implementation while keeping tests green</description>
+    </phase>
+
+    <phase name="VERIFY" order="4">
+      <description>Run full test suite to confirm no regressions</description>
+      <command>PYTHONPATH=. pytest tests/ -v --tb=short 2>&amp;1 | tee test-results.txt</command>
+    </phase>
+  </tdd_protocol>
+
+  <implementation_order>
+    <step order="1" bug="BUG-17" effort="5 min" blocking="false">
+      <title>Add pytest-asyncio configuration</title>
+      <file>pyproject.toml</file>
+      <test_first>
+        <![CDATA[
+# tests/unit/test_pytest_config.py
+import tomllib
+
+def test_pytest_asyncio_configured():
+    """BUG-17: pytest-asyncio loop scope must be configured."""
+    with open("pyproject.toml", "rb") as f:
+        config = tomllib.load(f)
+
+    pytest_opts = config.get("tool", {}).get("pytest", {}).get("ini_options", {})
+    assert "asyncio_default_fixture_loop_scope" in pytest_opts
+    assert pytest_opts["asyncio_default_fixture_loop_scope"] == "function"
+        ]]>
+      </test_first>
+      <implementation>
+        <![CDATA[
+# Add to pyproject.toml under [tool.pytest.ini_options]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+filterwarnings = [
+    "ignore::pytest.PytestCollectionWarning",
+]
+        ]]>
+      </implementation>
+    </step>
+
+    <step order="2" bug="BUG-13,14" effort="45 min" blocking="true">
+      <title>Rename Test* production classes</title>
+      <test_first>
+        <![CDATA[
+# tests/unit/test_no_test_prefix_classes.py
+import ast
+from pathlib import Path
+
+def test_no_production_classes_named_test():
+    """BUG-13, BUG-14: Production code must not use Test* class names."""
+    violations = []
+    for py_file in Path("swarm_attack").rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                    violations.append(f"{py_file}:{node.lineno} - {node.name}")
+        except SyntaxError:
+            pass  # Skip files with syntax errors
+
+    assert not violations, f"Production Test* classes found:\n" + "\n".join(violations)
+        ]]>
+      </test_first>
+      <implementation_steps>
+        <step>Find all Test* classes in swarm_attack/</step>
+        <step>Rename each class per the rename_table</step>
+        <step>Update all imports in files that reference them</step>
+        <step>Run grep to find any remaining references</step>
+      </implementation_steps>
+      <verification>
+        <![CDATA[
+# Find remaining Test* classes
+grep -rn "class Test" swarm_attack/ --include="*.py" | grep -v "__pycache__"
+
+# Should return 0 results
+        ]]>
+      </verification>
+    </step>
+
+    <step order="3" bug="BUG-2" effort="30 min" blocking="true">
+      <title>Fix LLM code extraction parser</title>
+      <file>swarm_attack/agents/coder.py</file>
+      <test_first>
+        <![CDATA[
+# tests/unit/test_code_extraction.py
+import ast
+
+def test_extracts_only_code_blocks():
+    """BUG-2: LLM explanations must not leak into extracted code."""
+    from swarm_attack.agents.coder import extract_code_from_response
+
+    response = '''
+Here's the implementation:
+
+```python
+def foo():
+    return 42
+```
+
+Now I'll explain what this does. The function returns 42 because...
+'''
+    extracted = extract_code_from_response(response)
+    assert "def foo" in extracted
+    assert "explain" not in extracted.lower()
+    assert "Now I'll" not in extracted
+    # Validate it's syntactically correct
+    ast.parse(extracted)
+
+def test_rejects_response_without_code_block():
+    """BUG-2: Responses without code blocks should raise error."""
+    from swarm_attack.agents.coder import extract_code_from_response
+    import pytest
+
+    with pytest.raises(ValueError, match="No code block found"):
+        extract_code_from_response("Here's my explanation without any code...")
+
+def test_validates_extracted_code_syntax():
+    """BUG-2: Extracted code must be syntactically valid Python."""
+    from swarm_attack.agents.coder import extract_code_from_response
+    import pytest
+
+    response = '''
+```python
+def broken(
+    # Missing closing paren
+```
+'''
+    with pytest.raises(ValueError, match="syntax error"):
+        extract_code_from_response(response)
+        ]]>
+      </test_first>
+      <implementation>
+        <![CDATA[
+# Add to swarm_attack/agents/coder.py
+import re
+import ast
+
+def extract_code_from_response(response: str) -> str:
+    """Extract Python code from LLM response, excluding explanations.
+
+    Args:
+        response: Raw LLM response potentially containing code blocks
+
+    Returns:
+        Extracted Python code (concatenated if multiple blocks)
+
+    Raises:
+        ValueError: If no code block found or code has syntax errors
+    """
+    # Find all code blocks (```python or ``` followed by python-like code)
+    pattern = r'```(?:python)?\n(.*?)```'
+    matches = re.findall(pattern, response, re.DOTALL)
+
+    if not matches:
+        raise ValueError("No code block found in response")
+
+    code = '\n\n'.join(matches)
+
+    # Validate syntax before returning
+    try:
+        ast.parse(code)
+    except SyntaxError as e:
+        raise ValueError(f"Extracted code has syntax error at line {e.lineno}: {e.msg}")
+
+    return code
+        ]]>
+      </implementation>
+    </step>
+
+    <step order="4" bug="BUG-6" effort="30 min" blocking="true">
+      <title>Fix test file import collisions</title>
+      <test_first>
+        <![CDATA[
+# tests/unit/test_test_isolation.py
+from pathlib import Path
+
+def test_all_generated_test_dirs_have_init():
+    """BUG-6: All test directories must be proper packages."""
+    missing = []
+    for test_dir in Path("tests/generated").iterdir():
+        if test_dir.is_dir():
+            init_file = test_dir / "__init__.py"
+            if not init_file.exists():
+                missing.append(str(test_dir))
+
+    assert not missing, f"Missing __init__.py in:\n" + "\n".join(missing)
+
+def test_all_generated_tests_have_valid_syntax():
+    """BUG-6: All generated test files must be syntactically valid."""
+    import ast
+
+    errors = []
+    for test_file in Path("tests/generated").rglob("test_*.py"):
+        try:
+            ast.parse(test_file.read_text())
+        except SyntaxError as e:
+            errors.append(f"{test_file}:{e.lineno} - {e.msg}")
+
+    assert not errors, f"Syntax errors in test files:\n" + "\n".join(errors)
+
+def test_no_duplicate_test_basenames_without_init():
+    """BUG-6: Test isolation requires __init__.py when basenames collide."""
+    from collections import defaultdict
+
+    basenames = defaultdict(list)
+    for test_file in Path("tests/generated").rglob("test_*.py"):
+        basenames[test_file.name].append(test_file)
+
+    collisions_without_init = []
+    for basename, files in basenames.items():
+        if len(files) > 1:
+            # Check if all parent dirs have __init__.py
+            for f in files:
+                if not (f.parent / "__init__.py").exists():
+                    collisions_without_init.append(f"{basename}: {[str(p) for p in files]}")
+                    break
+
+    assert not collisions_without_init, f"Colliding basenames without __init__.py:\n" + "\n".join(collisions_without_init)
+        ]]>
+      </test_first>
+      <implementation_steps>
+        <step>Add __init__.py to all tests/generated/*/ directories</step>
+        <step>Delete or regenerate corrupted test files with syntax errors</step>
+        <step>Clear __pycache__ directories to reset import cache</step>
+      </implementation_steps>
+      <commands>
+        <![CDATA[
+# Add __init__.py to all test directories
+for dir in tests/generated/*/; do
+    touch "${dir}__init__.py"
+done
+
+# Clear pycache
+find tests/ -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# Delete corrupted files (will need regeneration)
+rm -f tests/generated/chief-of-staff-v3/test_issue_29.py
+
+# Verify syntax of remaining files
+for f in tests/generated/*/test_*.py; do
+    python -m py_compile "$f" 2>&1 || echo "CORRUPTED: $f"
+done
+        ]]>
+      </commands>
+    </step>
+
+    <step order="5" bug="ALL" effort="15 min" blocking="false">
+      <title>Final verification</title>
+      <commands>
+        <![CDATA[
+# Step 1: Verify zero collection errors
+PYTHONPATH=. pytest --collect-only 2>&1 | tail -5
+# Expected: "X tests collected" with NO errors
+
+# Step 2: Run full test suite
+PYTHONPATH=. pytest tests/ -v --tb=short -x 2>&1 | tee final-test-results.txt
+
+# Step 3: Check for pytest warnings about Test* classes
+grep -i "PytestCollectionWarning" final-test-results.txt
+# Expected: No output (no warnings)
+
+# Step 4: Summary
+echo "=== VERIFICATION COMPLETE ==="
+grep -E "(passed|failed|error)" final-test-results.txt | tail -3
+        ]]>
+      </commands>
+    </step>
+  </implementation_order>
+
+  <success_criteria>
+    <criterion id="1" priority="MUST">pytest --collect-only reports 0 errors</criterion>
+    <criterion id="2" priority="MUST">All existing tests pass (no regressions)</criterion>
+    <criterion id="3" priority="MUST">No PytestCollectionWarning for Test* classes</criterion>
+    <criterion id="4" priority="MUST">No syntax errors in tests/generated/**/*.py</criterion>
+    <criterion id="5" priority="SHOULD">All tests/generated/*/ have __init__.py</criterion>
+    <criterion id="6" priority="SHOULD">Code extraction validates syntax before writing files</criterion>
+  </success_criteria>
+
+  <commit_protocol>
+    <format>
+      <![CDATA[
+git commit -m "$(cat <<'EOF'
+fix(BUG-N): Short description
+
+- Bullet point of what changed
+- Another bullet point
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+      ]]>
+    </format>
+    <examples>
+      <example bug="BUG-17">fix(test): add pytest-asyncio configuration</example>
+      <example bug="BUG-13">fix(naming): rename TestState to SuiteMetrics</example>
+      <example bug="BUG-2">fix(coder): validate extracted code syntax before writing</example>
+      <example bug="BUG-6">fix(test): add __init__.py to generated test directories</example>
+    </examples>
+  </commit_protocol>
+
+  <emergency_rollback>
+    <description>If fixes cause more problems than they solve</description>
+    <commands>
+      <![CDATA[
+# Abandon worktree changes
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree remove worktrees/test-infra-p0 --force
+
+# Or reset specific commits
+git revert HEAD~N..HEAD
+      ]]>
+    </commands>
+  </emergency_rollback>
+
+  <post_completion>
+    <next_priorities>
+      <priority order="1">Resume chief-of-staff-v3 implementation (10 remaining issues)</priority>
+      <priority order="2">Add validation to bug commands (BUG-9, BUG-10, BUG-11)</priority>
+      <priority order="3">QA testing per CLAUDE.md requirements</priority>
+    </next_priorities>
+    <cleanup>
+      <![CDATA[
+# After merging to master
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree remove worktrees/test-infra-p0
+git branch -d fix/test-infra-p0
+      ]]>
+    </cleanup>
+  </post_completion>
+</expert_team_prompt>

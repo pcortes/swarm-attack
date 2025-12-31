@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<llm-prompt>
+  <metadata>
+    <title>QA Agent Enhancement Sprint</title>
+    <created>2025-12-31</created>
+    <source-report>/Users/philipjcortes/Desktop/swarm-attack-qa-agent-bugs-20251231-181600.md</source-report>
+    <target-repo>/Users/philipjcortes/Desktop/swarm-attack</target-repo>
+    <note>swarm-attack-qa-agent is a worktree of swarm-attack; fixes go to main repo</note>
+    <methodology>TDD with Expert Subagent Teams</methodology>
+  </metadata>
+
+  <context>
+    <summary>
+      Four bugs/enhancements were identified in the QA Agent subsystem during PM workflow testing.
+      This prompt orchestrates expert subagent teams to root cause, plan, and implement each fix using TDD.
+    </summary>
+
+    <bugs>
+      <bug id="QA-BUG-001" severity="MEDIUM" component="swarm_attack/cli/qa.py">
+        <title>No Direct QA Test Command for Arbitrary Endpoints</title>
+        <description>No easy way for a PM to test arbitrary API endpoints without full feature context. Need a simple `qa probe` command.</description>
+        <desired-usage>swarm-attack qa probe http://localhost:8080/api/users --method GET --expect 200</desired-usage>
+        <location>CLI missing - needs new command in qa.py</location>
+      </bug>
+
+      <bug id="QA-BUG-002" severity="LOW" component="swarm_attack/cli/qa.py">
+        <title>QA Session Results Not Human-Readable</title>
+        <description>qa report output is terse - missing test counts, duration, findings count.</description>
+        <current-output>Session ID | Status (only two columns)</current-output>
+        <desired-output>Session ID | Status | Tests | Findings | Duration</desired-output>
+        <location>qa.py report command display logic</location>
+      </bug>
+
+      <bug id="QA-BUG-003" severity="LOW" component="swarm_attack/cli/qa.py">
+        <title>QA Bugs Display Lacks Context</title>
+        <description>qa bugs output lacks session ID, timestamp, and suggested actions.</description>
+        <location>qa.py bugs command display logic</location>
+      </bug>
+
+      <bug id="QA-BUG-004" severity="INFO" component="Documentation/Test Coverage">
+        <title>Edge Cases Documented but Not Tested</title>
+        <description>QA_VALIDATION_REPORT.md documents untested edge cases: malformed schemas, OAuth refresh, streaming responses, race conditions, git edge cases.</description>
+        <location>tests/unit/qa/ - missing edge case tests</location>
+      </bug>
+    </bugs>
+  </context>
+
+  <instructions>
+    <phase id="0" name="Setup Worktree">
+      <description>Create an isolated worktree for QA enhancement work</description>
+      <steps>
+        <step>Navigate to /Users/philipjcortes/Desktop/swarm-attack</step>
+        <step>Create worktree: git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements -b enhance/qa-pm-ux</step>
+        <step>Change to worktree: cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements</step>
+        <step>Verify clean state: git status</step>
+        <step>All subsequent work happens in this worktree</step>
+      </steps>
+    </phase>
+
+    <phase id="1" name="Root Cause Analysis">
+      <description>Deploy expert subagents to investigate each bug/enhancement</description>
+
+      <subagent role="RootCauseAnalyzer" bug="QA-BUG-001">
+        <task>Design qa probe command</task>
+        <investigation>
+          <step>Read swarm_attack/cli/qa.py to understand existing command structure</step>
+          <step>Read swarm_attack/qa/agents/behavioral.py to understand HTTP testing</step>
+          <step>Identify reusable components from BehavioralTesterAgent</step>
+          <step>Design minimal command interface for ad-hoc testing</step>
+          <step>Check if QAOrchestrator can be invoked with minimal context</step>
+        </investigation>
+        <output>
+          Design document with:
+          - Command signature: qa probe URL [--method] [--expect] [--headers] [--body]
+          - Internal flow: URL → BehavioralTesterAgent → formatted output
+          - Reusable components identified
+        </output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="QA-BUG-002">
+        <task>Investigate qa report display</task>
+        <investigation>
+          <step>Read swarm_attack/cli/qa.py report_command function</step>
+          <step>Read swarm_attack/qa/models.py QASession and QAResult classes</step>
+          <step>Identify what data is available but not displayed</step>
+          <step>Check Rich table formatting patterns in other commands</step>
+        </investigation>
+        <output>
+          List of available fields not being displayed:
+          - tests_run, tests_passed, tests_failed (in QAResult)
+          - findings count (len(session.result.findings))
+          - duration (if tracked)
+          - depth used
+        </output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="QA-BUG-003">
+        <task>Investigate qa bugs display</task>
+        <investigation>
+          <step>Read swarm_attack/cli/qa.py bugs_command function</step>
+          <step>Read swarm_attack/qa/models.py QAFinding class</step>
+          <step>Identify what context data exists on findings</step>
+          <step>Check if session_id is stored with finding</step>
+        </investigation>
+        <output>
+          Analysis of QAFinding fields and what's missing:
+          - Does finding have session_id? If not, add it
+          - Does finding have created_at? If not, add it
+          - What action should be suggested based on severity?
+        </output>
+      </subagent>
+
+      <subagent role="RootCauseAnalyzer" bug="QA-BUG-004">
+        <task>Inventory untested edge cases</task>
+        <investigation>
+          <step>Read /Users/philipjcortes/Desktop/swarm-attack-qa-agent/docs/QA_VALIDATION_REPORT.md</step>
+          <step>Extract all items marked as "not tested"</step>
+          <step>Categorize by component (behavioral, contract, regression)</step>
+          <step>Prioritize by risk and effort</step>
+        </investigation>
+        <output>
+          Prioritized backlog of edge case tests to add:
+          - P1: [list]
+          - P2: [list]
+          - P3: [list]
+        </output>
+      </subagent>
+    </phase>
+
+    <phase id="2" name="Fix Planning">
+      <description>Synthesize root causes into actionable enhancement plan</description>
+
+      <subagent role="FixPlanner">
+        <task>Create comprehensive enhancement plan</task>
+        <planning>
+          <step>Review all root cause outputs</step>
+          <step>Order enhancements by value to PM (probe command highest)</step>
+          <step>Identify shared model changes needed</step>
+          <step>Define test strategy for each enhancement</step>
+          <step>Estimate complexity</step>
+        </planning>
+        <output>
+          Enhancement plan with:
+          - Ordered list of changes
+          - Model changes (QAFinding, QASession if needed)
+          - CLI changes (qa.py)
+          - Test files to create
+          - Acceptance criteria
+        </output>
+      </subagent>
+    </phase>
+
+    <phase id="3" name="TDD Implementation">
+      <description>Implement each enhancement using strict TDD</description>
+
+      <enhancement id="QA-BUG-001" priority="1">
+        <title>Add qa probe command</title>
+
+        <subagent role="TestEngineer">
+          <task>Write failing tests for qa probe</task>
+          <red-phase>
+            <step>Create tests/unit/cli/test_qa_probe.py</step>
+            <step>Test: qa probe with valid URL returns result</step>
+            <step>Test: qa probe with --method POST sends POST</step>
+            <step>Test: qa probe with --expect 404 passes on 404</step>
+            <step>Test: qa probe with --headers adds headers</step>
+            <step>Test: qa probe with unreachable URL shows error gracefully</step>
+            <step>Run: PYTHONPATH=. pytest tests/unit/cli/test_qa_probe.py -v</step>
+            <step>Verify tests FAIL (RED phase)</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Implement qa probe command</task>
+          <green-phase>
+            <step>Add probe_command to swarm_attack/cli/qa.py</step>
+            <step>
+              Command signature:
+              @qa_app.command("probe")
+              def probe_command(
+                  url: str,
+                  method: str = typer.Option("GET", "--method", "-m"),
+                  expect: int = typer.Option(200, "--expect", "-e"),
+                  headers: Optional[List[str]] = typer.Option(None, "--header", "-H"),
+                  body: Optional[str] = typer.Option(None, "--body", "-d"),
+                  timeout: int = typer.Option(30, "--timeout", "-t"),
+              ):
+            </step>
+            <step>Use httpx or requests directly (don't need full BehavioralTester)</step>
+            <step>Format output with Rich: status, headers, body preview</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+
+        <subagent role="Reviewer">
+          <task>Refactor and verify</task>
+          <refactor-phase>
+            <step>Ensure error handling is user-friendly</step>
+            <step>Add --json flag for machine-readable output</step>
+            <step>Run full test suite</step>
+          </refactor-phase>
+        </subagent>
+      </enhancement>
+
+      <enhancement id="QA-BUG-002" priority="2">
+        <title>Enhance qa report display</title>
+
+        <subagent role="TestEngineer">
+          <task>Write failing tests for enhanced report</task>
+          <red-phase>
+            <step>Create tests/unit/cli/test_qa_report_display.py</step>
+            <step>Test: report table includes Tests column</step>
+            <step>Test: report table includes Findings column</step>
+            <step>Test: report table includes Duration column</step>
+            <step>Test: report table includes Depth column</step>
+            <step>Run tests - verify FAIL</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Enhance report display</task>
+          <green-phase>
+            <step>Modify report_command in qa.py</step>
+            <step>Add columns: Tests (passed/total), Findings, Duration, Depth</step>
+            <step>Calculate duration from session timestamps if available</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+      </enhancement>
+
+      <enhancement id="QA-BUG-003" priority="3">
+        <title>Enhance qa bugs display</title>
+
+        <subagent role="TestEngineer">
+          <task>Write failing tests for enhanced bugs display</task>
+          <red-phase>
+            <step>Create tests/unit/cli/test_qa_bugs_display.py</step>
+            <step>Test: bugs table includes Session column</step>
+            <step>Test: bugs table includes Timestamp column</step>
+            <step>Test: bugs output includes suggested action based on severity</step>
+            <step>Run tests - verify FAIL</step>
+          </red-phase>
+        </subagent>
+
+        <subagent role="Coder">
+          <task>Enhance bugs display</task>
+          <green-phase>
+            <step>Check if QAFinding has session_id - add if missing</step>
+            <step>Check if QAFinding has created_at - add if missing</step>
+            <step>Modify bugs_command to display new columns</step>
+            <step>Add action suggestion: CRITICAL → "Run qa create-bugs", LOW → "Consider ignoring"</step>
+            <step>Run tests until GREEN</step>
+          </green-phase>
+        </subagent>
+      </enhancement>
+
+      <enhancement id="QA-BUG-004" priority="4">
+        <title>Add priority edge case tests</title>
+
+        <subagent role="TestEngineer">
+          <task>Add P1 edge case tests from validation report</task>
+          <implementation>
+            <step>Create tests/unit/qa/test_edge_cases.py</step>
+            <step>Add tests for malformed JSON responses</step>
+            <step>Add tests for connection timeout handling</step>
+            <step>Add tests for rate limit (429) handling</step>
+            <step>Skip P2/P3 edge cases for this sprint (document in backlog)</step>
+            <step>Run tests - should pass (testing existing behavior)</step>
+          </implementation>
+        </subagent>
+      </enhancement>
+    </phase>
+
+    <phase id="4" name="Integration Verification">
+      <description>Verify all enhancements work together</description>
+      <steps>
+        <step>Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+        <step>Manual test: swarm-attack qa probe http://httpbin.org/get --expect 200</step>
+        <step>Manual test: swarm-attack qa probe http://httpbin.org/status/404 --expect 404</step>
+        <step>Manual test: swarm-attack qa report (verify new columns)</step>
+        <step>Manual test: swarm-attack qa bugs (verify new columns)</step>
+        <step>Manual test: swarm-attack qa --help (verify probe command listed)</step>
+      </steps>
+    </phase>
+
+    <phase id="5" name="Commit and Merge">
+      <description>Create atomic commits and prepare for merge</description>
+      <steps>
+        <step>Create commit for QA-BUG-001: "feat(qa): add probe command for ad-hoc endpoint testing"</step>
+        <step>Create commit for QA-BUG-002: "enhance(qa): add test counts and duration to report display"</step>
+        <step>Create commit for QA-BUG-003: "enhance(qa): add session and timestamp to bugs display"</step>
+        <step>Create commit for QA-BUG-004: "test(qa): add P1 edge case tests for resilience"</step>
+        <step>Push branch: git push origin enhance/qa-pm-ux</step>
+        <step>Return to main repo and merge: git checkout master &amp;&amp; git merge enhance/qa-pm-ux</step>
+        <step>Clean up worktree: git worktree remove worktrees/qa-enhancements</step>
+      </steps>
+    </phase>
+  </instructions>
+
+  <acceptance-criteria>
+    <criterion bug="QA-BUG-001">swarm-attack qa probe URL works and shows formatted result</criterion>
+    <criterion bug="QA-BUG-001">qa probe --expect flag validates response status</criterion>
+    <criterion bug="QA-BUG-001">qa probe handles unreachable URLs gracefully</criterion>
+    <criterion bug="QA-BUG-002">qa report shows Tests, Findings, Duration, Depth columns</criterion>
+    <criterion bug="QA-BUG-003">qa bugs shows Session, Timestamp columns and action suggestions</criterion>
+    <criterion bug="QA-BUG-004">At least 5 new edge case tests added and passing</criterion>
+    <criterion global="true">All existing tests continue to pass (no regressions)</criterion>
+    <criterion global="true">New tests added for each enhancement</criterion>
+  </acceptance-criteria>
+
+  <constraints>
+    <constraint>All work must happen in the worktree, not main repo</constraint>
+    <constraint>Each enhancement must have tests written BEFORE implementation (TDD)</constraint>
+    <constraint>No changes to code without corresponding test coverage</constraint>
+    <constraint>Atomic commits - one logical change per commit</constraint>
+    <constraint>Run full test suite before each commit</constraint>
+    <constraint>qa probe must not require full QAOrchestrator setup (keep it simple)</constraint>
+  </constraints>
+
+  <notes>
+    <note>swarm-attack-qa-agent is a worktree of swarm-attack - all fixes go to main repo</note>
+    <note>The qa probe command should be lightweight - direct HTTP, not full agent invocation</note>
+    <note>Consider using httpx for async support in qa probe</note>
+    <note>Edge case tests (QA-BUG-004) are additive - they test existing behavior, not new features</note>
+  </notes>
+</llm-prompt>
