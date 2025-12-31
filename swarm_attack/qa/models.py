@@ -74,12 +74,16 @@ class QARecommendation(Enum):
 
 
 @dataclass
-class TestDataConfig:
-    """Configure how QA handles test data from Section 10.6."""
+class QADataConfig:
+    """Configure how QA handles test data (BUG-13/14: renamed from TestDataConfig)."""
     mode: Literal["shared", "isolated", "readonly"] = "shared"
     prefix: str = "qa_test_"
     cleanup_on_success: bool = True
     cleanup_on_failure: bool = False
+
+
+# BUG-13/14: Backward compatibility alias (not a class definition, so pytest won't collect)
+TestDataConfig = QADataConfig
 
 
 @dataclass
@@ -162,6 +166,8 @@ class QAFinding:
     evidence: dict[str, str]
     recommendation: str
     confidence: float = 0.9
+    session_id: str = ""  # QA-BUG-003: Session context
+    created_at: str = ""  # QA-BUG-003: Timestamp context
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -177,6 +183,8 @@ class QAFinding:
             "evidence": self.evidence,
             "recommendation": self.recommendation,
             "confidence": self.confidence,
+            "session_id": self.session_id,
+            "created_at": self.created_at,
         }
 
     @classmethod
@@ -238,6 +246,10 @@ class QAResult:
     regression_results: Optional[dict[str, Any]] = None
     skipped_reasons: dict[str, str] = field(default_factory=dict)
     partial_completion_reason: Optional[str] = None
+    # Coverage tracking fields (QA Session Extension)
+    endpoints_discovered: int = 0
+    coverage_percentage: float = 0.0
+    coverage_delta: float = 0.0  # vs baseline
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -252,6 +264,9 @@ class QAResult:
             "minor_count": self.minor_count,
             "recommendation": self.recommendation.value,
             "confidence": self.confidence,
+            "endpoints_discovered": self.endpoints_discovered,
+            "coverage_percentage": self.coverage_percentage,
+            "coverage_delta": self.coverage_delta,
         }
 
 
@@ -269,6 +284,11 @@ class QASession:
     completed_at: Optional[str] = None
     cost_usd: float = 0.0
     error: Optional[str] = None
+    # QA Session Extension fields
+    coverage_report: Optional[dict[str, Any]] = None
+    regression_report: Optional[dict[str, Any]] = None
+    is_baseline: bool = False
+    baseline_session_id: Optional[str] = None
 
     def __post_init__(self) -> None:
         if not self.created_at:
@@ -287,6 +307,10 @@ class QASession:
             "completed_at": self.completed_at,
             "cost_usd": self.cost_usd,
             "error": self.error,
+            "coverage_report": self.coverage_report,
+            "regression_report": self.regression_report,
+            "is_baseline": self.is_baseline,
+            "baseline_session_id": self.baseline_session_id,
         }
 
     @classmethod
@@ -342,6 +366,10 @@ class QASession:
             completed_at=data.get("completed_at"),
             cost_usd=data.get("cost_usd", 0.0),
             error=data.get("error"),
+            coverage_report=data.get("coverage_report"),
+            regression_report=data.get("regression_report"),
+            is_baseline=data.get("is_baseline", False),
+            baseline_session_id=data.get("baseline_session_id"),
         )
 
 

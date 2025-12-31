@@ -44,6 +44,8 @@ from swarm_attack.bug_models import (
     RootCauseDebateResult,
 )
 from swarm_attack.bug_state_store import BugStateStore
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -164,6 +166,48 @@ class BugOrchestrator:
             if data:
                 log_data.update(data)
             self._logger.log(event_type, log_data, level=level)
+
+    def _emit_bug_event(
+        self,
+        event_type: EventType,
+        bug_id: str,
+        payload: Optional[dict] = None,
+        confidence: float = 0.0,
+    ) -> SwarmEvent:
+        """
+        Emit a bug lifecycle event.
+
+        Args:
+            event_type: The type of event (from EventType enum).
+            bug_id: The bug being tracked.
+            payload: Additional data for the event.
+            confidence: Confidence score for auto-approval decisions.
+
+        Returns:
+            The emitted SwarmEvent.
+        """
+        bugs_path = Path(self.config.repo_root) / ".swarm"
+        bus = get_event_bus(bugs_path)
+
+        event = SwarmEvent(
+            event_type=event_type,
+            bug_id=bug_id,
+            source_agent="BugOrchestrator",
+            payload=payload or {},
+            confidence=confidence,
+        )
+        bus.emit(event)
+
+        self._log(
+            "bug_event_emitted",
+            {
+                "event_type": event_type.value,
+                "bug_id": bug_id,
+                "event_id": event.event_id,
+            },
+        )
+
+        return event
 
     def _generate_bug_id(self, description: str) -> str:
         """
@@ -605,6 +649,13 @@ class BugOrchestrator:
 
         self._log("bug_created", {"bug_id": bug_id})
 
+        # Emit BUG_DETECTED event
+        self._emit_bug_event(
+            EventType.BUG_DETECTED,
+            bug_id,
+            payload={"description": description, "test_path": test_path},
+        )
+
         return BugPipelineResult(
             success=True,
             bug_id=bug_id,
@@ -708,6 +759,9 @@ class BugOrchestrator:
         self._state_store.save(state)
         self._state_store.write_reproduction_report(state)
 
+        # Emit BUG_REPRODUCED event
+        self._emit_bug_event(EventType.BUG_REPRODUCED, bug_id)
+
         # Check cost limit
         if total_cost > max_cost_usd:
             state.blocked_reason = f"Cost limit exceeded: ${total_cost:.2f} > ${max_cost_usd:.2f}"
@@ -755,6 +809,14 @@ class BugOrchestrator:
         state.transition_to(BugPhase.ANALYZED, "agent_output")
         self._state_store.save(state)
         self._state_store.write_root_cause_report(state)
+
+        # Emit BUG_ANALYZED event
+        self._emit_bug_event(
+            EventType.BUG_ANALYZED,
+            bug_id,
+            payload={"confidence": state.root_cause.confidence if state.root_cause else 0.0},
+            confidence=state.root_cause.confidence if state.root_cause else 0.0,
+        )
 
         # Check cost limit
         if total_cost > max_cost_usd:
@@ -804,6 +866,13 @@ class BugOrchestrator:
         state.transition_to(BugPhase.PLANNED, "agent_output")
         self._state_store.save(state)
         self._state_store.write_fix_plan_report(state)
+
+        # Emit BUG_PLANNED event - ready for approval
+        self._emit_bug_event(
+            EventType.BUG_PLANNED,
+            bug_id,
+            payload={"risk_level": state.fix_plan.risk_level if state.fix_plan else "unknown"},
+        )
 
         # Calculate debate scores for summary
         debate_summary = ""
@@ -901,6 +970,13 @@ class BugOrchestrator:
                 "approved_by": approved_by,
                 "fix_plan_hash": state.approval_record.fix_plan_hash,
             },
+        )
+
+        # Emit BUG_APPROVED event
+        self._emit_bug_event(
+            EventType.BUG_APPROVED,
+            bug_id,
+            payload={"approved_by": approved_by},
         )
 
         return BugPipelineResult(
@@ -1092,6 +1168,13 @@ class BugOrchestrator:
                         "bug_id": bug_id,
                         "files_changed": len(files_changed),
                     },
+                )
+
+                # Emit BUG_FIXED event
+                self._emit_bug_event(
+                    EventType.BUG_FIXED,
+                    bug_id,
+                    payload={"files_changed": files_changed},
                 )
 
                 return BugPipelineResult(

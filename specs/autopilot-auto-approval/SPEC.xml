@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>Autopilot Auto-Approval System</title>
+    <id>SPEC-2025-12-29-AUTO-APPROVAL</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P1</priority>
+    <estimated_effort>3-4 days</estimated_effort>
+    <worktree_branch>feature/autopilot-auto-approval</worktree_branch>
+    <depends_on>session-init-protocol (recommended but not blocking)</depends_on>
+    <source>2025-12-27_swarm-attack-autopilot-system.md</source>
+  </metadata>
+
+  <executive_summary>
+    Eliminate manual approval gates by implementing confidence-based auto-approval.
+    Replace these manual commands with automatic triggers:
+    - `swarm-attack approve {feature}` - Auto when spec score >= 0.85 for 2+ rounds
+    - `swarm-attack greenlight {feature}` - Auto when complexity gate passes
+    - `swarm-attack bug approve {bug_id}` - Auto when confidence >= 0.9 AND risk != high
+
+    Human override always available via `swarm-veto` and `swarm-manual` commands.
+  </executive_summary>
+
+  <expert_team>
+    <lead role="Approval System Architect" focus="Auto-approval rules engine">
+      Designs the confidence threshold system and approval rules.
+      Implements SpecAutoApprover, IssueAutoGreenlighter, BugAutoApprover.
+    </lead>
+    <specialist role="Safety Engineer" focus="Override mechanisms">
+      Implements human veto and manual mode commands.
+      Ensures rollback capability on failed auto-approvals.
+    </specialist>
+    <specialist role="State Machine Specialist" focus="Phase transitions">
+      Modifies state machine to trigger auto-approval at correct phases.
+      Ensures idempotent transitions.
+    </specialist>
+    <specialist role="CLI Engineer" focus="New commands">
+      Implements swarm-veto, swarm-manual, swarm-auto CLI commands.
+      Integrates with existing CLI structure.
+    </specialist>
+  </expert_team>
+
+  <requirements>
+    <functional id="F1" title="Spec Auto-Approval">
+      <description>
+        Automatically approve specs when critic score meets threshold.
+      </description>
+      <interface>
+        <![CDATA[
+class SpecAutoApprover:
+    """Replace manual `swarm-attack approve` command."""
+
+    APPROVAL_THRESHOLD = 0.85
+    REQUIRED_ROUNDS = 2
+
+    def __init__(self, state_store: StateStore, event_logger: EventLogger):
+        self._state_store = state_store
+        self._logger = event_logger
+
+    def should_auto_approve(self, feature_id: str) -> tuple[bool, str]:
+        """
+        Check if spec should be auto-approved.
+        Returns (should_approve, reason).
+        """
+        run_state = self._state_store.get_run_state(feature_id)
+        scores = run_state.debate_scores or []
+
+        # Need 2+ consecutive rounds above threshold
+        if len(scores) < self.REQUIRED_ROUNDS:
+            return False, f"Need {self.REQUIRED_ROUNDS} debate rounds, have {len(scores)}"
+
+        recent = scores[-self.REQUIRED_ROUNDS:]
+        if all(s.average >= self.APPROVAL_THRESHOLD for s in recent):
+            avg = recent[-1].average
+            return True, f"Auto-approved: {avg:.2f} score for {self.REQUIRED_ROUNDS} rounds"
+
+        return False, f"Score {recent[-1].average:.2f} below threshold {self.APPROVAL_THRESHOLD}"
+
+    def auto_approve_if_ready(self, feature_id: str) -> ApprovalResult:
+        """
+        Check and auto-approve if conditions met.
+        Called after each spec debate round.
+        """
+        should, reason = self.should_auto_approve(feature_id)
+
+        if not should:
+            return ApprovalResult(approved=False, reason=reason)
+
+        # Check for manual mode override
+        if self._is_manual_mode(feature_id):
+            return ApprovalResult(approved=False, reason="Manual mode enabled")
+
+        # Perform approval
+        self._state_store.approve_spec(feature_id)
+        self._logger.log_auto_approval("spec", feature_id, reason)
+
+        return ApprovalResult(approved=True, reason=reason)
+
+@dataclass
+class ApprovalResult:
+    approved: bool
+    reason: str
+    confidence: float = 0.0
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F2" title="Issue Auto-Greenlight">
+      <description>
+        Automatically greenlight issues when complexity gate passes.
+      </description>
+      <interface>
+        <![CDATA[
+class IssueAutoGreenlighter:
+    """Replace manual `swarm-attack greenlight` command."""
+
+    def __init__(self, state_store: StateStore, event_logger: EventLogger):
+        self._state_store = state_store
+        self._logger = event_logger
+
+    def should_auto_greenlight(self, feature_id: str) -> tuple[bool, str]:
+        """
+        Check if feature should be auto-greenlit for implementation.
+        """
+        run_state = self._state_store.get_run_state(feature_id)
+        issues = run_state.tasks or []
+
+        if not issues:
+            return False, "No issues to greenlight"
+
+        # All issues must pass complexity gate
+        failed = [i for i in issues if not i.complexity_gate_passed]
+        if failed:
+            return False, f"{len(failed)} issues failed complexity gate"
+
+        # No circular dependencies
+        if self._has_circular_deps(issues):
+            return False, "Circular dependency detected"
+
+        # All issues must have required fields
+        incomplete = [i for i in issues if not i.has_interface_contract]
+        if incomplete:
+            return False, f"{len(incomplete)} issues missing interface contract"
+
+        return True, "Auto-greenlit: all issues validated"
+
+    def auto_greenlight_if_ready(self, feature_id: str) -> ApprovalResult:
+        """Check and auto-greenlight if conditions met."""
+        if self._is_manual_mode(feature_id):
+            return ApprovalResult(approved=False, reason="Manual mode enabled")
+
+        should, reason = self.should_auto_greenlight(feature_id)
+
+        if not should:
+            return ApprovalResult(approved=False, reason=reason)
+
+        self._state_store.greenlight_feature(feature_id)
+        self._logger.log_auto_approval("greenlight", feature_id, reason)
+
+        return ApprovalResult(approved=True, reason=reason)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F3" title="Bug Fix Auto-Approval">
+      <description>
+        Automatically approve bug fixes when confidence is high and risk is acceptable.
+      </description>
+      <interface>
+        <![CDATA[
+class BugAutoApprover:
+    """Replace manual `swarm-attack bug approve` command."""
+
+    CONFIDENCE_THRESHOLD = 0.9
+    ALLOWED_RISK_LEVELS = ["low", "medium"]
+
+    def __init__(self, bug_store: BugStore, event_logger: EventLogger):
+        self._bug_store = bug_store
+        self._logger = event_logger
+
+    def should_auto_approve(self, bug_id: str) -> tuple[bool, str]:
+        """
+        Check if bug fix should be auto-approved.
+        High-risk bugs always require manual review.
+        """
+        bug_state = self._bug_store.get(bug_id)
+        fix_plan = bug_state.fix_plan
+
+        if not fix_plan:
+            return False, "No fix plan available"
+
+        # Risk level check
+        if fix_plan.risk_level not in self.ALLOWED_RISK_LEVELS:
+            return False, f"Risk level '{fix_plan.risk_level}' requires manual review"
+
+        # Confidence check
+        if fix_plan.confidence < self.CONFIDENCE_THRESHOLD:
+            return False, f"Confidence {fix_plan.confidence:.2f} below threshold {self.CONFIDENCE_THRESHOLD}"
+
+        # Breaking changes require manual review
+        if fix_plan.breaks_api:
+            return False, "API-breaking changes require manual review"
+        if fix_plan.requires_migration:
+            return False, "Migration required - needs manual review"
+
+        return True, f"Auto-approved: {fix_plan.confidence:.2f} confidence, {fix_plan.risk_level} risk"
+
+    def auto_approve_if_ready(self, bug_id: str) -> ApprovalResult:
+        """Check and auto-approve if conditions met."""
+        should, reason = self.should_auto_approve(bug_id)
+
+        if not should:
+            return ApprovalResult(approved=False, reason=reason)
+
+        self._bug_store.approve_fix(bug_id)
+        self._logger.log_auto_approval("bug_fix", bug_id, reason)
+
+        return ApprovalResult(approved=True, reason=reason, confidence=self._get_confidence(bug_id))
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F4" title="Human Override Commands">
+      <description>
+        CLI commands for human override of auto-approval.
+      </description>
+      <commands>
+        <![CDATA[
+# Veto an auto-approved item
+swarm-attack veto --feature my-feature --reason "Need architecture review"
+swarm-attack bug veto bug-id --reason "Too risky"
+
+# Enable manual mode (disable auto-approval for feature)
+swarm-attack manual --feature my-feature
+swarm-attack manual --all  # Disable globally
+
+# Re-enable auto mode
+swarm-attack auto --feature my-feature
+swarm-attack auto --all
+
+# Check approval status
+swarm-attack approval-status my-feature
+        ]]>
+      </commands>
+      <interface>
+        <![CDATA[
+@app.command("veto")
+def veto_command(
+    feature: str = typer.Option(None, "--feature", "-f"),
+    bug: str = typer.Option(None, "--bug", "-b"),
+    reason: str = typer.Option(..., "--reason", "-r"),
+):
+    """Veto an auto-approved item."""
+    if feature:
+        state_store.veto_approval(feature, reason)
+        console.print(f"[yellow]Vetoed: {feature}[/yellow]")
+    elif bug:
+        bug_store.veto_approval(bug, reason)
+        console.print(f"[yellow]Vetoed: {bug}[/yellow]")
+
+@app.command("manual")
+def manual_mode_command(
+    feature: str = typer.Option(None, "--feature", "-f"),
+    all_features: bool = typer.Option(False, "--all"),
+):
+    """Enable manual approval mode (disable auto-approval)."""
+    if all_features:
+        config.set_global_manual_mode(True)
+        console.print("[yellow]Manual mode enabled globally[/yellow]")
+    elif feature:
+        state_store.set_manual_mode(feature, True)
+        console.print(f"[yellow]Manual mode enabled for {feature}[/yellow]")
+
+@app.command("auto")
+def auto_mode_command(
+    feature: str = typer.Option(None, "--feature", "-f"),
+    all_features: bool = typer.Option(False, "--all"),
+):
+    """Re-enable auto-approval mode."""
+    if all_features:
+        config.set_global_manual_mode(False)
+        console.print("[green]Auto mode enabled globally[/green]")
+    elif feature:
+        state_store.set_manual_mode(feature, False)
+        console.print(f"[green]Auto mode enabled for {feature}[/green]")
+        ]]>
+      </interface>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/test_auto_approval.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from swarm_attack.auto_approval.spec import SpecAutoApprover
+from swarm_attack.auto_approval.issue import IssueAutoGreenlighter
+from swarm_attack.auto_approval.bug import BugAutoApprover
+
+class TestSpecAutoApprover:
+    def test_approves_when_score_meets_threshold(self, mock_state_store):
+        """Auto-approve when score >= 0.85 for 2+ rounds."""
+        mock_state_store.get_run_state.return_value = Mock(
+            debate_scores=[
+                Mock(average=0.86),
+                Mock(average=0.88),
+            ]
+        )
+        approver = SpecAutoApprover(mock_state_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("test-feature")
+
+        assert should is True
+        assert "Auto-approved" in reason
+
+    def test_rejects_when_below_threshold(self, mock_state_store):
+        """Reject when score < 0.85."""
+        mock_state_store.get_run_state.return_value = Mock(
+            debate_scores=[Mock(average=0.80)]
+        )
+        approver = SpecAutoApprover(mock_state_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("test-feature")
+
+        assert should is False
+        assert "below threshold" in reason
+
+    def test_requires_two_consecutive_rounds(self, mock_state_store):
+        """Need 2 consecutive rounds above threshold."""
+        mock_state_store.get_run_state.return_value = Mock(
+            debate_scores=[Mock(average=0.90)]  # Only 1 round
+        )
+        approver = SpecAutoApprover(mock_state_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("test-feature")
+
+        assert should is False
+        assert "Need 2 debate rounds" in reason
+
+    def test_respects_manual_mode(self, mock_state_store):
+        """Manual mode blocks auto-approval."""
+        mock_state_store.get_run_state.return_value = Mock(
+            debate_scores=[Mock(average=0.90), Mock(average=0.90)],
+            manual_mode=True,
+        )
+        approver = SpecAutoApprover(mock_state_store, mock_logger)
+
+        result = approver.auto_approve_if_ready("test-feature")
+
+        assert result.approved is False
+        assert "Manual mode" in result.reason
+
+class TestIssueAutoGreenlighter:
+    def test_greenlights_when_all_pass_complexity(self, mock_state_store):
+        """Greenlight when all issues pass complexity gate."""
+        mock_state_store.get_run_state.return_value = Mock(
+            tasks=[
+                Mock(complexity_gate_passed=True, has_interface_contract=True),
+                Mock(complexity_gate_passed=True, has_interface_contract=True),
+            ]
+        )
+        greenlighter = IssueAutoGreenlighter(mock_state_store, mock_logger)
+
+        should, reason = greenlighter.should_auto_greenlight("test-feature")
+
+        assert should is True
+
+    def test_rejects_when_complexity_fails(self, mock_state_store):
+        """Reject when any issue fails complexity gate."""
+        mock_state_store.get_run_state.return_value = Mock(
+            tasks=[
+                Mock(complexity_gate_passed=True, has_interface_contract=True),
+                Mock(complexity_gate_passed=False, has_interface_contract=True),
+            ]
+        )
+        greenlighter = IssueAutoGreenlighter(mock_state_store, mock_logger)
+
+        should, reason = greenlighter.should_auto_greenlight("test-feature")
+
+        assert should is False
+        assert "failed complexity gate" in reason
+
+class TestBugAutoApprover:
+    def test_approves_low_risk_high_confidence(self, mock_bug_store):
+        """Approve low-risk bugs with high confidence."""
+        mock_bug_store.get.return_value = Mock(
+            fix_plan=Mock(
+                confidence=0.95,
+                risk_level="low",
+                breaks_api=False,
+                requires_migration=False,
+            )
+        )
+        approver = BugAutoApprover(mock_bug_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("bug-123")
+
+        assert should is True
+
+    def test_rejects_high_risk(self, mock_bug_store):
+        """High-risk bugs require manual review."""
+        mock_bug_store.get.return_value = Mock(
+            fix_plan=Mock(
+                confidence=0.99,
+                risk_level="high",
+                breaks_api=False,
+            )
+        )
+        approver = BugAutoApprover(mock_bug_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("bug-123")
+
+        assert should is False
+        assert "requires manual review" in reason
+
+    def test_rejects_api_breaking(self, mock_bug_store):
+        """API-breaking changes require manual review."""
+        mock_bug_store.get.return_value = Mock(
+            fix_plan=Mock(
+                confidence=0.99,
+                risk_level="low",
+                breaks_api=True,
+            )
+        )
+        approver = BugAutoApprover(mock_bug_store, mock_logger)
+
+        should, reason = approver.should_auto_approve("bug-123")
+
+        assert should is False
+        assert "API-breaking" in reason
+
+class TestHumanOverride:
+    def test_veto_reverts_approval(self, mock_state_store):
+        """Veto command reverts auto-approval."""
+        from swarm_attack.cli.approval import veto_feature
+
+        veto_feature("test-feature", reason="Need review")
+
+        mock_state_store.veto_approval.assert_called_with("test-feature", "Need review")
+
+    def test_manual_mode_disables_auto(self, mock_state_store):
+        """Manual mode disables auto-approval."""
+        from swarm_attack.cli.approval import enable_manual_mode
+
+        enable_manual_mode("test-feature")
+
+        mock_state_store.set_manual_mode.assert_called_with("test-feature", True)
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass tests</description>
+      <files_to_create>
+        <file>swarm_attack/auto_approval/__init__.py</file>
+        <file>swarm_attack/auto_approval/spec.py</file>
+        <file>swarm_attack/auto_approval/issue.py</file>
+        <file>swarm_attack/auto_approval/bug.py</file>
+        <file>swarm_attack/cli/approval.py</file>
+      </files_to_create>
+      <files_to_modify>
+        <file>swarm_attack/orchestrator.py - Call auto-approvers at phase transitions</file>
+        <file>swarm_attack/bug_orchestrator.py - Call BugAutoApprover after planning</file>
+        <file>swarm_attack/cli/__init__.py - Register new commands</file>
+        <file>swarm_attack/state_store.py - Add manual_mode field</file>
+      </files_to_modify>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up and optimize</description>
+      <tasks>
+        <task>Extract common approval logic into base class</task>
+        <task>Add approval history tracking</task>
+        <task>Add metrics for auto-approval success rate</task>
+        <task>Add configurable thresholds via config.yaml</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/autopilot-auto-approval -b feature/autopilot-auto-approval
+
+# Enter worktree
+cd worktrees/autopilot-auto-approval
+
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_auto_approval.py -v
+
+# Full test suite
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">SpecAutoApprover approves at 0.85+ for 2 rounds</criterion>
+    <criterion id="AC2">IssueAutoGreenlighter triggers on complexity gate pass</criterion>
+    <criterion id="AC3">BugAutoApprover respects risk levels</criterion>
+    <criterion id="AC4">Manual mode blocks auto-approval</criterion>
+    <criterion id="AC5">Veto command works</criterion>
+    <criterion id="AC6">CLI commands registered and functional</criterion>
+    <criterion id="AC7">All existing tests pass</criterion>
+  </acceptance_criteria>
+
+  <safety_mechanisms>
+    <mechanism name="Human Override">
+      swarm-veto and swarm-manual always available.
+      Cannot be disabled by auto-approval system.
+    </mechanism>
+    <mechanism name="Risk Escalation">
+      High-risk items always require human review.
+      API-breaking changes always require human review.
+    </mechanism>
+    <mechanism name="Audit Trail">
+      All auto-approvals logged to event_logger.
+      Reason recorded for each approval decision.
+    </mechanism>
+  </safety_mechanisms>
+</spec>

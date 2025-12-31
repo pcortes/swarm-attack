@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+  <metadata>
+    <title>v0.3.0 Manual Testing Session</title>
+    <date>2025-12-29</date>
+    <purpose>Execute manual tests for all v0.3.0 features and document findings</purpose>
+  </metadata>
+
+  <instructions>
+    You are a QA engineer testing the Swarm Attack v0.3.0 release.
+
+    Your job is to:
+    1. Execute each test in the testing guide
+    2. Document PASS/FAIL for each verification item
+    3. Log any errors, unexpected behavior, or bugs found
+    4. Create a timestamped test report
+
+    BE THOROUGH. Actually run the code. Don't assume things work.
+  </instructions>
+
+  <test_report_location>
+    Create your test report at:
+    .swarm/qa/test-reports/v030-manual-test-YYYYMMDD-HHMMSS.md
+
+    Use the current timestamp when creating the file.
+  </test_report_location>
+
+  <report_format>
+    <![CDATA[
+# v0.3.0 Manual Test Report
+
+**Date:** YYYY-MM-DD HH:MM:SS
+**Tester:** Claude Code
+**Duration:** X minutes
+
+## Summary
+
+| Feature | Tests | Passed | Failed | Blocked |
+|---------|-------|--------|--------|---------|
+| Auto-Approval | X | X | X | X |
+| Event Infrastructure | X | X | X | X |
+| Session Init Protocol | X | X | X | X |
+| Universal Context Builder | X | X | X | X |
+| QA Session Extension | X | X | X | X |
+| Schema Drift Prevention | X | X | X | X |
+| **TOTAL** | **X** | **X** | **X** | **X** |
+
+## Test Results
+
+### 1. Auto-Approval System
+
+#### 1.1 CLI Commands
+- [ ] PASS/FAIL: `swarm-attack approve --auto` works
+- [ ] PASS/FAIL: `swarm-attack approve --manual` forces manual mode
+- [ ] PASS/FAIL: Auto-approval triggers at score >= 0.85
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+**Notes:**
+(observations, unexpected behavior)
+
+### 2. Event Infrastructure
+
+#### 2.1 EventBus
+- [ ] PASS/FAIL: Events received by subscribers
+- [ ] PASS/FAIL: Events persisted to JSONL
+- [ ] PASS/FAIL: Events queryable by feature
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+### 3. Session Initialization Protocol
+
+#### 3.1 SessionInitializer
+- [ ] PASS/FAIL: 5-step initialization completes
+- [ ] PASS/FAIL: Progress logged to progress.txt
+- [ ] PASS/FAIL: Verification status saved
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+### 4. Universal Context Builder
+
+#### 4.1 Token Budgets
+- [ ] PASS/FAIL: Coder gets ~15,000 tokens
+- [ ] PASS/FAIL: Verifier gets ~3,000 tokens
+- [ ] PASS/FAIL: Context includes project instructions
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+### 5. QA Session Extension
+
+#### 5.1 Coverage Tracking
+- [ ] PASS/FAIL: Baseline captured at session start
+- [ ] PASS/FAIL: Regressions detected
+- [ ] PASS/FAIL: Session blocked on critical regressions
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+### 6. Schema Drift Prevention
+
+#### 6.1 Modified File Tracking
+- [ ] PASS/FAIL: Classes extracted from modified files
+- [ ] PASS/FAIL: Module registry includes modified file classes
+- [ ] PASS/FAIL: Coder prompt shows existing classes
+
+**Errors Found:**
+```
+(paste any errors here)
+```
+
+### 7. Automated Test Suite
+
+```bash
+# Command run:
+PYTHONPATH=. pytest [tests] -v --tb=short
+```
+
+**Results:**
+- Total tests: X
+- Passed: X
+- Failed: X
+- Errors: X
+
+**Failed Tests:**
+```
+(list any failed tests)
+```
+
+## Bugs Found
+
+### BUG-001: [Title]
+- **Severity:** Critical/High/Medium/Low
+- **Feature:** [which feature]
+- **Steps to Reproduce:**
+  1. Step 1
+  2. Step 2
+- **Expected:** What should happen
+- **Actual:** What actually happened
+- **Error Message:**
+  ```
+  (paste error)
+  ```
+
+## Recommendations
+
+1. [Any recommendations based on findings]
+
+## Test Environment
+
+- **OS:** macOS
+- **Python:** 3.x
+- **Commit:** [git commit hash]
+- **Branch:** master
+    ]]>
+  </report_format>
+
+  <testing_steps>
+    <step order="1">
+      <name>Setup</name>
+      <actions>
+        <![CDATA[
+# Verify you're in the right directory
+cd /Users/philipjcortes/Desktop/swarm-attack
+git status
+git log --oneline -1
+
+# Create test report directory
+mkdir -p .swarm/qa/test-reports
+
+# Note the timestamp for report filename
+date "+%Y%m%d-%H%M%S"
+        ]]>
+      </actions>
+    </step>
+
+    <step order="2">
+      <name>Run Automated Tests First</name>
+      <actions>
+        <![CDATA[
+# Run all v0.3.0 feature tests
+PYTHONPATH=. pytest tests/unit/test_auto_approval.py \
+    tests/unit/test_events.py \
+    tests/unit/test_session_initializer.py \
+    tests/unit/test_universal_context_builder.py \
+    tests/unit/qa/test_session_extension.py \
+    tests/integration/test_context_flow_fixes.py \
+    -v --tb=short 2>&1 | tee /tmp/v030-test-output.txt
+
+# Record results
+        ]]>
+      </actions>
+    </step>
+
+    <step order="3">
+      <name>Test Auto-Approval System</name>
+      <actions>
+        <![CDATA[
+# Test Python imports
+python3 -c "
+from swarm_attack.auto_approval.spec import SpecAutoApprover
+from swarm_attack.auto_approval.issue import IssueAutoGreenlighter
+from swarm_attack.auto_approval.bug import BugAutoApprover
+from swarm_attack.auto_approval.models import ApprovalResult
+print('Auto-approval imports: OK')
+"
+
+# Test thresholds
+python3 -c "
+from swarm_attack.auto_approval.spec import SpecAutoApprover
+print(f'Spec approval threshold: {SpecAutoApprover.APPROVAL_THRESHOLD}')
+print(f'Required rounds: {SpecAutoApprover.REQUIRED_ROUNDS}')
+"
+        ]]>
+      </actions>
+    </step>
+
+    <step order="4">
+      <name>Test Event Infrastructure</name>
+      <actions>
+        <![CDATA[
+python3 << 'EOF'
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
+
+bus = get_event_bus()
+
+# Test subscription
+received = []
+def handler(event):
+    received.append(event)
+
+bus.subscribe(EventType.IMPL_COMPLETED, handler)
+
+# Test emission
+bus.emit(SwarmEvent(
+    event_type=EventType.IMPL_COMPLETED,
+    feature_id="test-feature",
+    issue_number=1,
+    source_agent="test",
+))
+
+assert len(received) == 1, f"Expected 1 event, got {len(received)}"
+print("EventBus: OK")
+EOF
+        ]]>
+      </actions>
+    </step>
+
+    <step order="5">
+      <name>Test Session Initialization</name>
+      <actions>
+        <![CDATA[
+python3 << 'EOF'
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.session_finalizer import SessionFinalizer
+from swarm_attack.verification_tracker import VerificationTracker
+
+print("SessionInitializer import: OK")
+print("ProgressLogger import: OK")
+print("SessionFinalizer import: OK")
+print("VerificationTracker import: OK")
+EOF
+        ]]>
+      </actions>
+    </step>
+
+    <step order="6">
+      <name>Test Universal Context Builder</name>
+      <actions>
+        <![CDATA[
+python3 << 'EOF'
+from swarm_attack.universal_context_builder import (
+    UniversalContextBuilder,
+    AGENT_CONTEXT_PROFILES,
+    AgentContext,
+)
+
+print("UniversalContextBuilder import: OK")
+print(f"Agent profiles defined: {list(AGENT_CONTEXT_PROFILES.keys())}")
+
+# Check coder profile
+coder_profile = AGENT_CONTEXT_PROFILES.get("coder", {})
+print(f"Coder max_tokens: {coder_profile.get('max_tokens', 'NOT SET')}")
+EOF
+        ]]>
+      </actions>
+    </step>
+
+    <step order="7">
+      <name>Test QA Session Extension</name>
+      <actions>
+        <![CDATA[
+python3 << 'EOF'
+from swarm_attack.qa.session_extension import QASessionExtension
+from swarm_attack.qa.coverage_tracker import CoverageTracker
+from swarm_attack.qa.regression_detector import RegressionDetector
+
+print("QASessionExtension import: OK")
+print("CoverageTracker import: OK")
+print("RegressionDetector import: OK")
+EOF
+        ]]>
+      </actions>
+    </step>
+
+    <step order="8">
+      <name>Test Schema Drift Prevention</name>
+      <actions>
+        <![CDATA[
+python3 << 'EOF'
+from swarm_attack.agents.coder import CoderAgent
+from pathlib import Path
+import tempfile
+
+# Create temp file with a class
+with tempfile.TemporaryDirectory() as tmp:
+    models_dir = Path(tmp) / "models"
+    models_dir.mkdir()
+    (models_dir / "user.py").write_text("""
+class User:
+    user_id: str
+    name: str
+""")
+
+    # Test extraction - need a mock config
+    from unittest.mock import MagicMock
+    mock_config = MagicMock()
+    mock_config.repo_root = tmp
+
+    coder = CoderAgent(mock_config)
+    outputs = coder._extract_outputs(
+        files={},
+        files_modified=["models/user.py"],
+        base_path=Path(tmp),
+    )
+
+    assert "models/user.py" in outputs.classes_defined, "Modified file not tracked"
+    assert "User" in outputs.classes_defined["models/user.py"], "Class not extracted"
+    print("Schema drift prevention: OK")
+EOF
+        ]]>
+      </actions>
+    </step>
+
+    <step order="9">
+      <name>Create Test Report</name>
+      <actions>
+        <![CDATA[
+# After running all tests, create the report file
+# Use the report_format template above
+# Save to .swarm/qa/test-reports/v030-manual-test-YYYYMMDD-HHMMSS.md
+        ]]>
+      </actions>
+    </step>
+  </testing_steps>
+
+  <error_handling>
+    When you encounter an error:
+    1. Record the EXACT error message
+    2. Note which step/test failed
+    3. Try to identify root cause
+    4. Continue testing remaining features
+    5. Document everything in the test report
+
+    DO NOT stop testing on first error - complete all tests and report all findings.
+  </error_handling>
+
+  <completion_criteria>
+    Testing is complete when:
+    1. All 7 feature areas have been tested
+    2. Automated test suite has been run
+    3. Test report has been created and saved
+    4. Any bugs found have been documented with reproduction steps
+  </completion_criteria>
+</prompt>

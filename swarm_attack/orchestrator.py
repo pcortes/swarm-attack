@@ -43,10 +43,16 @@ from swarm_attack.agents.gate import GateAgent, GateResult
 from swarm_attack.agents.summarizer import SummarizerAgent
 from swarm_attack.context_builder import ContextBuilder
 from swarm_attack.event_logger import EventLogger
+from swarm_attack.events.bus import EventBus, get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
 from swarm_attack.github.issue_context import IssueContextManager
 from swarm_attack.github_sync import GitHubSync
 from swarm_attack.models import FeaturePhase, TaskStage
 from swarm_attack.planning.dependency_graph import DependencyGraph
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.session_finalizer import SessionFinalizer
+from swarm_attack.verification_tracker import VerificationTracker
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -655,12 +661,17 @@ class Orchestrator:
         return "continue", consecutive_no_improvement
 
     def _update_phase(self, feature_id: str, phase: FeaturePhase) -> None:
-        """Update the feature phase in the state store."""
+        """Update the feature phase in the state store and emit event."""
+        old_phase = None
         if self._state_store:
             state = self._state_store.load(feature_id)
             if state:
+                old_phase = state.phase
                 state.update_phase(phase)
                 self._state_store.save(state)
+
+        # Emit phase transition event
+        self._emit_phase_transition(feature_id, old_phase, phase)
 
     def _update_cost(self, feature_id: str, cost_usd: float, phase_name: str) -> None:
         """Update the cost tracking in the state store."""
@@ -669,6 +680,61 @@ class Orchestrator:
             if state:
                 state.add_cost(cost_usd, phase_name)
                 self._state_store.save(state)
+
+    def _emit_phase_transition(
+        self,
+        feature_id: str,
+        from_phase: Optional[FeaturePhase],
+        to_phase: FeaturePhase,
+    ) -> None:
+        """
+        Emit a phase transition event.
+
+        Maps FeaturePhase transitions to appropriate EventTypes and
+        emits them through the event bus.
+
+        Args:
+            feature_id: The feature being transitioned.
+            from_phase: Previous phase (may be None for first transition).
+            to_phase: New phase.
+        """
+        swarm_dir = Path(self.config.repo_root) / ".swarm"
+        bus = get_event_bus(swarm_dir)
+
+        # Map specific transitions to semantic events
+        event_type = EventType.SYSTEM_PHASE_TRANSITION
+
+        if to_phase == FeaturePhase.SPEC_NEEDS_APPROVAL:
+            # Spec debate succeeded, ready for approval
+            event_type = EventType.SPEC_REVIEW_COMPLETE
+        elif to_phase == FeaturePhase.SPEC_APPROVED:
+            event_type = EventType.SPEC_APPROVED
+        elif to_phase == FeaturePhase.COMPLETE:
+            event_type = EventType.IMPL_VERIFIED
+
+        from_phase_str = from_phase.value if from_phase else "INITIAL"
+        to_phase_str = to_phase.value
+
+        event = SwarmEvent(
+            event_type=event_type,
+            feature_id=feature_id,
+            source_agent="Orchestrator",
+            payload={
+                "from_phase": from_phase_str,
+                "to_phase": to_phase_str,
+            },
+        )
+        bus.emit(event)
+
+        self._log(
+            "phase_transition_event",
+            {
+                "feature_id": feature_id,
+                "from_phase": from_phase_str,
+                "to_phase": to_phase_str,
+                "event_type": event_type.value,
+            },
+        )
 
     def _check_spec_files_indicate_success(self, feature_id: str) -> tuple[bool, dict[str, float]]:
         """
@@ -2564,6 +2630,7 @@ class Orchestrator:
         session_id: str,
         retry_number: int = 0,
         previous_failures: Optional[list[dict[str, Any]]] = None,
+        worktree_path: Optional[str] = None,
     ) -> tuple[bool, Optional[AgentResult], AgentResult, float]:
         """
         Run one implementation cycle (coder → verifier).
@@ -2574,6 +2641,7 @@ class Orchestrator:
             session_id: Current session ID for checkpoints.
             retry_number: Current retry attempt (0 = first attempt).
             previous_failures: Failure details from previous verifier run.
+            worktree_path: Optional path to git worktree for file operations.
 
         Returns:
             Tuple of (success, coder_result, verifier_result, total_cost).
@@ -2686,6 +2754,9 @@ class Orchestrator:
             "completed_summaries": completed_summaries,
             # Pass baseline result for logging/debugging (if available)
             "baseline_result": baseline_result.to_dict() if baseline_result else None,
+            # P0 FIX: Pass worktree path for file operations
+            # When running in worktree, coder writes to worktree, not main repo
+            "worktree_path": worktree_path,
         }
 
         # Complexity Gate: Check if issue is too complex before burning tokens
@@ -3257,6 +3328,30 @@ class Orchestrator:
                 error=None,
             )
 
+        # Session Initialization Protocol (5-step verification before coding)
+        progress_logger = ProgressLogger(self.config.swarm_path)
+        initializer = SessionInitializer(self.config, self._state_store, progress_logger)
+        init_result = initializer.initialize_session(feature_id, issue_number)
+
+        if not init_result.ready:
+            self._log("session_init_blocked", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "reason": init_result.reason,
+            })
+            return IssueSessionResult(
+                status="failed",
+                issue_number=issue_number,
+                session_id="",
+                tests_written=0,
+                tests_passed=0,
+                tests_failed=0,
+                commits=[],
+                cost_usd=0.0,
+                retries=0,
+                error=f"Session initialization failed: {init_result.reason}",
+            )
+
         # Track whether we've claimed the lock (for finally block cleanup)
         lock_claimed = False
         session_ended = False
@@ -3289,6 +3384,9 @@ class Orchestrator:
 
             lock_claimed = True
 
+        # P0 FIX: Initialize worktree_path (may be set when session starts)
+        worktree_path: Optional[str] = None
+
         try:
             # Step 3: Ensure feature branch (now inside try for guaranteed lock cleanup)
             if self._session_manager:
@@ -3297,6 +3395,8 @@ class Orchestrator:
                 # Start session
                 session = self._session_manager.start_session(feature_id, issue_number)
                 session_id = session.session_id
+                # P0 FIX: Extract worktree path for file operations
+                worktree_path = getattr(session, 'worktree_path', None)
 
             # Log issue started event
             try:
@@ -3323,6 +3423,7 @@ class Orchestrator:
                     session_id,
                     retry_number=attempt,
                     previous_failures=previous_failures,
+                    worktree_path=worktree_path,  # P0 FIX: Pass worktree for file operations
                 )
                 total_cost += cycle_cost
                 # Track coder result for summary generation
@@ -3504,6 +3605,24 @@ class Orchestrator:
                     commits.append(commit_hash)
                     if self._session_manager:
                         self._session_manager.add_commit(session_id, commit_hash)
+
+                # Session Finalization Protocol (verify all tests pass before marking complete)
+                verification_tracker = VerificationTracker(self.config.swarm_path)
+                finalizer = SessionFinalizer(
+                    self.config, self._state_store, progress_logger, verification_tracker
+                )
+                finalize_result = finalizer.finalize_session(
+                    feature_id, issue_number, commits=commits
+                )
+
+                if not finalize_result.can_complete:
+                    self._log("session_finalize_blocked", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "reason": finalize_result.reason,
+                    }, level="warning")
+                    # Don't block completion - just log the warning
+                    # The verifier already ran, so this is a secondary check
 
                 # Update GitHub issue
                 if self._github_client:

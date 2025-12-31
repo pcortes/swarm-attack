@@ -1,0 +1,697 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>Session Initialization Protocol</title>
+    <id>SPEC-2025-12-29-SESSION-INIT</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P0</priority>
+    <estimated_effort>2-3 days</estimated_effort>
+    <worktree_branch>feature/session-init-protocol</worktree_branch>
+    <depends_on>None</depends_on>
+    <source>Anthropic Harness Research</source>
+  </metadata>
+
+  <implementation_prompt>
+    <![CDATA[
+You are an expert team implementing the Session Initialization Protocol for swarm-attack.
+
+## Your Expert Team
+- **Session Lifecycle Architect** (Lead): Designs SessionInitializer and SessionFinalizer classes
+- **State Management Expert**: Extends StateStore and models.py with new fields
+- **Testing Infrastructure Lead**: Implements VerificationRunner for pre/post-coding tests
+- **Integration Engineer**: Wires protocol into orchestrator.py
+
+## Critical Context from Code Review
+
+### EXISTING INFRASTRUCTURE (Use These):
+1. **SessionState** already exists in models.py:192 with checkpoints - EXTEND IT, don't recreate
+2. **StateStore** has load_session(), save_session() - ADD new methods to it
+3. **PreFlightChecker** exists in preflight.py - different purpose (CLI auth), no conflict
+4. **run_issue_session()** in orchestrator.py:3142 - issue_number is OPTIONAL, not required
+
+### FILES TO CREATE:
+- swarm_attack/session_initializer.py
+- swarm_attack/session_finalizer.py
+- swarm_attack/progress_logger.py (NOT a StateStore method)
+- swarm_attack/verification_tracker.py
+
+### FILES TO MODIFY:
+- swarm_attack/orchestrator.py - Wire in initializer/finalizer
+- swarm_attack/state_store.py - Add progress log path methods
+- swarm_attack/models.py - Extend SessionState if needed
+
+### DO NOT MODIFY:
+- swarm_attack/agents/recovery.py - This is RecoveryAgent for failure analysis, NOT preflight
+
+## TDD Protocol
+1. Create worktree: git worktree add worktrees/session-init -b feature/session-init-protocol
+2. Write failing tests FIRST in tests/unit/test_session_initializer.py
+3. Implement minimal code to pass tests
+4. Run full suite: PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+5. Commit with conventional commits
+
+## Worktree Path
+/Users/philipjcortes/Desktop/swarm-attack/worktrees/session-init
+    ]]>
+  </implementation_prompt>
+
+  <executive_summary>
+    Implement a structured Session Initialization Protocol that every agent session MUST execute
+    before beginning development work. This addresses the "engineer arriving with no memory" problem.
+
+    The protocol adds:
+    1. Mandatory 5-step initialization before coding
+    2. Append-only progress.txt log at .swarm/progress.txt
+    3. Feature verification.json status tracking at .swarm/features/{id}/verification.json
+    4. E2E verification before coding starts
+    5. Mandatory completion verification before marking DONE
+  </executive_summary>
+
+  <expert_team>
+    <lead role="Session Lifecycle Architect" focus="SessionInitializer, SessionFinalizer">
+      Principal engineer designing the initialization flow and state transitions.
+      Responsible for the core protocol implementation.
+    </lead>
+    <specialist role="State Management Expert" focus="StateStore extensions, models.py">
+      Extends StateStore for progress.txt path methods.
+      Extends SessionState in models.py if needed (it already has checkpoints).
+    </specialist>
+    <specialist role="Testing Infrastructure Lead" focus="VerificationRunner">
+      Implements pre-coding and post-coding verification test runners.
+      Uses pytest subprocess to run feature tests.
+    </specialist>
+    <specialist role="Integration Engineer" focus="Orchestrator wiring">
+      Wires the protocol into orchestrator.py run_issue_session().
+      Note: issue_number parameter is Optional[int], not required.
+    </specialist>
+  </expert_team>
+
+  <existing_code_context>
+    <file path="swarm_attack/models.py" lines="192-230">
+      <![CDATA[
+# SessionState ALREADY EXISTS - extend it, don't recreate
+@dataclass
+class SessionState:
+    session_id: str
+    feature_id: str
+    issue_number: int
+    started_at: str  # ISO format
+    status: str      # "active", "complete", "interrupted"
+    checkpoints: list[CheckpointData]  # Already tracks checkpoints!
+    ended_at: Optional[str]
+    end_status: Optional[str]
+    cost_usd: float
+    worktree_path: Optional[str]
+    commits: list[str]
+
+    def add_checkpoint(agent: str, status: str, commit: str, cost_usd: float)
+      ]]>
+    </file>
+    <file path="swarm_attack/orchestrator.py" lines="3142-3150">
+      <![CDATA[
+# run_issue_session signature - note issue_number is OPTIONAL
+def run_issue_session(
+    self,
+    feature_id: str,
+    issue_number: Optional[int] = None,  # OPTIONAL, not required!
+    session_id: Optional[str] = None,
+    skip_verification: bool = False,
+) -> SessionResult:
+      ]]>
+    </file>
+    <file path="swarm_attack/state_store.py" lines="50-80">
+      <![CDATA[
+# StateStore methods that exist - ADD new ones, don't assume they exist
+class StateStore:
+    def load(feature_id) -> Optional[RunState]
+    def save(state: RunState) -> None
+    def exclusive_lock(feature_id) -> Generator
+    def load_session(feature_id, session_id) -> Optional[SessionState]
+    def save_session(session: SessionState) -> None
+    def get_active_session(feature_id) -> Optional[SessionState]
+    # ADD: get_progress_log_path(), get_verification_path()
+      ]]>
+    </file>
+  </existing_code_context>
+
+  <requirements>
+    <functional id="F1" title="Session Initialization Routine">
+      <description>
+        Every agent session MUST execute this 5-step sequence before development.
+        Create as NEW class in swarm_attack/session_initializer.py
+      </description>
+      <interface>
+        <![CDATA[
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional
+from datetime import datetime
+
+@dataclass
+class InitResult:
+    ready: bool
+    reason: str = ""
+    verification_summary: Optional[dict] = None
+
+@dataclass
+class VerificationResult:
+    passed: bool
+    test_count: int = 0
+    failures: list[str] = None
+    duration_seconds: float = 0.0
+
+class SessionInitializer:
+    """Mandatory session initialization before coding begins."""
+
+    def __init__(self, config, state_store, progress_logger):
+        self._config = config
+        self._state_store = state_store
+        self._progress_logger = progress_logger
+
+    def initialize_session(
+        self,
+        feature_id: str,
+        issue_number: Optional[int] = None  # Match orchestrator signature
+    ) -> InitResult:
+        """
+        MANDATORY initialization before any coding begins.
+        Returns InitResult with ready=True if can proceed.
+        """
+        # Step 1: Verify working directory exists
+        if not self._verify_working_directory():
+            return InitResult(ready=False, reason="Working directory invalid")
+
+        # Step 2: Review git history and progress log
+        self._review_git_history(feature_id)
+        self._review_progress_log(feature_id)
+
+        # Step 3: Confirm task/issue assignment (if issue specified)
+        if issue_number:
+            if not self._verify_issue_assignment(feature_id, issue_number):
+                return InitResult(ready=False, reason=f"Issue #{issue_number} not found or blocked")
+
+        # Step 4: Run verification tests for completed issues
+        verification = self._run_verification_tests(feature_id)
+        if not verification.passed:
+            return InitResult(
+                ready=False,
+                reason=f"Verification failed: {verification.failures}"
+            )
+
+        # Step 5: Log session start
+        self._progress_logger.log_session_start(feature_id, issue_number)
+
+        return InitResult(
+            ready=True,
+            verification_summary={"tests": verification.test_count}
+        )
+
+    def _verify_working_directory(self) -> bool:
+        """Verify repo root exists and is a git repo."""
+        repo_root = Path(self._config.repo_root)
+        return repo_root.exists() and (repo_root / ".git").exists()
+
+    def _run_verification_tests(self, feature_id: str) -> VerificationResult:
+        """Run tests for completed issues to check for regressions."""
+        import subprocess
+
+        test_path = Path(self._config.repo_root) / "tests" / "generated" / feature_id
+        if not test_path.exists():
+            return VerificationResult(passed=True, test_count=0)
+
+        result = subprocess.run(
+            ["python", "-m", "pytest", str(test_path), "-v", "--tb=short"],
+            capture_output=True,
+            cwd=self._config.repo_root,
+        )
+
+        passed = result.returncode == 0
+        # Parse output for test count...
+        return VerificationResult(passed=passed, test_count=0)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F2" title="Progress Logger">
+      <description>
+        Append-only human-readable progress log. Create as NEW class.
+        NOT a StateStore method - separate utility class.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/progress_logger.py
+from pathlib import Path
+from datetime import datetime
+
+class ProgressLogger:
+    """Append-only human-readable progress log."""
+
+    def __init__(self, swarm_dir: Path):
+        self._log_path = swarm_dir / "progress.txt"
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _append(self, entry: str):
+        """Append entry with timestamp. Never truncates."""
+        timestamp = datetime.now().isoformat()
+        with self._log_path.open("a") as f:
+            f.write(f"[{timestamp}] {entry}\n")
+
+    def log_session_start(self, feature_id: str, issue_number: Optional[int]):
+        issue_str = f"issue=#{issue_number}" if issue_number else "issue=None"
+        self._append(f"SESSION_START feature={feature_id} {issue_str}")
+
+    def log_verification_passed(self, test_count: int):
+        self._append(f"VERIFICATION_PASSED {test_count} tests, 0 failures")
+
+    def log_checkpoint(self, phase: str):
+        self._append(f"CHECKPOINT {phase}")
+
+    def log_session_end(self, feature_id: str, issue_number: int, status: str, commits: list[str]):
+        commit_str = ",".join(commits[:3]) if commits else "none"
+        self._append(f"SESSION_END feature={feature_id} issue=#{issue_number} status={status} commits={commit_str}")
+        ]]>
+      </interface>
+      <format>
+        <![CDATA[
+# Example .swarm/progress.txt content:
+[2025-12-29T10:30:00Z] SESSION_START feature=my-feature issue=#3
+[2025-12-29T10:30:05Z] VERIFICATION_PASSED 42 tests, 0 failures
+[2025-12-29T10:30:10Z] CHECKPOINT tests written (RED phase)
+[2025-12-29T11:45:00Z] CHECKPOINT implementation complete (GREEN phase)
+[2025-12-29T11:50:00Z] VERIFICATION_PASSED 45 tests, 0 failures
+[2025-12-29T11:50:30Z] SESSION_END feature=my-feature issue=#3 status=DONE commits=abc123,def456
+        ]]>
+      </format>
+    </functional>
+
+    <functional id="F3" title="Verification Tracker">
+      <description>
+        JSON feature verification status at .swarm/features/{feature_id}/verification.json
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/verification_tracker.py
+from pathlib import Path
+from dataclasses import dataclass, asdict
+from datetime import datetime
+import json
+
+@dataclass
+class IssueVerification:
+    issue_number: int
+    title: str
+    status: str  # "passing", "failing", "untested"
+    test_count: int
+    last_verified: Optional[str]  # ISO timestamp
+
+@dataclass
+class FeatureVerification:
+    feature_id: str
+    last_updated: str
+    issues: list[IssueVerification]
+
+class VerificationTracker:
+    """Track per-feature test verification status."""
+
+    def __init__(self, swarm_dir: Path):
+        self._swarm_dir = swarm_dir
+
+    def _get_path(self, feature_id: str) -> Path:
+        return self._swarm_dir / "features" / feature_id / "verification.json"
+
+    def load(self, feature_id: str) -> Optional[FeatureVerification]:
+        path = self._get_path(feature_id)
+        if not path.exists():
+            return None
+        with path.open() as f:
+            data = json.load(f)
+        return FeatureVerification(**data)
+
+    def update_issue_status(
+        self,
+        feature_id: str,
+        issue_number: int,
+        status: str,
+        test_count: int = 0
+    ):
+        """Update verification status for an issue."""
+        verification = self.load(feature_id) or FeatureVerification(
+            feature_id=feature_id,
+            last_updated=datetime.now().isoformat(),
+            issues=[]
+        )
+
+        # Find or create issue entry
+        for issue in verification.issues:
+            if issue.issue_number == issue_number:
+                issue.status = status
+                issue.test_count = test_count
+                issue.last_verified = datetime.now().isoformat()
+                break
+        else:
+            verification.issues.append(IssueVerification(
+                issue_number=issue_number,
+                title="",  # Filled from RunState
+                status=status,
+                test_count=test_count,
+                last_verified=datetime.now().isoformat()
+            ))
+
+        verification.last_updated = datetime.now().isoformat()
+        self._save(feature_id, verification)
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F4" title="Session Finalizer">
+      <description>
+        MANDATORY finalization before marking issue complete.
+        All tests must pass. No regressions allowed.
+      </description>
+      <interface>
+        <![CDATA[
+# swarm_attack/session_finalizer.py
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class FinalizeResult:
+    can_complete: bool
+    reason: str = ""
+
+class SessionFinalizer:
+    """Mandatory session finalization before marking complete."""
+
+    def __init__(self, config, state_store, progress_logger, verification_tracker):
+        self._config = config
+        self._state_store = state_store
+        self._progress_logger = progress_logger
+        self._verification_tracker = verification_tracker
+
+    def finalize_session(
+        self,
+        feature_id: str,
+        issue_number: int,
+        commits: list[str] = None
+    ) -> FinalizeResult:
+        """MANDATORY finalization before marking complete."""
+
+        # Step 1: Run ALL feature tests (not just this issue's)
+        verification = self._run_all_feature_tests(feature_id)
+        if not verification.passed:
+            return FinalizeResult(
+                can_complete=False,
+                reason=f"Tests failing: {verification.failures}"
+            )
+
+        # Step 2: Update verification tracker
+        self._verification_tracker.update_issue_status(
+            feature_id,
+            issue_number,
+            status="passing",
+            test_count=verification.test_count
+        )
+
+        # Step 3: Log completion
+        self._progress_logger.log_session_end(
+            feature_id,
+            issue_number,
+            status="DONE",
+            commits=commits or []
+        )
+
+        return FinalizeResult(can_complete=True)
+
+    def _run_all_feature_tests(self, feature_id: str) -> VerificationResult:
+        """Run all tests for the feature."""
+        import subprocess
+
+        test_path = Path(self._config.repo_root) / "tests" / "generated" / feature_id
+        if not test_path.exists():
+            return VerificationResult(passed=True, test_count=0)
+
+        result = subprocess.run(
+            ["python", "-m", "pytest", str(test_path), "-v"],
+            capture_output=True,
+            cwd=self._config.repo_root,
+        )
+
+        return VerificationResult(
+            passed=result.returncode == 0,
+            test_count=0,  # Parse from output
+            failures=[] if result.returncode == 0 else ["See pytest output"]
+        )
+        ]]>
+      </interface>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/test_session_initializer.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
+from swarm_attack.session_initializer import SessionInitializer, InitResult
+from swarm_attack.session_finalizer import SessionFinalizer, FinalizeResult
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.verification_tracker import VerificationTracker
+
+class TestSessionInitializer:
+    @pytest.fixture
+    def mock_config(self, tmp_path):
+        config = Mock()
+        config.repo_root = str(tmp_path)
+        (tmp_path / ".git").mkdir()
+        return config
+
+    @pytest.fixture
+    def mock_state_store(self):
+        return Mock()
+
+    @pytest.fixture
+    def progress_logger(self, tmp_path):
+        return ProgressLogger(tmp_path / ".swarm")
+
+    def test_initialize_runs_all_five_steps(self, mock_config, mock_state_store, progress_logger):
+        """Init must run all 5 steps in order."""
+        initializer = SessionInitializer(mock_config, mock_state_store, progress_logger)
+
+        with patch.object(initializer, '_run_verification_tests') as mock_verify:
+            mock_verify.return_value = Mock(passed=True, test_count=5)
+            result = initializer.initialize_session("test-feature", issue_number=1)
+
+        assert result.ready is True
+        assert mock_verify.called
+
+    def test_initialize_blocks_on_verification_failure(self, mock_config, mock_state_store, progress_logger):
+        """If verification tests fail, session cannot start."""
+        initializer = SessionInitializer(mock_config, mock_state_store, progress_logger)
+
+        with patch.object(initializer, '_run_verification_tests') as mock_verify:
+            mock_verify.return_value = Mock(passed=False, failures=["test_foo failed"])
+            result = initializer.initialize_session("test-feature", issue_number=1)
+
+        assert result.ready is False
+        assert "Verification failed" in result.reason
+
+    def test_initialize_works_without_issue_number(self, mock_config, mock_state_store, progress_logger):
+        """Session can initialize without specific issue (matches orchestrator signature)."""
+        initializer = SessionInitializer(mock_config, mock_state_store, progress_logger)
+
+        with patch.object(initializer, '_run_verification_tests') as mock_verify:
+            mock_verify.return_value = Mock(passed=True, test_count=0)
+            result = initializer.initialize_session("test-feature")  # No issue_number
+
+        assert result.ready is True
+
+class TestProgressLogger:
+    def test_progress_log_is_append_only(self, tmp_path):
+        """Progress log must never be truncated, only appended."""
+        logger = ProgressLogger(tmp_path / ".swarm")
+
+        logger.log_session_start("feature-1", issue_number=1)
+        logger.log_checkpoint("RED phase")
+        logger.log_session_start("feature-2", issue_number=2)
+
+        log_path = tmp_path / ".swarm" / "progress.txt"
+        content = log_path.read_text()
+
+        assert "SESSION_START feature=feature-1" in content
+        assert "CHECKPOINT RED phase" in content
+        assert "SESSION_START feature=feature-2" in content
+        # Verify order preserved
+        assert content.index("feature-1") < content.index("feature-2")
+
+    def test_log_creates_directory_if_missing(self, tmp_path):
+        """Logger creates .swarm directory if it doesn't exist."""
+        swarm_dir = tmp_path / ".swarm"
+        assert not swarm_dir.exists()
+
+        logger = ProgressLogger(swarm_dir)
+        logger.log_session_start("test", issue_number=1)
+
+        assert swarm_dir.exists()
+        assert (swarm_dir / "progress.txt").exists()
+
+class TestSessionFinalizer:
+    @pytest.fixture
+    def mock_deps(self, tmp_path):
+        config = Mock()
+        config.repo_root = str(tmp_path)
+        state_store = Mock()
+        progress_logger = ProgressLogger(tmp_path / ".swarm")
+        verification_tracker = VerificationTracker(tmp_path / ".swarm")
+        return config, state_store, progress_logger, verification_tracker
+
+    def test_finalizer_requires_passing_tests(self, mock_deps):
+        """Cannot mark complete if tests failing."""
+        config, state_store, progress_logger, verification_tracker = mock_deps
+        finalizer = SessionFinalizer(config, state_store, progress_logger, verification_tracker)
+
+        with patch.object(finalizer, '_run_all_feature_tests') as mock_tests:
+            mock_tests.return_value = Mock(passed=False, failures=["regression detected"])
+            result = finalizer.finalize_session("test-feature", issue_number=1)
+
+        assert result.can_complete is False
+        assert "Tests failing" in result.reason
+
+    def test_finalizer_updates_verification_tracker(self, mock_deps):
+        """Verification tracker must be updated on completion."""
+        config, state_store, progress_logger, verification_tracker = mock_deps
+        finalizer = SessionFinalizer(config, state_store, progress_logger, verification_tracker)
+
+        with patch.object(finalizer, '_run_all_feature_tests') as mock_tests:
+            mock_tests.return_value = Mock(passed=True, test_count=10)
+            with patch.object(verification_tracker, 'update_issue_status') as mock_update:
+                finalizer.finalize_session("test-feature", issue_number=1)
+
+                mock_update.assert_called_once()
+                call_args = mock_update.call_args
+                assert call_args[1]["status"] == "passing"
+
+class TestVerificationTracker:
+    def test_creates_verification_file(self, tmp_path):
+        """Tracker creates verification.json for feature."""
+        tracker = VerificationTracker(tmp_path / ".swarm")
+
+        tracker.update_issue_status("my-feature", issue_number=1, status="passing", test_count=5)
+
+        path = tmp_path / ".swarm" / "features" / "my-feature" / "verification.json"
+        assert path.exists()
+
+    def test_tracks_multiple_issues(self, tmp_path):
+        """Tracker tracks all issues in a feature."""
+        tracker = VerificationTracker(tmp_path / ".swarm")
+
+        tracker.update_issue_status("my-feature", issue_number=1, status="passing", test_count=5)
+        tracker.update_issue_status("my-feature", issue_number=2, status="failing", test_count=3)
+
+        verification = tracker.load("my-feature")
+        assert len(verification.issues) == 2
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass tests</description>
+      <files_to_create>
+        <file>swarm_attack/session_initializer.py</file>
+        <file>swarm_attack/session_finalizer.py</file>
+        <file>swarm_attack/progress_logger.py</file>
+        <file>swarm_attack/verification_tracker.py</file>
+      </files_to_create>
+      <files_to_modify>
+        <file>swarm_attack/orchestrator.py - Wire in initializer/finalizer to run_issue_session()</file>
+        <file>swarm_attack/state_store.py - Add get_progress_log_path() helper if needed</file>
+      </files_to_modify>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up and optimize</description>
+      <tasks>
+        <task>Add metrics collection for session duration</task>
+        <task>Optimize test selection (only run relevant tests)</task>
+        <task>Add logging for debugging</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/session-init -b feature/session-init-protocol
+
+# Enter worktree
+cd worktrees/session-init
+pwd  # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/session-init
+
+# Run tests for this feature
+PYTHONPATH=. pytest tests/unit/test_session_initializer.py -v
+
+# Full test suite (verify no regressions)
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">SessionInitializer class exists with 5-step protocol</criterion>
+    <criterion id="AC2">SessionFinalizer class exists with verification requirement</criterion>
+    <criterion id="AC3">ProgressLogger creates append-only progress.txt</criterion>
+    <criterion id="AC4">VerificationTracker creates/updates verification.json per feature</criterion>
+    <criterion id="AC5">Orchestrator run_issue_session() calls initializer/finalizer</criterion>
+    <criterion id="AC6">All existing tests pass (no regressions)</criterion>
+    <criterion id="AC7">New tests cover all new functionality</criterion>
+  </acceptance_criteria>
+
+  <integration_points>
+    <integration target="orchestrator.py" method="run_issue_session">
+      <![CDATA[
+# In run_issue_session() at orchestrator.py:3142
+# Add at beginning (after issue selection):
+
+from swarm_attack.session_initializer import SessionInitializer
+from swarm_attack.session_finalizer import SessionFinalizer
+from swarm_attack.progress_logger import ProgressLogger
+from swarm_attack.verification_tracker import VerificationTracker
+
+def run_issue_session(
+    self,
+    feature_id: str,
+    issue_number: Optional[int] = None,  # Keep Optional!
+    session_id: Optional[str] = None,
+    skip_verification: bool = False,
+) -> SessionResult:
+    # NEW: Initialize session with verification
+    if not skip_verification:
+        progress_logger = ProgressLogger(self._config.swarm_dir)
+        initializer = SessionInitializer(self._config, self._state_store, progress_logger)
+        init_result = initializer.initialize_session(feature_id, issue_number)
+
+        if not init_result.ready:
+            return SessionResult(success=False, blocked_reason=init_result.reason)
+
+    # EXISTING: Run coding workflow (issue selection, coder, etc.)
+    # ... existing code ...
+
+    # NEW: Finalize with verification (before marking complete)
+    if not skip_verification and issue_number:
+        verification_tracker = VerificationTracker(self._config.swarm_dir)
+        finalizer = SessionFinalizer(
+            self._config, self._state_store, progress_logger, verification_tracker
+        )
+        final_result = finalizer.finalize_session(feature_id, issue_number, commits)
+
+        if not final_result.can_complete:
+            return SessionResult(success=False, blocked_reason=final_result.reason)
+      ]]>
+    </integration>
+  </integration_points>
+</spec>

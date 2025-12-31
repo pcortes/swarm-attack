@@ -782,16 +782,23 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
     def _format_module_registry(self, registry: Optional[dict[str, Any]]) -> str:
         """
-        Format module registry for prompt injection.
+        Format module registry for prompt injection with full source code.
 
-        Shows what files and classes have been created by prior issues,
-        enabling proper imports and context handoff.
+        P0 FIX: Uses ContextBuilder.format_module_registry_with_source() to show
+        actual class source code, not just class names. This prevents schema drift
+        by giving the coder full visibility into existing class definitions.
+
+        Shows:
+        - Import statements for each class
+        - Full class source code (fields, methods, decorators)
+        - Explicit warnings against recreating existing classes
+        - Schema evolution guidance
 
         Args:
             registry: Module registry dict from StateStore.get_module_registry()
 
         Returns:
-            Formatted string for inclusion in prompt.
+            Formatted string for inclusion in prompt with source code.
         """
         if not registry or not registry.get("modules"):
             return "No prior modules created for this feature."
@@ -800,20 +807,11 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         if not modules:
             return "No prior modules created for this feature."
 
-        lines = ["**Files and classes created by prior issues:**", ""]
-        for file_path, info in modules.items():
-            classes = info.get("classes", [])
-            issue_num = info.get("created_by_issue", "?")
-            if classes:
-                class_list = ", ".join(classes)
-                lines.append(f"- `{file_path}` (issue #{issue_num}): {class_list}")
-            else:
-                lines.append(f"- `{file_path}` (issue #{issue_num})")
-
-        lines.append("")
-        lines.append("**IMPORTANT:** Import and use these existing modules rather than recreating them.")
-        lines.append("If your implementation needs classes from these files, import them directly.")
-        return "\n".join(lines)
+        # P0 FIX: Use ContextBuilder to format with actual source code
+        # This shows coder the EXACT class definitions to prevent schema drift
+        from swarm_attack.context_builder import ContextBuilder
+        context_builder = ContextBuilder(self.config)
+        return context_builder.format_module_registry_with_source(registry)
 
     def _format_completed_summaries(self, summaries: list[dict[str, Any]]) -> str:
         """
@@ -1092,7 +1090,12 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
         return test_files
 
-    def _extract_outputs(self, files: dict[str, str]) -> IssueOutput:
+    def _extract_outputs(
+        self,
+        files: dict[str, str],
+        files_modified: Optional[list[str]] = None,
+        base_path: Optional[Path] = None,
+    ) -> IssueOutput:
         """
         Extract classes/functions from written files.
 
@@ -1100,7 +1103,10 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         what was created for context handoff to subsequent issues.
 
         Args:
-            files: Dictionary mapping file paths to their contents.
+            files: Dictionary mapping file paths to their contents (newly created files).
+            files_modified: Optional list of paths to files that were modified (not created).
+                           These will be read from disk to extract classes.
+            base_path: Base path for reading modified files. Defaults to config.repo_root.
 
         Returns:
             IssueOutput with files_created and classes_defined.
@@ -1108,31 +1114,61 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         files_created = list(files.keys())
         classes_defined: dict[str, list[str]] = {}
 
+        # Extract classes from newly created files (content passed in)
         for path, content in files.items():
-            classes: list[str] = []
-
-            if path.endswith(".py"):
-                # Parse Python files for class definitions
-                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
-                classes.extend(matches)
-            elif path.endswith(".dart"):
-                # Parse Dart files for class definitions
-                matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
-                classes.extend(matches)
-            elif path.endswith(".ts") or path.endswith(".tsx"):
-                # Parse TypeScript files for class/interface definitions
-                class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
-                interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
-                classes.extend(class_matches)
-                classes.extend(interface_matches)
-
+            classes = self._extract_classes_from_content(path, content)
             if classes:
                 classes_defined[path] = classes
+
+        # Extract classes from modified files (read from disk)
+        if files_modified:
+            effective_base = base_path or Path(self.config.repo_root)
+            for path in files_modified:
+                try:
+                    full_path = effective_base / path
+                    if file_exists(full_path):
+                        content = read_file(full_path)
+                        classes = self._extract_classes_from_content(path, content)
+                        if classes:
+                            classes_defined[path] = classes
+                except Exception:
+                    # Skip files that can't be read (nonexistent, permission errors, etc.)
+                    pass
 
         return IssueOutput(
             files_created=files_created,
             classes_defined=classes_defined,
         )
+
+    def _extract_classes_from_content(self, path: str, content: str) -> list[str]:
+        """
+        Extract class names from file content.
+
+        Args:
+            path: File path (used to determine file type).
+            content: File content to parse.
+
+        Returns:
+            List of class names found in the content.
+        """
+        classes: list[str] = []
+
+        if path.endswith(".py"):
+            # Parse Python files for class definitions
+            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            classes.extend(matches)
+        elif path.endswith(".dart"):
+            # Parse Dart files for class definitions
+            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            classes.extend(matches)
+        elif path.endswith(".ts") or path.endswith(".tsx"):
+            # Parse TypeScript files for class/interface definitions
+            class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
+            interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
+            classes.extend(class_matches)
+            classes.extend(interface_matches)
+
+        return classes
 
     def _build_prompt(
         self,
@@ -1507,6 +1543,11 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         # P0 FIX: Extract completed summaries for issue-to-issue context handoff
         completed_summaries = context.get("completed_summaries", [])
 
+        # P0 FIX: Extract worktree path for file operations
+        # When running in worktree, write files there instead of main repo
+        worktree_path_str = context.get("worktree_path")
+        base_path = Path(worktree_path_str) if worktree_path_str else Path(self.config.repo_root)
+
         self._log("coder_start", {
             "feature_id": feature_id,
             "issue_number": issue_number,
@@ -1753,7 +1794,8 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                         "reason": "Protected path - redirecting to feature output directory",
                     }, level="warning")
 
-                full_path = Path(self.config.repo_root) / file_path
+                # P0 FIX: Use worktree path if provided, otherwise main repo
+                full_path = base_path / file_path
                 is_new = not file_exists(full_path)
 
                 # Detect large overwrites - potential destructive rewrite
@@ -1797,7 +1839,12 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         implementation_summary = self._generate_summary(files_created, files_modified, issue)
 
         # Extract outputs for module registry (context handoff to subsequent issues)
-        issue_outputs = self._extract_outputs(files)
+        # P0 FIX: Pass files_modified so classes from modified files are tracked
+        issue_outputs = self._extract_outputs(
+            files,
+            files_modified=files_modified,
+            base_path=base_path,
+        )
 
         # Success
         self._log(

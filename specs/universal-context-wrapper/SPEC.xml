@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec>
+  <metadata>
+    <title>Universal Context Wrapper</title>
+    <id>SPEC-2025-12-29-UNIVERSAL-CONTEXT</id>
+    <date>2025-12-29</date>
+    <status>Ready for Implementation</status>
+    <priority>P0</priority>
+    <estimated_effort>1-2 days</estimated_effort>
+    <worktree_branch>feature/universal-context-wrapper</worktree_branch>
+    <depends_on>None (builds on existing ContextBuilder)</depends_on>
+  </metadata>
+
+  <executive_summary>
+    Create a thin wrapper layer that provides agent-type-specific context profiles.
+    The existing ContextBuilder (645 lines) and QAContextBuilder (606 lines) are comprehensive.
+    This spec adds the dispatch layer that tailors context for each agent type before execution.
+
+    Key insight: This is NOT a rewrite. It's a 200-line wrapper over existing infrastructure.
+  </executive_summary>
+
+  <expert_team>
+    <lead role="Context Architecture Lead" focus="UniversalContextBuilder class">
+      Designs the agent profile dispatch system.
+      Ensures token budgets are respected per agent type.
+    </lead>
+    <specialist role="Integration Engineer" focus="Agent base class integration">
+      Wires UniversalContextBuilder into BaseAgent.run() flow.
+      Ensures all agents receive context before execution.
+    </specialist>
+    <specialist role="Token Optimization Specialist" focus="Context pruning">
+      Implements depth-based context truncation.
+      Ensures no agent exceeds its token budget.
+    </specialist>
+  </expert_team>
+
+  <gap_analysis>
+    <current_state>
+      <exists>ContextBuilder with full source extraction (645 lines)</exists>
+      <exists>QAContextBuilder with endpoint discovery (606 lines)</exists>
+      <exists>IssueContextManager for GitHub propagation (424 lines)</exists>
+      <exists>Module registry with AST-based schema extraction</exists>
+      <exists>Transitive dependency computation</exists>
+    </current_state>
+    <missing>
+      <gap id="1">No agent-type dispatch - all agents get same context or none</gap>
+      <gap id="2">No token budgets per agent type</gap>
+      <gap id="3">CoderAgent is only agent using rich context</gap>
+      <gap id="4">SpecAuthor, IssueCreator, BugResearcher get minimal context</gap>
+    </missing>
+  </gap_analysis>
+
+  <requirements>
+    <functional id="F1" title="Agent Context Profiles">
+      <description>
+        Define what context each agent type needs.
+        Different agents need different context depths and sources.
+      </description>
+      <profiles>
+        <![CDATA[
+AGENT_CONTEXT_PROFILES = {
+    # Coding agents need full code context
+    "coder": {
+        "include": ["project_instructions", "module_registry", "completed_summaries",
+                   "dependencies", "related_tests"],
+        "depth": "full_source",
+        "max_tokens": 15000,
+    },
+
+    # Spec agents need architectural context
+    "spec_author": {
+        "include": ["project_instructions", "architecture_overview", "existing_modules",
+                   "conventions", "tech_stack"],
+        "depth": "summary",
+        "max_tokens": 5000,
+    },
+    "spec_critic": {
+        "include": ["project_instructions", "review_guidelines", "past_feedback",
+                   "quality_standards"],
+        "depth": "summary",
+        "max_tokens": 3000,
+    },
+
+    # Issue agents need backlog context
+    "issue_creator": {
+        "include": ["project_instructions", "existing_issues", "module_registry",
+                   "naming_conventions"],
+        "depth": "compact",
+        "max_tokens": 4000,
+    },
+
+    # QA agents need test context
+    "bug_researcher": {
+        "include": ["project_instructions", "test_structure", "recent_changes",
+                   "failure_history"],
+        "depth": "full_source",
+        "max_tokens": 10000,
+    },
+    "verifier": {
+        "include": ["project_instructions", "test_patterns", "coverage_gaps",
+                   "regression_tests"],
+        "depth": "compact",
+        "max_tokens": 3000,
+    },
+}
+        ]]>
+      </profiles>
+    </functional>
+
+    <functional id="F2" title="UniversalContextBuilder Class">
+      <description>
+        Thin wrapper that dispatches to existing builders based on agent type.
+      </description>
+      <interface>
+        <![CDATA[
+from swarm_attack.context_builder import ContextBuilder
+from swarm_attack.qa.context_builder import QAContextBuilder
+
+@dataclass
+class AgentContext:
+    agent_type: str
+    built_at: datetime
+    project_instructions: Optional[str] = None
+    module_registry: Optional[str] = None
+    completed_summaries: Optional[str] = None
+    test_structure: Optional[str] = None
+    architecture_overview: Optional[str] = None
+    token_count: int = 0
+
+class UniversalContextBuilder:
+    """
+    Wrapper that provides agent-type-specific context.
+    Delegates to existing ContextBuilder and QAContextBuilder.
+    """
+
+    def __init__(self, config: SwarmConfig, state_store: StateStore):
+        self._context_builder = ContextBuilder(config, state_store)
+        self._qa_context_builder = QAContextBuilder(config)
+        self._config = config
+
+    def build_context_for_agent(
+        self,
+        agent_type: str,
+        feature_id: str,
+        issue_number: Optional[int] = None,
+    ) -> AgentContext:
+        """
+        Build tailored context for a specific agent type.
+        This runs BEFORE the agent starts work.
+        """
+        profile = AGENT_CONTEXT_PROFILES.get(agent_type, {})
+        include = profile.get("include", [])
+        depth = profile.get("depth", "summary")
+        max_tokens = profile.get("max_tokens", 5000)
+
+        context = AgentContext(
+            agent_type=agent_type,
+            built_at=datetime.now(),
+        )
+
+        # Project instructions (all agents)
+        if "project_instructions" in include:
+            context.project_instructions = self._context_builder.get_project_instructions()
+
+        # Module registry (coding and issue agents)
+        if "module_registry" in include:
+            registry = self._state_store.get_module_registry(feature_id)
+            if depth == "full_source":
+                context.module_registry = self._context_builder.format_module_registry_with_source(registry)
+            else:
+                context.module_registry = self._context_builder.format_module_registry_compact(registry)
+
+        # Completed summaries (coding agents)
+        if "completed_summaries" in include:
+            context.completed_summaries = self._context_builder.get_completed_summaries(feature_id)
+
+        # Test context (QA agents)
+        if "test_structure" in include:
+            context.test_structure = self._get_test_structure()
+
+        # Truncate to token budget
+        context = self._truncate_to_budget(context, max_tokens)
+
+        return context
+
+    def _truncate_to_budget(self, context: AgentContext, max_tokens: int) -> AgentContext:
+        """Truncate context fields to stay within token budget."""
+        # Simple estimation: 1 token ~= 4 chars
+        total_chars = sum(len(v or "") for v in [
+            context.project_instructions,
+            context.module_registry,
+            context.completed_summaries,
+            context.test_structure,
+        ])
+        context.token_count = total_chars // 4
+
+        if context.token_count > max_tokens:
+            # Truncate largest fields first
+            # Implementation: proportional truncation
+            pass
+
+        return context
+        ]]>
+      </interface>
+    </functional>
+
+    <functional id="F3" title="Base Agent Integration">
+      <description>
+        All agents receive context before run() is called.
+      </description>
+      <interface>
+        <![CDATA[
+# In agents/base.py
+
+class BaseAgent:
+    def __init__(self, config: SwarmConfig, ...):
+        self._config = config
+        self._universal_context = None
+
+    def with_context(self, context: AgentContext) -> "BaseAgent":
+        """Inject context before running."""
+        self._universal_context = context
+        return self
+
+    def _get_context_prompt_section(self) -> str:
+        """Format injected context for prompt."""
+        if not self._universal_context:
+            return ""
+
+        sections = []
+        if self._universal_context.project_instructions:
+            sections.append(f"## Project Instructions\n{self._universal_context.project_instructions}")
+        if self._universal_context.module_registry:
+            sections.append(f"## Existing Code\n{self._universal_context.module_registry}")
+        if self._universal_context.completed_summaries:
+            sections.append(f"## Prior Work\n{self._universal_context.completed_summaries}")
+
+        return "\n\n".join(sections)
+        ]]>
+      </interface>
+    </functional>
+  </requirements>
+
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests first</description>
+      <test_file>tests/unit/test_universal_context_builder.py</test_file>
+      <tests>
+        <![CDATA[
+import pytest
+from swarm_attack.universal_context_builder import UniversalContextBuilder, AgentContext, AGENT_CONTEXT_PROFILES
+
+class TestAgentContextProfiles:
+    def test_coder_profile_includes_module_registry(self):
+        """Coder agents must receive module registry."""
+        profile = AGENT_CONTEXT_PROFILES["coder"]
+        assert "module_registry" in profile["include"]
+        assert profile["depth"] == "full_source"
+
+    def test_spec_author_profile_is_summary_depth(self):
+        """Spec authors get summary, not full source."""
+        profile = AGENT_CONTEXT_PROFILES["spec_author"]
+        assert profile["depth"] == "summary"
+        assert profile["max_tokens"] <= 5000
+
+    def test_all_profiles_have_project_instructions(self):
+        """Every agent type should get project instructions."""
+        for agent_type, profile in AGENT_CONTEXT_PROFILES.items():
+            assert "project_instructions" in profile["include"], f"{agent_type} missing project_instructions"
+
+class TestUniversalContextBuilder:
+    def test_builds_coder_context_with_full_source(self, mock_config, mock_state_store):
+        """Coder context includes full source code."""
+        builder = UniversalContextBuilder(mock_config, mock_state_store)
+        context = builder.build_context_for_agent("coder", "test-feature", issue_number=1)
+
+        assert context.agent_type == "coder"
+        assert context.module_registry is not None
+        assert context.project_instructions is not None
+
+    def test_builds_spec_author_context_without_code(self, mock_config, mock_state_store):
+        """Spec author context is summary only."""
+        builder = UniversalContextBuilder(mock_config, mock_state_store)
+        context = builder.build_context_for_agent("spec_author", "test-feature")
+
+        assert context.agent_type == "spec_author"
+        # Should have architecture overview, not full code
+        assert context.token_count <= 5000
+
+    def test_respects_token_budget(self, mock_config, mock_state_store):
+        """Context must be truncated to stay within budget."""
+        mock_state_store.get_module_registry.return_value = {"large": "x" * 100000}
+        builder = UniversalContextBuilder(mock_config, mock_state_store)
+        context = builder.build_context_for_agent("verifier", "test-feature")
+
+        # Verifier has 3000 token budget
+        assert context.token_count <= 3000
+
+    def test_unknown_agent_type_gets_minimal_context(self, mock_config, mock_state_store):
+        """Unknown agent types get safe defaults."""
+        builder = UniversalContextBuilder(mock_config, mock_state_store)
+        context = builder.build_context_for_agent("unknown_agent", "test-feature")
+
+        assert context.agent_type == "unknown_agent"
+        # Should not crash, should get minimal context
+
+class TestBaseAgentIntegration:
+    def test_agent_can_receive_context(self, mock_config):
+        """Agents can be injected with context."""
+        from swarm_attack.agents.base import BaseAgent
+
+        agent = BaseAgent(mock_config)
+        context = AgentContext(agent_type="coder", built_at=datetime.now())
+        agent.with_context(context)
+
+        assert agent._universal_context == context
+
+    def test_context_formats_for_prompt(self, mock_config):
+        """Injected context formats correctly for prompts."""
+        from swarm_attack.agents.base import BaseAgent
+
+        agent = BaseAgent(mock_config)
+        context = AgentContext(
+            agent_type="coder",
+            built_at=datetime.now(),
+            project_instructions="Test instructions",
+            module_registry="class Foo: pass"
+        )
+        agent.with_context(context)
+
+        prompt_section = agent._get_context_prompt_section()
+        assert "Test instructions" in prompt_section
+        assert "class Foo" in prompt_section
+        ]]>
+      </tests>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimal code to pass tests</description>
+      <files_to_create>
+        <file>swarm_attack/universal_context_builder.py</file>
+      </files_to_create>
+      <files_to_modify>
+        <file>swarm_attack/agents/base.py</file>
+        <file>swarm_attack/orchestrator.py</file>
+      </files_to_modify>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Clean up and optimize</description>
+      <tasks>
+        <task>Add caching for project instructions (already exists, verify used)</task>
+        <task>Implement smart truncation (preserve important sections)</task>
+        <task>Add metrics for context size per agent type</task>
+      </tasks>
+    </phase>
+  </tdd_protocol>
+
+  <worktree_setup>
+    <commands>
+      <![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/universal-context-wrapper -b feature/universal-context-wrapper
+
+# Enter worktree
+cd worktrees/universal-context-wrapper
+
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_universal_context_builder.py -v
+
+# Full test suite
+PYTHONPATH=. pytest tests/ --ignore=tests/generated -v
+      ]]>
+    </commands>
+  </worktree_setup>
+
+  <acceptance_criteria>
+    <criterion id="AC1">AGENT_CONTEXT_PROFILES dict defines all agent types</criterion>
+    <criterion id="AC2">UniversalContextBuilder.build_context_for_agent() works</criterion>
+    <criterion id="AC3">Token budgets are respected</criterion>
+    <criterion id="AC4">BaseAgent.with_context() injection works</criterion>
+    <criterion id="AC5">All agents receive appropriate context before run()</criterion>
+    <criterion id="AC6">No regressions in existing tests</criterion>
+  </acceptance_criteria>
+</spec>

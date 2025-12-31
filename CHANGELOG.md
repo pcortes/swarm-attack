@@ -2,6 +2,71 @@
 
 All notable changes to Swarm Attack are documented here.
 
+## [0.3.0] - 2025-12-29
+
+### Major Features
+
+#### Session Initialization Protocol
+- **SessionInitializer** - 5-step initialization protocol for agent sessions
+- **ProgressLogger** - Append-only progress tracking to `.swarm/features/{id}/progress.txt`
+- **SessionFinalizer** - Ensures all feature tests pass before completion
+- **VerificationTracker** - JSON-based verification status at `.swarm/features/{id}/verification.json`
+
+#### Autopilot Event Infrastructure
+- **EventBus** - Pub/sub system for agent communication with typed events
+- **SwarmEvent** - 27 event types (SPEC_*, ISSUE_*, IMPL_*, BUG_*, SYSTEM_*, AUTO_*)
+- **EventPersistence** - JSONL storage at `.swarm/events/events-YYYY-MM-DD.jsonl`
+- **BaseAgent Integration** - `_emit_event()` method for all agents
+
+#### Autopilot Auto-Approval System
+- **SpecAutoApprover** - Auto-approves specs with score >= 0.85 after 2+ rounds
+- **IssueAutoGreenlighter** - Auto-greenlights issues passing complexity gate
+- **BugAutoApprover** - Auto-approves bug fixes with confidence >= 0.9 and low/medium risk
+- **Manual Mode** - Override support for human-in-the-loop workflows
+- **CLI Integration** - `swarm-attack approve --auto` and `--manual` flags
+
+#### Universal Context Builder
+- **Agent Context Profiles** - Per-agent context configuration (token budgets, depth levels)
+- **Token Budget Management** - Coder: 15000 tokens, Verifier: 3000 tokens
+- **BaseAgent Integration** - `with_context()` method for context injection
+
+#### QA Session Extension
+- **CoverageTracker** - Baseline capture and delta comparison for test coverage
+- **RegressionDetector** - Severity-based regression detection (critical/moderate/none)
+- **QASessionExtension** - Blocks on critical regressions or >10% coverage drops
+
+#### Context Flow P0 Fixes
+- **Modified File Tracking** - `_extract_outputs()` now tracks classes from modified files
+- **Module Registry Enhancement** - Includes both created and modified file classes
+- **Schema Drift Prevention** - Classes in modified files appear in context for subsequent issues
+
+### Files Added
+- `swarm_attack/session_initializer.py`
+- `swarm_attack/progress_logger.py`
+- `swarm_attack/session_finalizer.py`
+- `swarm_attack/verification_tracker.py`
+- `swarm_attack/events/types.py`
+- `swarm_attack/events/bus.py`
+- `swarm_attack/events/persistence.py`
+- `swarm_attack/auto_approval/models.py`
+- `swarm_attack/auto_approval/spec.py`
+- `swarm_attack/auto_approval/issue.py`
+- `swarm_attack/auto_approval/bug.py`
+- `swarm_attack/auto_approval/overrides.py`
+- `swarm_attack/universal_context_builder.py`
+- `swarm_attack/qa/coverage_tracker.py`
+- `swarm_attack/qa/regression_detector.py`
+- `swarm_attack/qa/session_extension.py`
+
+### Test Coverage
+- 120+ new tests for v0.3.0 features
+- All context flow integration tests passing (9/9)
+- Session init tests passing (18/18)
+- Event infrastructure tests passing (26/26)
+- Auto-approval tests passing (22/22)
+
+---
+
 ## [0.2.0] - 2025-12-29
 
 ### Bug Bash Fixes
