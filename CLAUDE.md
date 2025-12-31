@@ -170,6 +170,17 @@ swarm-attack bug fix bug-id           # Apply fix
 | `bug reject <bug-id>` | Reject bug (won't fix) |
 | `bug unblock <bug-id>` | Unblock stuck bug |
 
+### Review Commands
+
+| Command | Description |
+|---------|-------------|
+| `review-commits` | Review recent commits with expert panel |
+| `review-commits --since="1 week ago"` | Review commits from time range |
+| `review-commits --branch=NAME` | Review specific branch |
+| `review-commits --strict` | Fail on medium+ severity issues |
+| `review-commits --output xml\|json\|markdown` | Set output format |
+| `review-commits --save PATH` | Save report to file |
+
 ## Project Structure
 
 ```
@@ -833,6 +844,140 @@ else:
 | `swarm_attack/qa/coverage_tracker.py` | Coverage baseline and delta |
 | `swarm_attack/qa/regression_detector.py` | Regression detection |
 | `swarm_attack/qa/session_extension.py` | Orchestration |
+
+## Commit Quality Review (v0.3.2)
+
+Multi-agent commit review system with expert panel analysis. Reviews recent commits through specialized engineering directors.
+
+### Expert Panel
+
+| Expert | Title | Focus Area | Category Mapping |
+|--------|-------|------------|------------------|
+| **Dr. Elena Vasquez** | Director of Site Reliability | Production bug verification, incident correlation, error handling | `BUG_FIX` commits |
+| **Marcus Chen** | Director of Quality Engineering | Test coverage, mock accuracy, regression risk | `TEST_CHANGE` commits |
+| **Dr. Aisha Patel** | Director of Engineering Excellence | Implementation completeness, dead code, technical debt | `FEATURE` commits |
+| **James O'Brien** | Director of Developer Experience | Documentation value, spec traceability, session exhaust detection | `DOCUMENTATION` commits |
+| **Dr. Sarah Kim** | Chief Architect | API contracts, interface completeness, architectural consistency | `REFACTOR` commits |
+
+### Expert Skepticism
+
+Each expert applies domain-specific skepticism:
+
+| Expert | Skeptical Of |
+|--------|--------------|
+| **Dr. Elena Vasquez** | Fixes for 'bugs' without production evidence; speculative fixes without Sentry errors or customer reports |
+| **Marcus Chen** | Tests that mock incorrectly (wrong method names, wrong return types); 'test improvements' that reduce coverage |
+| **Dr. Aisha Patel** | 'Complete' implementations that are partial; TODO/FIXME comments in 'finished' code |
+| **James O'Brien** | Documentation with transient session data; 'comprehensive' docs that will never be referenced |
+| **Dr. Sarah Kim** | Changes that break implicit contracts; 'refactoring' that changes behavior |
+
+### CLI Commands
+
+```bash
+# Review commits from last 24 hours
+swarm-attack review-commits
+
+# Review commits from last week
+swarm-attack review-commits --since="1 week ago"
+
+# Review specific branch
+swarm-attack review-commits --branch=feature/xyz
+
+# Strict mode (fail on medium+ issues)
+swarm-attack review-commits --strict
+
+# Output formats
+swarm-attack review-commits --output markdown  # default
+swarm-attack review-commits --output xml
+swarm-attack review-commits --output json
+
+# Save report to file
+swarm-attack review-commits --save report.md
+```
+
+### Commit Categories
+
+| Category | Detection | Expert Assigned |
+|----------|-----------|-----------------|
+| `BUG_FIX` | Message contains `fix:`, `bugfix:`, `hotfix:` | Dr. Elena Vasquez |
+| `FEATURE` | Message contains `feat:`, `add:`, `new:`, `implement:` | Dr. Aisha Patel |
+| `REFACTOR` | Message contains `refactor:`, `cleanup:`, `restructure:` | Dr. Sarah Kim |
+| `TEST_CHANGE` | All changed files are in `tests/` | Marcus Chen |
+| `DOCUMENTATION` | All changed files are `.md` | James O'Brien |
+| `CHORE` | Message contains `chore:`, `build:`, `ci:`, `deps:` | General review |
+| `OTHER` | No clear pattern | General review |
+
+### Severity Levels
+
+| Severity | Score Impact | Description |
+|----------|--------------|-------------|
+| `LOW` | -0.05 | Minor style or documentation issues |
+| `MEDIUM` | -0.15 | Issues that should be addressed |
+| `HIGH` | -0.30 | Significant problems requiring fixes |
+| `CRITICAL` | -0.50 | Blocking issues, potential reverts |
+
+### Verdicts
+
+| Verdict | Score Threshold | Action |
+|---------|-----------------|--------|
+| `LEAVE` | ≥ 0.8 | Commit is fine, no action needed |
+| `FIX` | 0.5 - 0.8 | Commit has issues that should be fixed |
+| `REVERT` | < 0.5 or CRITICAL finding | Commit should be reverted |
+
+### TDD Fix Plans
+
+For medium+ severity findings, the system generates TDD fix plans:
+
+1. **Red Phase** - Failing test to write
+2. **Green Phase** - Minimal fix steps
+3. **Refactor Phase** - Cleanup suggestions
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/commit_review/models.py` | CommitInfo, CommitCategory, Finding, Severity, Verdict, TDDPlan |
+| `swarm_attack/commit_review/discovery.py` | Git log parsing with `discover_commits()` |
+| `swarm_attack/commit_review/categorizer.py` | Commit classification |
+| `swarm_attack/commit_review/prompts.py` | Expert-specific review prompts (5 directors) |
+| `swarm_attack/commit_review/dispatcher.py` | Parallel agent dispatch with asyncio |
+| `swarm_attack/commit_review/synthesis.py` | Finding aggregation, scoring, verdict |
+| `swarm_attack/commit_review/tdd_generator.py` | TDD fix plan generation |
+| `swarm_attack/commit_review/report.py` | XML, JSON, Markdown output |
+| `swarm_attack/cli/review_commits.py` | CLI command handler |
+| `.claude/skills/commit-quality-review/SKILL.md` | Skill definition |
+
+### COO Integration
+
+The commit quality review integrates with COO's orchestration layer:
+
+**Midday Check-in Integration:**
+- Called from `strategic_advisor.py` during midday mode
+- Reviews commits since last checkpoint (delta-aware)
+- Output appears in `## Commit Quality Review` section
+- Checkpoint updated after review completes
+
+**Daily Digest Integration:**
+- Called from `consolidated_digest.py` during nightly run
+- Reviews all commits from past 24 hours
+- Includes portfolio summary across all 5 managed projects
+- Projects: desktop-miami, moderndoc, swarm-attack, swarm-attack-qa, coo
+
+**CLI Subprocess Contract:**
+```bash
+# COO invokes via subprocess:
+swarm-attack review-commits --since "{checkpoint_time}" --output json
+
+# Expected JSON output includes:
+# - commit_reviews[]: sha, message, score, verdict, findings[]
+# - overall_score: float (0.0 - 1.0)
+# - summary: string
+```
+
+**Graceful Degradation:**
+- If `swarm-attack` CLI unavailable, COO logs warning and skips review
+- If individual project review fails, others continue (fault isolation)
+- Timeout: 300 seconds per project
 
 ## Context Flow & Schema Drift Prevention (v0.3.0)
 
