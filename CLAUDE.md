@@ -411,6 +411,41 @@ swarm-attack bug unblock bug-id
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
 
+## Debate Retry Handler (v0.3.1)
+
+Handles transient errors during spec and bug debate loops with exponential backoff retry.
+
+### Error Categories
+
+| Category | Error Types | Behavior |
+|----------|-------------|----------|
+| **Transient** | Rate limit (429), Timeout, Server errors (5xx) | Retry up to 3 times with exponential backoff |
+| **Fatal** | Auth errors (401), CLI not found | Fail immediately (no retry) |
+| **Agent Failure** | Agent returns `success=False` | Pass through (no retry) |
+
+### Backoff Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `max_retries` | 3 | Maximum retry attempts |
+| `backoff_base_seconds` | 5.0 | Initial delay between retries |
+| `backoff_multiplier` | 2.0 | Exponential multiplier (5s → 10s → 20s) |
+| `max_backoff_seconds` | 60.0 | Maximum delay cap |
+
+### Usage
+
+The handler is automatically used by:
+- `Orchestrator.run_spec_debate_only()` for spec critic/moderator
+- `BugOrchestrator._run_root_cause_debate()` for bug debate
+- `BugOrchestrator._run_fix_plan_debate()` for fix plan debate
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/debate_retry.py` | DebateRetryHandler implementation |
+| `tests/unit/test_debate_retry.py` | Comprehensive unit tests (20 tests) |
+
 ## Chief of Staff (Autonomous Development Partner)
 
 An autonomous AI Tech Lead that manages your daily development workflow with minimal intervention.

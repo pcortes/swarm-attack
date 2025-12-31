@@ -93,15 +93,15 @@ from swarm_attack.cli.chief_of_staff import app as cos_app
 
 app.add_typer(cos_app, name="cos")
 
-# Import and register QA commands
-from swarm_attack.cli.qa_commands import app as qa_app
-
-app.add_typer(qa_app, name="qa")
-
 # Import and register approval commands
 from swarm_attack.cli.approval import app as approval_app
 
 app.add_typer(approval_app, name="approval")
+
+# Import and register QA commands
+from swarm_attack.cli.qa import qa_app
+
+app.add_typer(qa_app, name="qa")
 
 
 # =========================================================================

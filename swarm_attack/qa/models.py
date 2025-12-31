@@ -166,6 +166,8 @@ class QAFinding:
     evidence: dict[str, str]
     recommendation: str
     confidence: float = 0.9
+    session_id: str = ""  # QA-BUG-003: Session context
+    created_at: str = ""  # QA-BUG-003: Timestamp context
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -181,6 +183,8 @@ class QAFinding:
             "evidence": self.evidence,
             "recommendation": self.recommendation,
             "confidence": self.confidence,
+            "session_id": self.session_id,
+            "created_at": self.created_at,
         }
 
     @classmethod
