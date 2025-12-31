@@ -380,3 +380,172 @@ def show_feature_detail(
         console.print(f"\n[dim]Tasks:[/dim] {', '.join(summary_parts)}")
     else:
         console.print("\n[dim]No tasks yet.[/dim]")
+
+
+# =============================================================================
+# QA Display Helpers
+# =============================================================================
+
+
+def format_test_results(passed: int, total: int) -> str:
+    """Format test results as 'X/Y passed'."""
+    if total == 0:
+        return "0/0"
+    return f"{passed}/{total}"
+
+
+def format_duration(seconds: float) -> str:
+    """Format duration as human-readable (e.g., '2m 30s')."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    elif seconds < 3600:
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes}m {secs}s"
+    else:
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        return f"{hours}h {minutes}m"
+
+
+def format_findings_summary(critical: int, moderate: int, minor: int) -> str:
+    """Format findings count with severity indicators."""
+    parts = []
+    if critical > 0:
+        parts.append(f"[red]{critical} critical[/red]")
+    if moderate > 0:
+        parts.append(f"[yellow]{moderate} moderate[/yellow]")
+    if minor > 0:
+        parts.append(f"[dim]{minor} minor[/dim]")
+    return ", ".join(parts) if parts else "-"
+
+
+def get_action_suggestion(severity: str) -> str:
+    """Return action suggestion based on finding severity."""
+    suggestions = {
+        "critical": "Immediate action required - block deployment",
+        "moderate": "Fix before next release",
+        "minor": "Add to backlog for future cleanup",
+    }
+    return suggestions.get(severity, "Review finding")
+
+
+def format_qa_session_table(sessions: list) -> Table:
+    """Create a Rich table with all QA session columns.
+
+    Columns: Session ID | Status | Tests | Findings | Duration | Depth
+    """
+    from datetime import datetime
+
+    table = Table(
+        title="QA Sessions",
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("Session ID", style="cyan", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Tests", justify="center")
+    table.add_column("Findings", justify="center")
+    table.add_column("Duration", justify="right")
+    table.add_column("Depth", no_wrap=True)
+
+    for session in sessions:
+        # Format status
+        status_text = session.status.value if hasattr(session.status, 'value') else str(session.status)
+        status_style = "green" if status_text == "completed" else "yellow" if status_text == "running" else "dim"
+
+        # Format tests
+        if session.result:
+            tests_text = format_test_results(session.result.tests_passed, session.result.tests_run)
+        else:
+            tests_text = "-"
+
+        # Format findings
+        if session.result:
+            findings_text = format_findings_summary(
+                session.result.critical_count,
+                session.result.moderate_count,
+                session.result.minor_count,
+            )
+        else:
+            findings_text = "-"
+
+        # Format duration
+        if session.started_at and session.completed_at:
+            try:
+                start = datetime.fromisoformat(session.started_at.replace("Z", "+00:00"))
+                end = datetime.fromisoformat(session.completed_at.replace("Z", "+00:00"))
+                duration_seconds = (end - start).total_seconds()
+                duration_text = format_duration(duration_seconds)
+            except (ValueError, TypeError):
+                duration_text = "-"
+        else:
+            duration_text = "-"
+
+        # Format depth
+        depth_text = session.depth.value if hasattr(session.depth, 'value') else str(session.depth)
+
+        table.add_row(
+            session.session_id,
+            Text(status_text, style=status_style),
+            tests_text,
+            findings_text,
+            duration_text,
+            depth_text,
+        )
+
+    return table
+
+
+def format_qa_bugs_table(findings: list) -> Table:
+    """Create a Rich table for QA findings/bugs.
+
+    Columns: Finding ID | Severity | Session | Created | Endpoint | Title | Action
+    """
+    table = Table(
+        title="QA Findings",
+        show_header=True,
+        header_style="bold",
+    )
+    table.add_column("Finding ID", style="cyan", no_wrap=True)
+    table.add_column("Severity", no_wrap=True)
+    table.add_column("Session", style="dim", no_wrap=True)
+    table.add_column("Created", style="dim", no_wrap=True)
+    table.add_column("Endpoint", no_wrap=True)
+    table.add_column("Title")
+    table.add_column("Action", style="dim")
+
+    for finding in findings:
+        # Format severity with color
+        severity = finding.severity
+        if severity == "critical":
+            severity_text = Text("critical", style="red bold")
+        elif severity == "moderate":
+            severity_text = Text("moderate", style="yellow")
+        else:
+            severity_text = Text("minor", style="dim")
+
+        # Format session ID (truncate if long)
+        session_id = finding.session_id or "-"
+        if len(session_id) > 15:
+            session_id = session_id[:12] + "..."
+
+        # Format created_at
+        created_at = finding.created_at or "-"
+        if created_at and len(created_at) > 10:
+            created_at = created_at[:10]
+
+        # Get action suggestion
+        action = get_action_suggestion(finding.severity)
+
+        table.add_row(
+            finding.finding_id,
+            severity_text,
+            session_id,
+            created_at,
+            finding.endpoint,
+            finding.title,
+            action,
+        )
+
+    return table
