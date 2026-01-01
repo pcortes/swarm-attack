@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec version="1.0">
+  <metadata>
+    <title>Pre-Existing Test Failures Fix Spec</title>
+    <created>2026-01-01</created>
+    <priority>P1</priority>
+    <estimated_effort>4-6 hours</estimated_effort>
+    <author>Claude Code</author>
+    <description>
+      Fix 39 pre-existing unit test failures across 10 test files.
+      These failures are unrelated to the integration-gaps work and represent
+      technical debt that should be resolved to maintain test suite integrity.
+    </description>
+  </metadata>
+
+  <!-- ============================================== -->
+  <!-- SETUP INSTRUCTIONS                            -->
+  <!-- ============================================== -->
+  <setup>
+    <worktree_instructions>
+      <step order="1">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack</command>
+        <description>Navigate to main repo</description>
+      </step>
+      <step order="2">
+        <command>git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-test-failures -b fix/pre-existing-test-failures</command>
+        <description>Create dedicated worktree for test failure fixes</description>
+      </step>
+      <step order="3">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-test-failures</command>
+        <description>Enter worktree</description>
+      </step>
+      <step order="4">
+        <command>pip install -e .</command>
+        <description>Install package in editable mode</description>
+      </step>
+      <step order="5">
+        <command>PYTHONPATH=. pytest tests/unit/ -v --tb=line -q 2>&amp;1 | grep "FAILED" | wc -l</command>
+        <description>Verify 39 failing tests before starting</description>
+      </step>
+    </worktree_instructions>
+
+    <tdd_protocol>
+      <rule>Read failing test first to understand expected behavior</rule>
+      <rule>Implement fix in production code</rule>
+      <rule>Run test to verify fix works</rule>
+      <rule>Commit after each issue is complete</rule>
+    </tdd_protocol>
+  </setup>
+
+  <summary>
+    <total_failures>39</total_failures>
+    <categories>10</categories>
+    <root_causes>
+      <cause id="1" count="10">skip_auth_classification parameter not implemented in CodexCliRunner</cause>
+      <cause id="2" count="8">Coder modified files parsing methods missing/incomplete</cause>
+      <cause id="3" count="7">Codex error classification over-matching auth patterns</cause>
+      <cause id="4" count="4">AgentDispatcher class missing or incomplete</cause>
+      <cause id="5" count="3">Codex auth pattern false positives</cause>
+      <cause id="6" count="2">importlib not in stdlib whitelist</cause>
+      <cause id="7" count="2">Test isolation: missing __init__.py files</cause>
+      <cause id="8" count="1">Coder empty files validation logic issue</cause>
+      <cause id="9" count="1">Codex subprocess environment not passed</cause>
+      <cause id="10" count="1">Rate limit false positive detection</cause>
+    </root_causes>
+  </summary>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 1: CodexCliRunner skip_auth_classification -->
+  <!-- ============================================== -->
+  <issue id="1" priority="P0">
+    <title>Add skip_auth_classification Parameter to CodexCliRunner</title>
+    <description>
+      CodexCliRunner.__init__() does not accept skip_auth_classification keyword argument.
+      10 tests fail with TypeError because they expect this parameter to exist.
+    </description>
+    <affected_tests count="10">
+      <test>test_agent_auth_config_passthrough.py::TestSpecCriticAuthPassthrough::test_check_codex_auth_true_means_classification_enabled</test>
+      <test>test_agent_auth_config_passthrough.py::TestSpecCriticAuthPassthrough::test_check_codex_auth_false_means_classification_skipped</test>
+      <test>test_agent_auth_config_passthrough.py::TestIssueValidatorAuthPassthrough::test_check_codex_auth_true_means_classification_enabled</test>
+      <test>test_agent_auth_config_passthrough.py::TestIssueValidatorAuthPassthrough::test_check_codex_auth_false_means_classification_skipped</test>
+      <test>test_agent_auth_config_passthrough.py::TestBugCriticAuthPassthrough::test_check_codex_auth_true_means_classification_enabled</test>
+      <test>test_agent_auth_config_passthrough.py::TestBugCriticAuthPassthrough::test_check_codex_auth_false_means_classification_skipped</test>
+      <test>test_codex_skip_auth_classification.py::TestSkipAuthClassification::test_default_raises_codex_auth_error</test>
+      <test>test_codex_skip_auth_classification.py::TestSkipAuthClassification::test_skip_auth_raises_invocation_error</test>
+      <test>test_codex_skip_auth_classification.py::TestSkipAuthClassification::test_skip_auth_does_not_affect_rate_limit</test>
+      <test>test_codex_skip_auth_classification.py::TestSkipAuthClassification::test_skip_auth_does_not_affect_success</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/codex_cli_runner.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>CodexCliRunner.__init__() accepts skip_auth_classification: bool = False</criterion>
+      <criterion>When skip_auth_classification=True, auth errors raise InvocationError instead of CodexAuthError</criterion>
+      <criterion>When skip_auth_classification=False (default), auth errors raise CodexAuthError</criterion>
+      <criterion>Rate limit and success cases unaffected by the flag</criterion>
+    </acceptance_criteria>
+    <implementation_guide>
+      <step>Add skip_auth_classification parameter to __init__ with default False</step>
+      <step>Store as self._skip_auth_classification</step>
+      <step>In error classification logic, check this flag before raising CodexAuthError</step>
+      <step>If flag is True and auth error detected, raise InvocationError instead</step>
+    </implementation_guide>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 2: Coder Modified Files Parsing -->
+  <!-- ============================================== -->
+  <issue id="2" priority="P0">
+    <title>Fix Coder Modified Files Parsing Methods</title>
+    <description>
+      CoderAgent is missing or has incomplete implementations for:
+      - _extract_outputs() deduplication
+      - _extract_classes_from_content() for TypeScript/Dart/nested classes
+      - _parse_modified_files() pattern extraction
+    </description>
+    <affected_tests count="8">
+      <test>test_coder_modified_files.py::TestCoderModifiedFileTracking::test_extract_outputs_deduplicates_same_file_in_both_lists</test>
+      <test>test_coder_modified_files.py::TestExtractClassesFromContent::test_extracts_typescript_classes</test>
+      <test>test_coder_modified_files.py::TestExtractClassesFromContent::test_extracts_dart_classes</test>
+      <test>test_coder_modified_files.py::TestExtractClassesFromContent::test_handles_nested_classes_python</test>
+      <test>test_coder_modified_files.py::TestParseModifiedFiles::test_parse_modified_files_extracts_patterns</test>
+      <test>test_coder_modified_files.py::TestParseModifiedFiles::test_parse_modified_files_handles_no_markers</test>
+      <test>test_coder_modified_files.py::TestParseModifiedFiles::test_parse_modified_files_deduplicates</test>
+      <test>test_coder_modified_files.py::TestParseModifiedFiles::test_parse_modified_files_with_whitespace_variations</test>
+      <test>test_coder_modified_files.py::TestParseModifiedFiles::test_parse_modified_files_only_matches_python_files</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/agents/coder.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>_extract_outputs() deduplicates files appearing in both created and modified lists</criterion>
+      <criterion>_extract_classes_from_content() supports TypeScript class patterns</criterion>
+      <criterion>_extract_classes_from_content() supports Dart class patterns</criterion>
+      <criterion>_extract_classes_from_content() handles nested Python classes</criterion>
+      <criterion>_parse_modified_files() extracts file paths from markers</criterion>
+      <criterion>_parse_modified_files() returns empty list when no markers</criterion>
+      <criterion>_parse_modified_files() deduplicates file paths</criterion>
+      <criterion>_parse_modified_files() handles whitespace variations</criterion>
+      <criterion>_parse_modified_files() only matches Python files by default</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 3: Codex Error Classification -->
+  <!-- ============================================== -->
+  <issue id="3" priority="P0">
+    <title>Fix Codex Error Classification False Positives</title>
+    <description>
+      Codex error classification is over-matching auth patterns, causing false positives
+      when stdout content, prompts, or LLM responses mention auth-related words.
+    </description>
+    <affected_tests count="10">
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_no_false_positive_from_stdout_content_mentioning_auth</test>
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_no_false_positive_from_prompt_about_auth_features</test>
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_no_false_positive_from_llm_response_discussing_auth</test>
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_no_false_positive_when_unauthorized_in_code_context</test>
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_detects_token_exchange_error</test>
+      <test>test_codex_error_classification.py::TestCodexAuthErrorClassification::test_success_returncode_never_triggers_auth_error</test>
+      <test>test_codex_error_classification.py::TestCodexRateLimitClassification::test_no_false_positive_rate_limit_from_content</test>
+      <test>test_codex_auth_patterns.py::TestCodexAuthPatternsFalsePositives::test_unauthorized_access_denied_not_auth_error</test>
+      <test>test_codex_auth_patterns.py::TestCodexAuthPatternsFalsePositives::test_policy_unauthorized_module_not_auth_error</test>
+      <test>test_codex_auth_patterns.py::TestCodexAuthPatternsFalsePositives::test_permission_unauthorized_not_auth_error</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/codex_cli_runner.py</file>
+      <file>swarm_attack/llm_errors.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>Auth error only detected from stderr, not stdout</criterion>
+      <criterion>Auth error requires specific CLI error patterns, not generic mentions</criterion>
+      <criterion>Success returncode (0) never triggers auth error regardless of output content</criterion>
+      <criterion>Rate limit detection only from stderr with specific patterns</criterion>
+      <criterion>"unauthorized" in code context (e.g., comments, strings) not detected as auth error</criterion>
+      <criterion>Token exchange errors properly detected</criterion>
+    </acceptance_criteria>
+    <implementation_guide>
+      <step>Separate stdout and stderr in error classification</step>
+      <step>Only check stderr for auth/rate-limit patterns</step>
+      <step>Check returncode first - if 0, never classify as error</step>
+      <step>Use anchored patterns that match CLI error format, not generic text</step>
+    </implementation_guide>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 4: AgentDispatcher Implementation -->
+  <!-- ============================================== -->
+  <issue id="4" priority="P1">
+    <title>Fix AgentDispatcher Class</title>
+    <description>
+      AgentDispatcher class is missing or has incomplete parallel dispatch implementation.
+    </description>
+    <affected_tests count="4">
+      <test>test_agent_dispatch.py::TestAgentDispatcher::test_dispatch_parallel_agents</test>
+      <test>test_agent_dispatch.py::TestAgentDispatcher::test_agent_receives_correct_prompt</test>
+      <test>test_agent_dispatch.py::TestAgentDispatcher::test_agent_results_collected</test>
+      <test>test_agent_dispatch.py::TestAgentDispatcher::test_dispatcher_handles_agent_failure</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/agent_dispatcher.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>AgentDispatcher can dispatch multiple agents in parallel</criterion>
+      <criterion>Each agent receives correct prompt</criterion>
+      <criterion>Results from all agents are collected</criterion>
+      <criterion>Dispatcher handles agent failures gracefully</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 5: Stdlib Module Whitelist -->
+  <!-- ============================================== -->
+  <issue id="5" priority="P1">
+    <title>Add importlib to Stdlib Module Whitelist</title>
+    <description>
+      importlib and importlib.util are not in the stdlib module whitelist,
+      causing validation to incorrectly flag them as external dependencies.
+    </description>
+    <affected_tests count="2">
+      <test>test_coder_stdlib_imports.py::TestStdlibModuleWhitelist::test_importlib_in_stdlib_modules</test>
+      <test>test_coder_stdlib_imports.py::TestStdlibModuleWhitelist::test_importlib_util_skipped_in_validation</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/agents/coder.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>importlib is in STDLIB_MODULES set</criterion>
+      <criterion>importlib.util imports are skipped in validation</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 6: Test Isolation -->
+  <!-- ============================================== -->
+  <issue id="6" priority="P1">
+    <title>Fix Test Isolation Issues</title>
+    <description>
+      Generated test directories missing __init__.py files,
+      and duplicate test basenames without proper isolation.
+    </description>
+    <affected_tests count="2">
+      <test>test_test_isolation.py::test_all_generated_test_dirs_have_init</test>
+      <test>test_test_isolation.py::test_no_duplicate_test_basenames_without_init</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>tests/generated/*/__init__.py (create missing)</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>All directories under tests/generated/ have __init__.py</criterion>
+      <criterion>No duplicate test basenames without __init__.py separation</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 7: Coder Empty Files Validation -->
+  <!-- ============================================== -->
+  <issue id="7" priority="P2">
+    <title>Fix Coder Empty Files Validation</title>
+    <description>
+      CoderAgent validation logic for empty files is not working correctly.
+    </description>
+    <affected_tests count="1">
+      <test>test_coder_empty_files_validation.py::TestCoderEmptyFilesValidationLogic::test_validation_rejects_empty_files</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/agents/coder.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>Validation rejects empty file outputs</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- ISSUE 8: Codex Subprocess Environment -->
+  <!-- ============================================== -->
+  <issue id="8" priority="P2">
+    <title>Fix Codex Subprocess Environment Passing</title>
+    <description>
+      CodexCliRunner does not pass environment variables to subprocess correctly.
+    </description>
+    <affected_tests count="1">
+      <test>test_codex_subprocess_env.py::TestCodexSubprocessEnvironment::test_subprocess_receives_environment</test>
+    </affected_tests>
+    <files_to_modify>
+      <file>swarm_attack/codex_cli_runner.py</file>
+    </files_to_modify>
+    <acceptance_criteria>
+      <criterion>subprocess.run receives env parameter with environment variables</criterion>
+    </acceptance_criteria>
+  </issue>
+
+  <!-- ============================================== -->
+  <!-- EXECUTION ORDER                               -->
+  <!-- ============================================== -->
+  <execution_order>
+    <phase name="Critical - Blocking Most Tests" effort="2-3 hours">
+      <issue ref="1">Add skip_auth_classification (fixes 10 tests)</issue>
+      <issue ref="3">Fix error classification false positives (fixes 10 tests)</issue>
+    </phase>
+    <phase name="High - Core Functionality" effort="1-2 hours">
+      <issue ref="2">Fix coder modified files parsing (fixes 8 tests)</issue>
+      <issue ref="4">Fix AgentDispatcher (fixes 4 tests)</issue>
+    </phase>
+    <phase name="Medium - Cleanup" effort="1 hour">
+      <issue ref="5">Add importlib to whitelist (fixes 2 tests)</issue>
+      <issue ref="6">Fix test isolation (fixes 2 tests)</issue>
+      <issue ref="7">Fix empty files validation (fixes 1 test)</issue>
+      <issue ref="8">Fix subprocess environment (fixes 1 test)</issue>
+    </phase>
+  </execution_order>
+
+  <!-- ============================================== -->
+  <!-- PARALLEL AGENT ASSIGNMENTS                    -->
+  <!-- ============================================== -->
+  <agent_assignments>
+    <description>
+      Work can be parallelized across 4 agents since issues are independent.
+      Each agent should use TDD: read existing failing tests, understand expected
+      behavior, implement fix, verify tests pass.
+    </description>
+    <agent id="1" issues="1,3">
+      <focus>CodexCliRunner error classification and skip_auth_classification</focus>
+      <expected_fixes>20 tests</expected_fixes>
+    </agent>
+    <agent id="2" issues="2,7">
+      <focus>CoderAgent modified files parsing and validation</focus>
+      <expected_fixes>9 tests</expected_fixes>
+    </agent>
+    <agent id="3" issues="4,5">
+      <focus>AgentDispatcher and stdlib whitelist</focus>
+      <expected_fixes>6 tests</expected_fixes>
+    </agent>
+    <agent id="4" issues="6,8">
+      <focus>Test isolation and subprocess environment</focus>
+      <expected_fixes>3 tests</expected_fixes>
+    </agent>
+  </agent_assignments>
+
+  <completion_checklist>
+    <item>All 39 failing tests now pass</item>
+    <item>No new test failures introduced</item>
+    <item>Each fix committed separately with descriptive message</item>
+    <item>Merge to master when all tests pass</item>
+  </completion_checklist>
+</spec>
