@@ -122,9 +122,31 @@ def run_review(
     try:
         commits = discover_commits(repo_path, since=since, branch=branch)
     except RuntimeError as e:
+        if output_format == "json":
+            import json
+            return json.dumps({
+                "generated_at": __import__("datetime").datetime.now().isoformat(),
+                "repo_path": repo_path,
+                "branch": branch or "current",
+                "since": since,
+                "overall_score": 0.0,
+                "summary": f"Error discovering commits: {e}",
+                "commit_reviews": [],
+            }, indent=2)
         return f"# Review Report\n\nError discovering commits: {e}"
 
     if not commits:
+        if output_format == "json":
+            import json
+            return json.dumps({
+                "generated_at": __import__("datetime").datetime.now().isoformat(),
+                "repo_path": repo_path,
+                "branch": branch or "current",
+                "since": since,
+                "overall_score": 1.0,
+                "summary": f"No commits found in the last {since}",
+                "commit_reviews": [],
+            }, indent=2)
         return f"# Review Report\n\nNo commits found in the last {since}."
 
     # 2. Categorize commits

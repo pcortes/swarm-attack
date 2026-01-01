@@ -327,3 +327,83 @@ def smart(
     """Smart CLI with automatic recovery flow."""
     from swarm_attack.cli.feature import smart as feature_smart
     feature_smart(feature_id)
+
+
+# =========================================================================
+# Commit Quality Review
+# =========================================================================
+
+
+@app.command("review-commits")
+def review_commits(
+    since: str = typer.Option(
+        "24 hours ago",
+        "--since",
+        help="Time range for commits (git date format)",
+    ),
+    branch: Optional[str] = typer.Option(
+        None,
+        "--branch",
+        help="Branch to review (default: current)",
+    ),
+    output: str = typer.Option(
+        "markdown",
+        "--output",
+        help="Output format (markdown, xml, json)",
+    ),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help="Fail on any medium+ severity issue",
+    ),
+    save: Optional[str] = typer.Option(
+        None,
+        "--save",
+        help="Save report to file path",
+    ),
+) -> None:
+    """Review recent commits with expert panel analysis.
+
+    Runs a multi-agent review of commits, analyzing for:
+    - Production reliability issues (Dr. Elena Vasquez)
+    - Test coverage gaps (Marcus Chen)
+    - Code quality concerns (Dr. Aisha Patel)
+    - Documentation problems (James O'Brien)
+    - Architectural issues (Dr. Sarah Kim)
+
+    Each finding includes evidence (file:line) and TDD fix plans.
+    """
+    import os
+    from pathlib import Path
+    from swarm_attack.cli.review_commits import run_review
+    from swarm_attack.cli.common import get_project_dir, get_console
+
+    console = get_console()
+    repo_path = get_project_dir() or os.getcwd()
+
+    try:
+        result = run_review(
+            repo_path=repo_path,
+            since=since,
+            branch=branch,
+            output_format=output,
+        )
+
+        # Handle strict mode - check for medium+ severity findings
+        if strict and "medium" in result.lower() or "high" in result.lower() or "critical" in result.lower():
+            console.print(result)
+            raise typer.Exit(1)
+
+        # Output result
+        console.print(result)
+
+        # Save if requested
+        if save:
+            save_path = Path(save)
+            save_path.parent.mkdir(parents=True, exist_ok=True)
+            save_path.write_text(result)
+            console.print(f"\n[green]Report saved to: {save}[/green]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
