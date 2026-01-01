@@ -1,0 +1,72 @@
+{
+  "feature_id": "dispatcher-claude-cli",
+  "generated_at": "2025-12-31T12:00:00Z",
+  "issues": [
+    {
+      "title": "Add _parse_findings() helper method to AgentDispatcher",
+      "body": "## Description\n\nAdd a helper method to parse Claude CLI JSON responses into `Finding` objects. This method will extract findings from the response, map severity strings to `Severity` enum values, and associate findings with the appropriate expert based on commit category.\n\n## Acceptance Criteria\n\n- [ ] `_parse_findings(self, response: dict, commit_sha: str, category: CommitCategory) -> list[Finding]` method added\n- [ ] Parses findings from `response.get(\"result\")` field\n- [ ] Handles both JSON-structured findings in result and plain text output\n- [ ] Maps severity strings (\"LOW\", \"MEDIUM\", \"HIGH\", \"CRITICAL\") to `Severity` enum\n- [ ] Maps `CommitCategory` to expert name using `EXPERTS` dict from `prompts.py`\n- [ ] Returns empty list on parse errors (graceful degradation)\n- [ ] Populates all required `Finding` fields: `severity`, `category`, `description`, `evidence`, `expert`, `commit_sha`\n\n## Technical Notes\n\n- Pattern Reference: See `swarm_attack/commit_review/models.py:52-61` for `Finding` dataclass\n- Pattern Reference: See `swarm_attack/commit_review/prompts.py` for `EXPERTS` dict and expected output format\n- Handle `KeyError`, `ValueError` gracefully when parsing\n- Log warnings on parse failures but don't raise exceptions\n\n## Interface Contract (REQUIRED)\n\n**Required Method:**\n```python\ndef _parse_findings(\n    self,\n    response: dict,\n    commit_sha: str,\n    category: CommitCategory,\n) -> list[Finding]\n```\n\n**Called By:**\n- `_run_agent()` method (Issue #3)",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add _call_claude_cli() sync helper method to AgentDispatcher",
+      "body": "## Description\n\nAdd a synchronous helper method that invokes Claude CLI via subprocess and returns the parsed JSON response. This method handles the actual subprocess call and will be called from a thread to avoid blocking the async event loop.\n\n## Acceptance Criteria\n\n- [ ] `_call_claude_cli(self, prompt: str) -> dict` method added\n- [ ] Calls `subprocess.run()` with args: `[\"claude\", \"--print\", \"--output-format\", \"json\", \"-p\", prompt]`\n- [ ] Uses `capture_output=True, text=True, timeout=300`\n- [ ] Raises `RuntimeError` on non-zero exit code with stderr message\n- [ ] Parses stdout as JSON and returns dict\n- [ ] Propagates `subprocess.TimeoutExpired` to caller\n- [ ] Propagates `json.JSONDecodeError` to caller\n\n## Technical Notes\n\n- Pattern Reference: See `swarm_attack/llm_clients.py:133-239` for `ClaudeCliRunner.run()` subprocess pattern\n- 300 second timeout matches existing patterns in codebase\n- Do NOT catch exceptions here - let caller handle them for proper error categorization\n\n## Interface Contract (REQUIRED)\n\n**Required Method:**\n```python\ndef _call_claude_cli(self, prompt: str) -> dict\n```\n\n**Called By:**\n- `_run_agent()` method via `asyncio.to_thread()` (Issue #3)",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement _run_agent() with asyncio.to_thread",
+      "body": "## Description\n\nImplement the main `_run_agent()` async method that orchestrates Claude CLI invocation. This replaces the existing placeholder implementation at `dispatcher.py:89-129`. Uses `asyncio.to_thread()` to run the sync subprocess call without blocking the event loop.\n\n## Acceptance Criteria\n\n- [ ] Existing placeholder `_run_agent()` replaced with working implementation\n- [ ] Calls `_call_claude_cli()` via `asyncio.to_thread()` to avoid blocking\n- [ ] Passes result to `_parse_findings()` to extract `Finding` objects\n- [ ] Returns empty list on `subprocess.TimeoutExpired` (logs warning)\n- [ ] Returns empty list on `json.JSONDecodeError` (logs warning)\n- [ ] Returns empty list on any other `Exception` (logs warning)\n- [ ] Logs debug message at start: `f\"Running agent for {commit.sha} ({category.value})\"`\n- [ ] All error paths log at warning level with descriptive messages\n\n## Technical Notes\n\n- File: `swarm_attack/commit_review/dispatcher.py`\n- Existing method signature at line 89 should NOT change\n- Import `asyncio` and `subprocess` at top of file\n- Use `logger = logging.getLogger(__name__)` for logging\n- This implements graceful degradation per PRD: all errors return empty list\n\n## Interface Contract (REQUIRED)\n\n**Required Method (existing signature):**\n```python\nasync def _run_agent(\n    self,\n    commit: CommitInfo,\n    category: CommitCategory,\n    prompt: str,\n) -> list[Finding]\n```\n\n**Called By:**\n- `dispatch_reviews()` method in same class\n\n**Depends On:**\n- `_call_claude_cli()` (Issue #2)\n- `_parse_findings()` (Issue #1)",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1,
+        2
+      ],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create unit tests for AgentDispatcher._run_agent()",
+      "body": "## Description\n\nCreate comprehensive unit tests for the Claude CLI integration in `AgentDispatcher`. Tests should cover all error paths and verify graceful degradation behavior.\n\n## Acceptance Criteria\n\n- [ ] Create `tests/unit/test_dispatcher.py`\n- [ ] `test_run_agent_calls_claude_cli` - Verifies subprocess called with correct args (`claude --print --output-format json -p`)\n- [ ] `test_run_agent_parses_findings` - Valid JSON response produces correct `Finding` objects\n- [ ] `test_run_agent_handles_timeout` - `TimeoutExpired` returns empty list, does not raise\n- [ ] `test_run_agent_handles_invalid_json` - Invalid JSON returns empty list, does not raise\n- [ ] `test_run_agent_handles_cli_error` - Non-zero exit code returns empty list, does not raise\n- [ ] All tests are async (`@pytest.mark.asyncio`)\n- [ ] Tests use `unittest.mock.patch` to mock `subprocess.run`\n- [ ] Tests verify logging warnings on error paths (optional)\n\n## Technical Notes\n\n- Use fixtures for `dispatcher` and `sample_commit` instances\n- Import from `swarm_attack.commit_review.dispatcher`, `models`\n- Mock at `subprocess.run` level, not at method level\n- Use `MagicMock(returncode=0, stdout=..., stderr=...)` for subprocess result\n- Reference: See spec Section 6.3 for test implementation outline\n\n## Test Cases\n\n```python\n# Test 1: Verify CLI args\nassert cmd[0] == \"claude\"\nassert \"--print\" in cmd\nassert \"--output-format\" in cmd\nassert \"json\" in cmd\n\n# Test 2: Parse valid response\nstdout = '{\"result\": ..., \"findings\": [...]}'\nassert len(result) > 0\nassert isinstance(result[0], Finding)\n\n# Test 3: Timeout\nmock_run.side_effect = subprocess.TimeoutExpired(...)\nassert result == []\n\n# Test 4: Invalid JSON\nstdout = \"not valid json\"\nassert result == []\n\n# Test 5: CLI error\nreturncode = 1\nassert result == []\n```",
+      "labels": [
+        "enhancement",
+        "tests"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        3
+      ],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Run tests and verify implementation",
+      "body": "## Description\n\nRun the full test suite to verify the implementation works correctly and doesn't break existing functionality.\n\n## Acceptance Criteria\n\n- [ ] `PYTHONPATH=. pytest tests/unit/test_dispatcher.py -v` - All 5 new tests pass\n- [ ] `PYTHONPATH=. pytest tests/ -v --tb=short` - No regressions in existing tests\n- [ ] Manual test: `swarm-attack review-commits --since=\"1 hour ago\" --output json` executes without errors\n- [ ] Verify import works: `python3 -c \"from swarm_attack.commit_review.dispatcher import AgentDispatcher; print('OK')\"`\n\n## Technical Notes\n\n- If no recent commits exist, the manual test should still complete without errors (empty results)\n- Check logs for any warnings during manual test execution\n- Verify graceful degradation by temporarily breaking Claude CLI path (should log warning, not crash)",
+      "labels": [
+        "tests"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4
+      ],
+      "order": 5,
+      "automation_type": "automated"
+    }
+  ]
+}

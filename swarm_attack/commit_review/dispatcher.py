@@ -1,6 +1,7 @@
 """Parallel agent dispatch for commit review."""
 
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -10,9 +11,21 @@ from swarm_attack.commit_review.models import (
     Finding,
     Severity,
 )
-from swarm_attack.commit_review.prompts import get_prompt_for_category
+from swarm_attack.commit_review.prompts import get_prompt_for_category, EXPERTS
 
 logger = logging.getLogger(__name__)
+
+
+# Mapping from CommitCategory to expert key in EXPERTS dict
+CATEGORY_TO_EXPERT_KEY = {
+    CommitCategory.BUG_FIX: "production_reliability",
+    CommitCategory.FEATURE: "code_quality",
+    CommitCategory.REFACTOR: "architecture",
+    CommitCategory.TEST_CHANGE: "test_coverage",
+    CommitCategory.DOCUMENTATION: "documentation",
+    CommitCategory.CHORE: None,  # General reviewer
+    CommitCategory.OTHER: None,  # General reviewer
+}
 
 
 class AgentDispatcher:
@@ -127,6 +140,152 @@ class AgentDispatcher:
 
         # Placeholder - mocked in tests, implement with Claude CLI for production
         return []
+
+    def _get_expert_for_category(self, category: CommitCategory) -> str:
+        """Get the expert name for a commit category.
+
+        Args:
+            category: The commit category
+
+        Returns:
+            Expert name string
+        """
+        expert_key = CATEGORY_TO_EXPERT_KEY.get(category)
+        if expert_key is None:
+            return "General Reviewer"
+        expert = EXPERTS.get(expert_key, {})
+        return expert.get("name", "General Reviewer")
+
+    def _parse_findings(
+        self,
+        response: dict,
+        commit_sha: str,
+        category: CommitCategory,
+    ) -> list[Finding]:
+        """Parse Claude response into Finding objects.
+
+        Args:
+            response: Parsed JSON from Claude CLI
+            commit_sha: SHA of the commit being reviewed
+            category: Category for expert assignment
+
+        Returns:
+            List of Finding objects, empty on parse errors
+        """
+        findings = []
+
+        # Get result field from response
+        result_text = response.get("result", "")
+        if not result_text:
+            return []
+
+        # Get expert name for this category
+        expert = self._get_expert_for_category(category)
+
+        # Try to parse findings from the result
+        try:
+            findings_data = self._extract_findings_from_result(result_text)
+            for finding_dict in findings_data:
+                finding = self._create_finding(
+                    finding_dict, commit_sha, expert
+                )
+                if finding is not None:
+                    findings.append(finding)
+        except Exception as e:
+            logger.warning(f"Failed to parse findings for {commit_sha}: {e}")
+            return []
+
+        return findings
+
+    def _extract_findings_from_result(self, result_text: str) -> list[dict]:
+        """Extract findings data from result text.
+
+        Handles both JSON array and nested dict with 'findings' key.
+
+        Args:
+            result_text: The result field text from Claude response
+
+        Returns:
+            List of finding dictionaries
+        """
+        try:
+            parsed = json.loads(result_text)
+        except json.JSONDecodeError:
+            # Not valid JSON, return empty list
+            return []
+
+        # If parsed is a list, assume it's the findings array
+        if isinstance(parsed, list):
+            return parsed
+
+        # If parsed is a dict, look for 'findings' key
+        if isinstance(parsed, dict):
+            findings = parsed.get("findings", [])
+            if isinstance(findings, list):
+                return findings
+
+        return []
+
+    def _create_finding(
+        self,
+        finding_dict: dict,
+        commit_sha: str,
+        expert: str,
+    ) -> Optional[Finding]:
+        """Create a Finding object from a dictionary.
+
+        Args:
+            finding_dict: Dictionary with finding data
+            commit_sha: SHA of the commit
+            expert: Expert name to assign
+
+        Returns:
+            Finding object or None if creation fails
+        """
+        try:
+            # Get required fields
+            severity_str = finding_dict.get("severity", "")
+            category = finding_dict.get("category", "")
+            description = finding_dict.get("description", "")
+            evidence = finding_dict.get("evidence", "")
+
+            # All required fields must be present
+            if not all([severity_str, category, description, evidence]):
+                return None
+
+            # Parse severity (handle both uppercase and lowercase)
+            severity = self._parse_severity(severity_str)
+            if severity is None:
+                return None
+
+            return Finding(
+                commit_sha=commit_sha,
+                expert=expert,
+                severity=severity,
+                category=category,
+                description=description,
+                evidence=evidence,
+            )
+        except (KeyError, ValueError, TypeError) as e:
+            logger.debug(f"Failed to create finding: {e}")
+            return None
+
+    def _parse_severity(self, severity_str: str) -> Optional[Severity]:
+        """Parse severity string to Severity enum.
+
+        Args:
+            severity_str: Severity string (e.g., "LOW", "low", "MEDIUM")
+
+        Returns:
+            Severity enum value or None if invalid
+        """
+        severity_map = {
+            "low": Severity.LOW,
+            "medium": Severity.MEDIUM,
+            "high": Severity.HIGH,
+            "critical": Severity.CRITICAL,
+        }
+        return severity_map.get(severity_str.lower())
 
 
 async def run_parallel_review(
