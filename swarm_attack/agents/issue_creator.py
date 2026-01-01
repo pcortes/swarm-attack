@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
+from swarm_attack.events.types import EventType
 from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
 from swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write
 
@@ -395,6 +396,16 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
                 "issues_path": str(issues_path),
                 "issue_count": len(issues_list),
                 "cost_usd": cost,
+            },
+        )
+
+        # AC 3.1: Emit ISSUE_CREATED event after writing issues.json
+        self._emit_event(
+            event_type=EventType.ISSUE_CREATED,
+            feature_id=feature_id,
+            payload={
+                "issue_count": len(issues_list),
+                "output_path": str(issues_path),
             },
         )
 

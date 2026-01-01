@@ -444,6 +444,26 @@ class BaseAgent(ABC):
 
         return "\n\n".join(sections)
 
+    def _prepare_context_aware_prompt(self, base_prompt: str) -> str:
+        """
+        Prepend injected context to the base prompt.
+
+        This method combines the universal context (if injected via with_context())
+        with the agent's base prompt. The context appears first, followed by a
+        separator, then the base prompt.
+
+        Args:
+            base_prompt: The agent's base prompt (task-specific content).
+
+        Returns:
+            Combined prompt with context prepended, or base_prompt unchanged
+            if no context was injected.
+        """
+        context_section = self._get_context_prompt_section()
+        if context_section:
+            return f"{context_section}\n\n---\n\n{base_prompt}"
+        return base_prompt
+
     def _emit_event(
         self,
         event_type: "EventType",

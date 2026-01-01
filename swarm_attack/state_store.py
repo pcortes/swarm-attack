@@ -13,7 +13,10 @@ This module handles:
 from __future__ import annotations
 
 import fcntl
+import hashlib
+import hmac
 import json
+import os
 import re
 import subprocess
 from contextlib import contextmanager
@@ -44,6 +47,11 @@ if TYPE_CHECKING:
 
 class StateStoreError(Exception):
     """Raised when state store operations fail."""
+    pass
+
+
+class StateCorruptionError(Exception):
+    """Raised when state file signature verification fails."""
     pass
 
 
@@ -102,6 +110,50 @@ class StateStore:
     def _get_lock_path(self, feature_id: str) -> Path:
         """Get path to feature lock file."""
         return self._state_dir / f".{feature_id}.lock"
+
+    def _get_signing_key(self) -> bytes:
+        """
+        Get signing key from environment or use default.
+
+        The signing key is used for HMAC signature verification to detect
+        state file tampering. In production, set SWARM_STATE_KEY environment
+        variable to a secure random value.
+
+        Returns:
+            Signing key as bytes.
+        """
+        key = os.environ.get("SWARM_STATE_KEY", "default-dev-key")
+        return key.encode()
+
+    def _sign_state(self, data: dict) -> str:
+        """
+        Generate HMAC-SHA256 signature for state data.
+
+        Args:
+            data: State data dict to sign (without _signature field).
+
+        Returns:
+            Hexadecimal signature string (64 characters).
+        """
+        content = json.dumps(data, sort_keys=True)
+        key = self._get_signing_key()
+        return hmac.new(key, content.encode(), hashlib.sha256).hexdigest()
+
+    def _verify_signature(self, data: dict, signature: str) -> bool:
+        """
+        Verify HMAC signature against state data.
+
+        Uses constant-time comparison to prevent timing attacks.
+
+        Args:
+            data: State data dict to verify (without _signature field).
+            signature: Hexadecimal signature string to verify.
+
+        Returns:
+            True if signature is valid, False otherwise.
+        """
+        expected = self._sign_state(data)
+        return hmac.compare_digest(expected, signature)
 
     @contextmanager
     def exclusive_lock(
@@ -172,13 +224,19 @@ class StateStore:
 
     def load(self, feature_id: str) -> Optional[RunState]:
         """
-        Load feature state from disk.
+        Load feature state from disk with signature verification.
+
+        Verifies HMAC signature before returning state to detect tampering.
 
         Args:
             feature_id: The feature identifier.
 
         Returns:
-            RunState if state exists and is valid, None otherwise.
+            RunState if state exists and signature is valid, None otherwise.
+
+        Raises:
+            StateCorruptionError: If signature is missing, invalid, or
+                verification fails (file was tampered with).
         """
         state_path = self._get_state_path(feature_id)
 
@@ -189,6 +247,29 @@ class StateStore:
         try:
             content = read_file(state_path)
             data = json.loads(content)
+
+            # Verify signature before processing
+            signature = data.pop("_signature", None)
+            if signature is None:
+                self._log("state_signature_missing", {
+                    "feature_id": feature_id,
+                    "path": str(state_path)
+                }, level="error")
+                raise StateCorruptionError(
+                    f"State file for '{feature_id}' has no signature. "
+                    "File may be tampered or from older version."
+                )
+
+            if not self._verify_signature(data, signature):
+                self._log("state_signature_invalid", {
+                    "feature_id": feature_id,
+                    "path": str(state_path)
+                }, level="error")
+                raise StateCorruptionError(
+                    f"State file for '{feature_id}' signature verification failed. "
+                    "File has been tampered with."
+                )
+
             state = RunState.from_dict(data)
             self._log("state_loaded", {
                 "feature_id": feature_id,
@@ -221,7 +302,10 @@ class StateStore:
 
     def save(self, state: RunState) -> None:
         """
-        Save feature state to disk atomically.
+        Save feature state to disk atomically with HMAC signature.
+
+        The signature is stored in the _signature field and verified on load
+        to detect tampering.
 
         Args:
             state: The RunState to save.
@@ -233,7 +317,12 @@ class StateStore:
         state_path = self._get_state_path(state.feature_id)
 
         try:
-            content = model_to_json(state.to_dict(), indent=2)
+            # Convert state to dict and sign it
+            data = state.to_dict()
+            signature = self._sign_state(data)
+            data["_signature"] = signature
+
+            content = model_to_json(data, indent=2)
             safe_write(state_path, content)
             self._log("state_saved", {
                 "feature_id": state.feature_id,

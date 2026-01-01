@@ -5,12 +5,15 @@ Implements spec section 5.2.2:
 - Run DEEP QA on affected area when BugResearcher fails to reproduce
 - Provide evidence for RootCauseAnalyzer
 - Extract reproduction steps from QA findings
+- Integrates QASessionExtension for endpoint tracking during reproduction
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
+import uuid
 
 from swarm_attack.qa.models import (
     QADepth,
@@ -18,6 +21,7 @@ from swarm_attack.qa.models import (
     QATrigger,
 )
 from swarm_attack.qa.orchestrator import QAOrchestrator
+from swarm_attack.qa.session_extension import QASessionExtension
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -61,6 +65,10 @@ class BugPipelineQAIntegration:
         self._logger = logger
         self.orchestrator = QAOrchestrator(config, logger)
 
+        # Initialize session extension for endpoint tracking during reproduction
+        swarm_dir = Path(config.repo_root) / ".swarm"
+        self.session_extension = QASessionExtension(swarm_dir)
+
     def _log(
         self, event_type: str, data: Optional[dict] = None, level: str = "info"
     ) -> None:
@@ -102,6 +110,15 @@ class BugPipelineQAIntegration:
         })
 
         try:
+            # Generate session ID for tracking
+            session_id = f"qa-bug-{bug_id}-{uuid.uuid4().hex[:8]}"
+
+            # Derive endpoints to track - use affected_endpoints or derive from description
+            endpoints_discovered = affected_endpoints or [target]
+
+            # Call session extension on_session_start BEFORE running tests
+            self.session_extension.on_session_start(session_id, endpoints_discovered)
+
             # Run QA with DEEP depth for thorough bug hunting
             session = self.orchestrator.test(
                 target=target,
@@ -114,19 +131,43 @@ class BugPipelineQAIntegration:
                 session_id=session.session_id,
             )
 
+            # Get findings from session result
+            findings = []
+            endpoints_tested = []
             if session.result:
                 # Bug is reproduced if QA found any failures
                 result.is_reproduced = session.result.tests_failed > 0
+                findings = session.result.findings or []
+
+                # Extract tested endpoints from findings
+                for finding in findings:
+                    if hasattr(finding, 'endpoint') and finding.endpoint:
+                        endpoints_tested.append(finding.endpoint)
 
                 # Extract reproduction steps from findings
-                if session.result.findings:
+                if findings:
                     result.reproduction_steps = self._extract_reproduction_steps(
-                        session.result.findings
+                        findings
                     )
-                    result.evidence = self._extract_evidence(session.result.findings)
+                    result.evidence = self._extract_evidence(findings)
                     result.root_cause_hints = self._extract_root_cause_hints(
-                        session.result.findings
+                        findings
                     )
+
+            # Call session extension on_session_complete AFTER getting results
+            # Convert findings to dicts for session extension
+            findings_dicts = []
+            for f in findings:
+                if hasattr(f, '__dict__'):
+                    findings_dicts.append({k: v for k, v in f.__dict__.items() if not k.startswith('_')})
+                elif isinstance(f, dict):
+                    findings_dicts.append(f)
+
+            self.session_extension.on_session_complete(
+                session.session_id,
+                endpoints_tested or endpoints_discovered,
+                findings_dicts,
+            )
 
             self._log("qa_bug_reproduction_complete", {
                 "bug_id": bug_id,
@@ -310,3 +351,35 @@ class BugPipelineQAIntegration:
                 hints.append(f"Critical issue at {finding.endpoint}: {finding.title}")
 
         return hints
+
+    def set_coverage_baseline(
+        self,
+        session_id: str,
+        endpoints_tested: list[str],
+        findings: list,
+    ) -> None:
+        """
+        Set coverage baseline after bug fix.
+
+        Call this method after a bug is fixed and verified to establish
+        a baseline for future regression detection.
+
+        Args:
+            session_id: The QA session ID to use as baseline.
+            endpoints_tested: List of endpoints that were tested.
+            findings: List of findings from the session (typically empty after fix).
+        """
+        self._log("set_coverage_baseline", {
+            "session_id": session_id,
+            "endpoints_count": len(endpoints_tested),
+        })
+
+        # First call on_session_start to set the endpoints
+        self.session_extension.on_session_start(session_id, endpoints_tested)
+
+        # Then set as baseline
+        self.session_extension.set_as_baseline(
+            session_id,
+            endpoints_tested,
+            findings,
+        )

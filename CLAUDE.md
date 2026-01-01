@@ -937,7 +937,7 @@ Multi-agent commit review system with expert panel analysis. Reviews recent comm
 
 ### Implementation Status
 
-**Current State:** Partial implementation - helper methods complete, agent dispatch placeholder.
+**Current State:** Complete - all components implemented and functional.
 
 | Component | Status | Notes |
 |-----------|--------|-------|
@@ -946,12 +946,10 @@ Multi-agent commit review system with expert panel analysis. Reviews recent comm
 | Categorizer (`categorizer.py`) | ✅ Complete | Commit classification |
 | Prompts (`prompts.py`) | ✅ Complete | 5 expert prompts |
 | Dispatcher helpers | ✅ Complete | `_parse_findings()`, `_call_claude_cli()` |
-| Dispatcher `_run_agent()` | ⏳ Placeholder | Returns empty list; needs asyncio.to_thread wiring |
+| Dispatcher `_run_agent()` | ✅ Complete | Calls Claude CLI via asyncio.to_thread |
 | Synthesis (`synthesis.py`) | ✅ Complete | Score calculation, verdict |
 | Report (`report.py`) | ✅ Complete | XML/JSON/Markdown output |
 | CLI (`review_commits.py`) | ✅ Complete | Command registered |
-
-**Next Steps:** Wire `_run_agent()` to call `_call_claude_cli()` via `asyncio.to_thread()` and parse response with `_parse_findings()`.
 
 ### Expert Panel
 

@@ -448,7 +448,10 @@ def bug_approve(
     from rich.markdown import Markdown
     from rich.prompt import Confirm
 
+    from swarm_attack.auto_approval import BugAutoApprover
     from swarm_attack.bug_orchestrator import BugOrchestrator
+    from swarm_attack.bug_state_store import BugStateStore
+    from swarm_attack.event_logger import get_event_logger
 
     # Check for mutually exclusive flags
     if auto and manual:
@@ -466,6 +469,38 @@ def bug_approve(
         raise typer.Exit(1)
 
     fix_plan_content = fix_plan_path.read_text()
+
+    # Handle --auto mode: try auto-approval first
+    if auto:
+        console.print("[green]Auto-approval mode enabled.[/green]")
+
+        bug_store = BugStateStore(config)
+        event_logger = get_event_logger(config)
+
+        approver = BugAutoApprover(bug_store, event_logger)
+        auto_result = approver.auto_approve_if_ready(bug_id)
+
+        if auto_result.approved:
+            console.print(f"[green]{auto_result.reason}[/green]")
+            console.print(f"[dim]Confidence:[/dim] {auto_result.confidence:.2f}")
+            console.print(
+                Panel(
+                    f"[green]Fix plan auto-approved![/green]\n\n"
+                    f"Bug ID: {bug_id}\n"
+                    f"Reason: {auto_result.reason}\n\n"
+                    f"[cyan]Next step:[/cyan] Run implementation with:\n"
+                    f"  [cyan]swarm-attack bug fix {bug_id}[/cyan]",
+                    title="Auto-Approved",
+                    border_style="green",
+                )
+            )
+            return
+        else:
+            console.print(f"[yellow]Auto-approval not triggered:[/yellow] {auto_result.reason}")
+            console.print("  Proceeding with manual approval...")
+
+    elif manual:
+        console.print("[yellow]Manual mode enabled - human approval required.[/yellow]")
 
     # Display the fix plan
     console.print()

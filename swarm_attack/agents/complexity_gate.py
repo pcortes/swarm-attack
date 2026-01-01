@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
 from swarm_attack.agents.base import AgentResult, BaseAgent
+from swarm_attack.events.types import EventType
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -409,6 +410,36 @@ If needs_split is true, the issue exceeds reasonable single-issue complexity."""
             "needs_split": estimate.needs_split,
             "confidence": estimate.confidence,
         })
+
+        # AC 3.6: Emit ISSUE_COMPLEXITY_PASSED or ISSUE_COMPLEXITY_FAILED
+        # Extract feature_id and issue_number from context if available
+        feature_id = context.get("feature_id", "")
+        issue_number = issue.get("order")
+
+        if estimate.needs_split:
+            # Payload schema: {"issue_number", "complexity_score", "split_suggestions"}
+            self._emit_event(
+                event_type=EventType.ISSUE_COMPLEXITY_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={
+                    "issue_number": issue_number,
+                    "complexity_score": estimate.complexity_score,
+                    "split_suggestions": estimate.split_suggestions,
+                },
+            )
+        else:
+            # Payload schema: {"issue_number", "complexity_score", "max_turns"}
+            self._emit_event(
+                event_type=EventType.ISSUE_COMPLEXITY_PASSED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={
+                    "issue_number": issue_number,
+                    "complexity_score": estimate.complexity_score,
+                    "max_turns": estimate.estimated_turns,
+                },
+            )
 
         return AgentResult.success_result(
             output=estimate.to_dict(),

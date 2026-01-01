@@ -6,12 +6,15 @@ Implements spec section 3: Pipeline Integration - Verifier Hook
 - Passes context to QA orchestrator
 - Reports findings back to pipeline
 - Graceful degradation if QA fails
+- Integrates QASessionExtension for coverage tracking and regression detection
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
+import uuid
 
 from swarm_attack.qa.context_builder import QAContextBuilder
 from swarm_attack.qa.depth_selector import DepthSelector
@@ -23,6 +26,7 @@ from swarm_attack.qa.models import (
     QATrigger,
 )
 from swarm_attack.qa.orchestrator import QAOrchestrator
+from swarm_attack.qa.session_extension import QASessionExtension
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -76,6 +80,10 @@ class VerifierQAHook:
         self.orchestrator = QAOrchestrator(config, logger)
         self.context_builder = QAContextBuilder(config, logger)
         self.depth_selector = DepthSelector(config, logger)
+
+        # Initialize session extension for coverage tracking and regression detection
+        swarm_dir = Path(config.repo_root) / ".swarm"
+        self.session_extension = QASessionExtension(swarm_dir)
 
     def _log(
         self, event_type: str, data: Optional[dict] = None, level: str = "info"
@@ -158,6 +166,15 @@ class VerifierQAHook:
                 context=context,
             )
 
+            # Generate session ID for tracking
+            session_id = f"qa-{feature_id}-{issue_number}-{uuid.uuid4().hex[:8]}"
+
+            # Derive endpoints from target files (simplified mapping)
+            endpoints_discovered = [f"/{f.replace('.py', '').replace('/', '.')}" for f in target_files]
+
+            # Call session extension on_session_start BEFORE validate_issue
+            self.session_extension.on_session_start(session_id, endpoints_discovered)
+
             # Run QA validation
             session = self.orchestrator.validate_issue(
                 feature_id=feature_id,
@@ -170,11 +187,20 @@ class VerifierQAHook:
                 session_id=session.session_id,
             )
 
+            # Get findings from session result
+            findings = []
+            endpoints_tested = []
             if session.result:
                 result.recommendation = session.result.recommendation
                 result.findings = session.result.findings
+                findings = session.result.findings
 
-                # Determine blocking behavior
+                # Extract tested endpoints from findings
+                for finding in findings:
+                    if hasattr(finding, 'endpoint') and finding.endpoint:
+                        endpoints_tested.append(finding.endpoint)
+
+                # Determine blocking behavior from QA result
                 if session.result.recommendation == QARecommendation.BLOCK:
                     result.should_block = True
                     result.should_continue = False
@@ -192,6 +218,30 @@ class VerifierQAHook:
 
                 else:  # PASS
                     result.should_continue = True
+
+            # Call session extension on_session_complete AFTER getting results
+            # Convert findings to dicts for session extension
+            findings_dicts = []
+            for f in findings:
+                if hasattr(f, '__dict__'):
+                    findings_dicts.append({k: v for k, v in f.__dict__.items() if not k.startswith('_')})
+                elif isinstance(f, dict):
+                    findings_dicts.append(f)
+
+            session_ext_result = self.session_extension.on_session_complete(
+                session.session_id,
+                endpoints_tested or endpoints_discovered,  # Use discovered if none tested
+                findings_dicts,
+            )
+
+            # Check if session extension requires blocking (regression/coverage drop)
+            if session_ext_result.should_block:
+                result.should_block = True
+                result.should_continue = False
+                self._log("qa_hook_session_extension_block", {
+                    "session_id": session.session_id,
+                    "block_reason": session_ext_result.block_reason,
+                })
 
             self._log("qa_hook_complete", {
                 "session_id": session.session_id,

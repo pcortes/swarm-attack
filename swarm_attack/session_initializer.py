@@ -158,31 +158,57 @@ class SessionInitializer:
             return False
         return True
 
-    def _review_git_history(self, feature_id: str) -> None:
+    def _review_git_history(self, feature_id: str) -> list[str]:
         """
-        Review recent git history for context.
+        Extract recent commits (last 10) for context.
 
         This is informational - doesn't block initialization.
 
         Args:
             feature_id: The feature identifier.
-        """
-        # This step is for agent context - currently a no-op
-        # Future: Could extract recent commits for the feature
-        pass
 
-    def _review_progress_log(self, feature_id: str) -> None:
+        Returns:
+            List of recent commit strings (oneline format), empty list on error.
         """
-        Review progress.txt for session context.
+        try:
+            result = subprocess.run(
+                ["git", "log", "--oneline", "-10"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=self._config.repo_root,
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")
+                # Filter out empty strings
+                return [line for line in lines if line]
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+        return []
+
+    def _review_progress_log(self, feature_id: str) -> str:
+        """
+        Load prior session summaries from progress.txt.
 
         This is informational - doesn't block initialization.
 
         Args:
             feature_id: The feature identifier.
+
+        Returns:
+            Content of progress.txt, empty string on error or if missing.
         """
-        # This step is for agent context - currently a no-op
-        # Future: Could extract recent sessions for the feature
-        pass
+        progress_path = (
+            Path(self._config.repo_root) / ".swarm" / "features" / feature_id / "progress.txt"
+        )
+        try:
+            if progress_path.exists():
+                return progress_path.read_text()
+        except Exception:
+            pass
+        return ""
 
     def _verify_issue_assignment(
         self,

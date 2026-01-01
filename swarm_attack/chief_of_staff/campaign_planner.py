@@ -202,8 +202,8 @@ class CampaignPlanner:
         # Clear existing goals for remaining days (except completed ones)
         for day_plan in remaining_day_plans:
             if day_plan.status != "completed":
-                # Keep track of original goals but prepare for redistribution
-                pass
+                # Clear goals to prevent duplicates during redistribution
+                day_plan.goals = []
 
         # Sort uncompleted milestones by target_date
         sorted_milestones = sorted(

@@ -264,6 +264,77 @@ class Orchestrator:
         else:
             self._debate_retry_handler = DebateRetryHandler()
 
+        # AC 3.7, 3.8: Initialize event bus and subscribe to events
+        swarm_dir = Path(config.repo_root) / ".swarm"
+        self._bus = get_event_bus(swarm_dir)
+        self._bus.subscribe(EventType.ISSUE_CREATED, self._on_issue_created)
+        self._bus.subscribe(EventType.ISSUE_COMPLETE, self._on_issue_complete)
+
+    def _on_issue_created(self, event: SwarmEvent) -> None:
+        """
+        Handle ISSUE_CREATED events.
+
+        AC 3.7: Update state when issues are created.
+        """
+        if not self._state_store:
+            return
+
+        feature_id = event.feature_id
+        if not feature_id:
+            return
+
+        # Load state and update with issue creation info
+        state = self._state_store.load(feature_id)
+        if state:
+            # Log the event but don't modify phase (IssueCreator handles that)
+            self._log("orchestrator_issue_created_event", {
+                "feature_id": feature_id,
+                "issue_count": event.payload.get("issue_count", 0),
+                "output_path": event.payload.get("output_path", ""),
+            })
+
+    def _on_issue_complete(self, event: SwarmEvent) -> None:
+        """
+        Handle ISSUE_COMPLETE events.
+
+        AC 3.8: Propagate context when an issue is completed.
+        Updates module registry with classes defined by the completed issue.
+        """
+        if not self._state_store:
+            return
+
+        feature_id = event.feature_id
+        if not feature_id:
+            return
+
+        # Load state and update with completion context
+        state = self._state_store.load(feature_id)
+        if state:
+            # Extract context from event payload
+            files_created = event.payload.get("files_created", [])
+            classes_defined = event.payload.get("classes_defined", {})
+            implementation_summary = event.payload.get("implementation_summary", "")
+
+            # Update module registry with new classes for context handoff
+            if hasattr(state, "module_registry") and classes_defined:
+                if not state.module_registry:
+                    state.module_registry = {"modules": {}}
+                for file_path, class_list in classes_defined.items():
+                    state.module_registry["modules"][file_path] = {
+                        "classes": class_list,
+                        "issue_number": event.issue_number,
+                    }
+
+            # Save updated state
+            self._state_store.save(feature_id, state)
+
+            self._log("orchestrator_issue_complete_event", {
+                "feature_id": feature_id,
+                "issue_number": event.issue_number,
+                "files_created": files_created,
+                "classes_propagated": sum(len(v) for v in classes_defined.values()),
+            })
+
     @property
     def author(self) -> SpecAuthorAgent:
         """Get the author agent."""
@@ -794,8 +865,12 @@ class Orchestrator:
                     )
                     return True, scores
 
-        except (json.JSONDecodeError, IOError, KeyError):
-            pass
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            self._log("spec_file_parse_error", {
+                "feature_id": feature_id,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }, level="warning")
 
         return False, {}
 
@@ -1437,8 +1512,14 @@ class Orchestrator:
                     "source": "git_commit",
                 })
                 return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass  # Git check failed, continue to other checks
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            self._log("git_check_error", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }, level="warning")
+            # Continue to other checks
 
         # Check 2: Test file exists and passes
         test_path = (
@@ -1465,8 +1546,15 @@ class Orchestrator:
                         "source": "tests_pass",
                     })
                     return True
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass  # Test check failed, continue
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                self._log("test_check_error", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "test_path": str(test_path),
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                }, level="warning")
+                # Continue to state check
 
         # Check 3: Task is DONE in state (should be redundant if sync worked)
         if self._state_store:
@@ -1693,8 +1781,14 @@ class Orchestrator:
             for issue in data.get("issues", []):
                 if issue.get("order") == issue_number:
                     return issue
-        except (json.JSONDecodeError, KeyError):
-            pass
+        except (json.JSONDecodeError, KeyError) as e:
+            self._log("issue_lookup_error", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "issues_path": str(issues_path),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }, level="warning")
         return None
 
     def _auto_split_issue(
@@ -2097,8 +2191,12 @@ class Orchestrator:
                     module = self._file_path_to_module(file_path)
                     if module:
                         return f"from {module} import {name}"
-        except (subprocess.TimeoutExpired, Exception):
-            pass
+        except (subprocess.TimeoutExpired, Exception) as e:
+            self._log("codebase_search_error", {
+                "name": name,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }, level="warning")
 
         return None
 
@@ -2131,8 +2229,12 @@ class Orchestrator:
                 module = self._file_path_to_module(file_path)
                 if module:
                     return f"from {module} import {name}"
-        except (subprocess.TimeoutExpired, Exception):
-            pass
+        except (subprocess.TimeoutExpired, Exception) as e:
+            self._log("module_search_error", {
+                "name": name,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            }, level="warning")
 
         return None
 
@@ -2873,6 +2975,35 @@ class Orchestrator:
         coder_result: Optional[AgentResult] = None
         if self._coder:
             self._coder.reset()
+
+            # Build and inject AgentContext for coder (token-budgeted, tailored context)
+            # This provides the coder with project instructions, module registry,
+            # and completed summaries within the 15k token budget.
+            try:
+                from swarm_attack.universal_context_builder import UniversalContextBuilder
+                context_builder = UniversalContextBuilder(self.config, self._state_store)
+                agent_context = context_builder.build_context_for_agent(
+                    agent_type="coder",
+                    feature_id=feature_id,
+                    issue_number=issue_number,
+                )
+                if agent_context:
+                    self._coder.with_context(agent_context)
+                    self._log("context_injected", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "agent_type": "coder",
+                        "token_count": agent_context.token_count,
+                    })
+            except Exception as e:
+                # Context building failure should not block implementation
+                # Coder will use fallback context from parameters
+                self._log("context_build_error", {
+                    "feature_id": feature_id,
+                    "issue_number": issue_number,
+                    "error": str(e),
+                }, level="warning")
+
             coder_result = self._coder.run(context)
             total_cost += coder_result.cost_usd
 
@@ -3152,8 +3283,14 @@ class Orchestrator:
                 )
                 return hash_result.stdout.strip()
 
-        except subprocess.CalledProcessError:
-            pass
+        except subprocess.CalledProcessError as e:
+            self._log("git_commit_error", {
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "commit_msg": commit_msg,
+                "error": str(e),
+                "stderr": getattr(e, "stderr", ""),
+            }, level="warning")
 
         return ""
 

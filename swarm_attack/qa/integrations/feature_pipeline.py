@@ -6,12 +6,15 @@ Implements spec section 5.2.1:
 - Block on critical QA findings
 - Create bugs for critical/moderate findings
 - Log warnings but continue on WARN recommendation
+- Integrates QASessionExtension for coverage tracking per issue
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
+import uuid
 
 from swarm_attack.qa.models import (
     QADepth,
@@ -19,6 +22,7 @@ from swarm_attack.qa.models import (
     QASession,
 )
 from swarm_attack.qa.orchestrator import QAOrchestrator
+from swarm_attack.qa.session_extension import QASessionExtension
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -82,6 +86,10 @@ class FeaturePipelineQAIntegration:
         self._logger = logger
         self.orchestrator = QAOrchestrator(config, logger)
 
+        # Initialize session extension for coverage tracking per issue
+        swarm_dir = Path(config.repo_root) / ".swarm"
+        self.session_extension = QASessionExtension(swarm_dir)
+
     def _log(
         self, event_type: str, data: Optional[dict] = None, level: str = "info"
     ) -> None:
@@ -111,7 +119,7 @@ class FeaturePipelineQAIntegration:
         Returns:
             QAIntegrationResult with session details and recommendations.
         """
-        # Skip QA if requested
+        # Skip QA if requested - don't call session extension
         if skip_qa:
             self._log("qa_skipped", {"feature_id": feature_id, "issue_number": issue_number})
             return QAIntegrationResult(
@@ -130,6 +138,15 @@ class FeaturePipelineQAIntegration:
             })
 
         try:
+            # Generate session ID for per-issue tracking
+            session_id = f"qa-{feature_id}-issue{issue_number}-{uuid.uuid4().hex[:8]}"
+
+            # Derive endpoints from verified files (simplified mapping)
+            endpoints_discovered = [f"/{f.replace('.py', '').replace('/', '.')}" for f in verified_files]
+
+            # Call session extension on_session_start BEFORE validation
+            self.session_extension.on_session_start(session_id, endpoints_discovered)
+
             # Run QA validation
             session = self.orchestrator.validate_issue(
                 feature_id=feature_id,
@@ -142,10 +159,19 @@ class FeaturePipelineQAIntegration:
                 session_id=session.session_id,
             )
 
+            # Get findings from session result
+            findings = []
+            endpoints_tested = []
             if session.result:
                 result.recommendation = session.result.recommendation
+                findings = session.result.findings or []
 
-                # Check if should block
+                # Extract tested endpoints from findings
+                for finding in findings:
+                    if hasattr(finding, 'endpoint') and finding.endpoint:
+                        endpoints_tested.append(finding.endpoint)
+
+                # Check if should block from QA
                 should_block, block_reason = self.should_block_commit(session)
                 result.should_block = should_block
                 result.block_reason = block_reason
@@ -156,6 +182,26 @@ class FeaturePipelineQAIntegration:
                     "moderate": session.result.moderate_count,
                     "minor": session.result.minor_count,
                 }
+
+            # Call session extension on_session_complete AFTER getting results
+            # Convert findings to dicts for session extension
+            findings_dicts = []
+            for f in findings:
+                if hasattr(f, '__dict__'):
+                    findings_dicts.append({k: v for k, v in f.__dict__.items() if not k.startswith('_')})
+                elif isinstance(f, dict):
+                    findings_dicts.append(f)
+
+            session_ext_result = self.session_extension.on_session_complete(
+                session.session_id,
+                endpoints_tested or endpoints_discovered,
+                findings_dicts,
+            )
+
+            # Check if session extension requires blocking (regression/coverage drop)
+            if session_ext_result.should_block:
+                result.should_block = True
+                result.block_reason = session_ext_result.block_reason or result.block_reason
 
             self._log("qa_post_verification_complete", {
                 "session_id": session.session_id,
@@ -262,3 +308,35 @@ class FeaturePipelineQAIntegration:
             True if any file is high-risk, False otherwise.
         """
         return any(self._is_high_risk_file(f) for f in files)
+
+    def set_coverage_baseline(
+        self,
+        session_id: str,
+        endpoints_tested: list[str],
+        findings: list,
+    ) -> None:
+        """
+        Set coverage baseline after feature completion.
+
+        Call this method after a feature is fully implemented and verified
+        to establish a baseline for future regression detection.
+
+        Args:
+            session_id: The QA session ID to use as baseline.
+            endpoints_tested: List of endpoints that were tested.
+            findings: List of findings from the session (typically empty after fix).
+        """
+        self._log("set_coverage_baseline", {
+            "session_id": session_id,
+            "endpoints_count": len(endpoints_tested),
+        })
+
+        # First call on_session_start to set the endpoints
+        self.session_extension.on_session_start(session_id, endpoints_tested)
+
+        # Then set as baseline
+        self.session_extension.set_as_baseline(
+            session_id,
+            endpoints_tested,
+            findings,
+        )

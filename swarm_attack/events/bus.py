@@ -10,6 +10,7 @@ from typing import Callable, Optional
 
 from swarm_attack.events.persistence import EventPersistence
 from swarm_attack.events.types import EventType, SwarmEvent
+from swarm_attack.events.validation import validate_payload
 
 EventHandler = Callable[[SwarmEvent], None]
 
@@ -59,8 +60,18 @@ class EventBus:
             ]
 
     def emit(self, event: SwarmEvent) -> None:
-        """Emit an event to all subscribers."""
-        # Persist first (for debugging and replay)
+        """Emit an event to all subscribers.
+
+        Validates the event payload before dispatch. Invalid payloads
+        raise ValueError and are not persisted or dispatched.
+
+        Raises:
+            ValueError: If the event payload contains disallowed fields.
+        """
+        # Validate payload before any dispatch or persistence (P0 Security)
+        validate_payload(event)
+
+        # Persist after validation (for debugging and replay)
         if self._persistence:
             self._persistence.append(event)
 

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import ast
 
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
+from swarm_attack.events.types import EventType
 from swarm_attack.llm_clients import ClaudeInvocationError, ClaudeTimeoutError
 from swarm_attack.models import IssueOutput
 from swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write
@@ -1187,15 +1188,26 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         """Build the full prompt for Claude."""
         skill_prompt = self._load_skill_prompt()
 
-        # P0 FIX: Inject project instructions from CLAUDE.md
-        from swarm_attack.context_builder import ContextBuilder
-        context_builder = ContextBuilder(self.config)
-        project_instructions = context_builder.format_project_instructions_for_prompt()
+        # Check if universal context was injected via with_context()
+        # If so, use its pre-built, token-budgeted context instead of building fresh
+        if self._universal_context:
+            # Use injected context (from UniversalContextBuilder)
+            project_instructions = self._universal_context.project_instructions or ""
+            module_context_section = self._universal_context.module_registry or "No prior modules created for this feature."
+            completed_summaries_section = self._universal_context.completed_summaries or ""
+        else:
+            # Fallback: Build context from scratch (backward compatibility)
+            from swarm_attack.context_builder import ContextBuilder
+            context_builder = ContextBuilder(self.config)
+            project_instructions = context_builder.format_project_instructions_for_prompt()
 
-        # P0 FIX: Format completed summaries for context handoff
-        completed_summaries_section = ""
-        if completed_summaries:
-            completed_summaries_section = self._format_completed_summaries(completed_summaries)
+            # Format completed summaries for context handoff
+            completed_summaries_section = ""
+            if completed_summaries:
+                completed_summaries_section = self._format_completed_summaries(completed_summaries)
+
+            # Build module registry context (shows prior issue outputs)
+            module_context_section = self._format_module_registry(module_registry)
 
         modules_str = "\n".join(f"- {m}" for m in expected_modules) if expected_modules else "- (Infer from test imports)"
 
@@ -1216,9 +1228,6 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         existing_section = self._format_existing_implementation(
             existing_implementation or {}, is_first_attempt=is_first_attempt
         )
-
-        # Build module registry context (shows prior issue outputs)
-        module_context_section = self._format_module_registry(module_registry)
 
         # Retry context
         retry_context = ""
@@ -1556,6 +1565,18 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         })
         self.checkpoint("started")
 
+        # AC 3.2: Emit IMPL_STARTED at run() entry
+        # Payload schema: {"issue_number", "agent_id"}
+        self._emit_event(
+            event_type=EventType.IMPL_STARTED,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            payload={
+                "issue_number": issue_number,
+                "agent_id": self.name,
+            },
+        )
+
         # Determine test file path
         test_path_str = context.get("test_path")
         if test_path_str:
@@ -1611,6 +1632,14 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         if not file_exists(spec_path):
             error = f"Spec not found at {spec_path}"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
+            )
             return AgentResult.failure_result(error)
 
         # Read spec content
@@ -1619,6 +1648,14 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         except Exception as e:
             error = f"Failed to read spec: {e}"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
+            )
             return AgentResult.failure_result(error)
 
         # Load issues
@@ -1627,10 +1664,26 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         except FileNotFoundError as e:
             error = str(e)
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
+            )
             return AgentResult.failure_result(error)
         except json.JSONDecodeError as e:
             error = f"Failed to parse issues.json: {e}"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
+            )
             return AgentResult.failure_result(error)
 
         # Find the specific issue
@@ -1638,21 +1691,38 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         if not issue:
             error = f"Issue {issue_number} not found in issues.json"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
+            )
             return AgentResult.failure_result(error)
 
         # Check if this is a manual task (cannot be automated)
         automation_type = issue.get("automation_type", "automated")
         if automation_type == "manual":
+            error = (
+                f"Issue #{issue_number} requires manual verification and cannot be automated. "
+                f"Title: {issue.get('title', 'Unknown')}. "
+                "Mark this task as MANUAL_REQUIRED or complete it manually."
+            )
             self._log("coder_manual_task", {
                 "issue_number": issue_number,
                 "title": issue.get("title", ""),
                 "message": "Task requires manual human verification - cannot be automated",
             })
-            return AgentResult.failure_result(
-                f"Issue #{issue_number} requires manual verification and cannot be automated. "
-                f"Title: {issue.get('title', 'Unknown')}. "
-                "Mark this task as MANUAL_REQUIRED or complete it manually."
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "context_load"},
             )
+            return AgentResult.failure_result(error)
 
         self.checkpoint("context_loaded")
 
@@ -1660,8 +1730,17 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         try:
             self._load_skill_prompt()
         except SkillNotFoundError as e:
-            self._log("coder_error", {"error": str(e)}, level="error")
-            return AgentResult.failure_result(str(e))
+            error = str(e)
+            self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "skill_load"},
+            )
+            return AgentResult.failure_result(error)
 
         # CRITICAL: Always read existing implementation to preserve working code
         # This prevents destructive rewrites on both first attempts AND retries
@@ -1716,10 +1795,26 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         except ClaudeTimeoutError as e:
             error = f"Claude timed out: {e}"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "llm_execution"},
+            )
             return AgentResult.failure_result(error)
         except ClaudeInvocationError as e:
             error = f"Claude invocation failed: {e}"
             self._log("coder_error", {"error": error}, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "llm_execution"},
+            )
             return AgentResult.failure_result(error)
 
         self.checkpoint("llm_complete", cost_usd=cost)
@@ -1749,6 +1844,21 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         for test_path_gen, test_content_gen in generated_test_files.items():
             all_test_content_to_validate.append(("generated", test_path_gen, test_content_gen))
 
+        # AC 3.3: Emit IMPL_TESTS_WRITTEN after RED phase (tests detected/generated)
+        # Payload schema: {"issue_number", "test_count", "test_path"}
+        if all_test_content_to_validate:
+            test_file_paths = [path for _, path, _ in all_test_content_to_validate]
+            self._emit_event(
+                event_type=EventType.IMPL_TESTS_WRITTEN,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={
+                    "issue_number": issue_number,
+                    "test_count": len(test_file_paths),
+                    "test_path": test_file_paths[0] if test_file_paths else "",
+                },
+            )
+
         # Validate each test file's imports
         all_missing = []
         for source, path, content in all_test_content_to_validate:
@@ -1763,17 +1873,25 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 all_missing.extend(missing)
 
         if all_missing:
+            error = (
+                f"Incomplete implementation: test file(s) import {len(all_missing)} undefined name(s): "
+                f"{', '.join(all_missing[:5])}"
+                + (f" (+{len(all_missing)-5} more)" if len(all_missing) > 5 else "")
+            )
             self._log("coder_validation_failed", {
                 "error": "Generated tests import undefined names",
                 "missing_imports": all_missing,
                 "files_generated": list(files.keys()),
             }, level="error")
-            return AgentResult.failure_result(
-                f"Incomplete implementation: test file(s) import {len(all_missing)} undefined name(s): "
-                f"{', '.join(all_missing[:5])}"
-                + (f" (+{len(all_missing)-5} more)" if len(all_missing) > 5 else ""),
-                cost_usd=cost,
+            # AC 3.5: Emit IMPL_FAILED on failure
+            # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "validation"},
             )
+            return AgentResult.failure_result(error, cost_usd=cost)
 
         # Write implementation files
         files_created: list[str] = []
@@ -1823,6 +1941,14 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
             except Exception as e:
                 error = f"Failed to write file {file_path}: {e}"
                 self._log("coder_error", {"error": error}, level="error")
+                # AC 3.5: Emit IMPL_FAILED on failure
+                # Payload schema: {"issue_number", "error", "retry_count", "phase"}
+                self._emit_event(
+                    event_type=EventType.IMPL_FAILED,
+                    feature_id=feature_id,
+                    issue_number=issue_number,
+                    payload={"issue_number": issue_number, "error": error, "phase": "file_write"},
+                )
                 return AgentResult.failure_result(error, cost_usd=cost)
 
         # Log summary of path rewrites if any occurred
@@ -1856,6 +1982,19 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 "files_modified": files_modified,
                 "cost_usd": cost,
                 "classes_extracted": sum(len(v) for v in issue_outputs.classes_defined.values()),
+            },
+        )
+
+        # AC 3.4: Emit IMPL_CODE_COMPLETE after GREEN phase (files written)
+        # Payload schema: {"issue_number", "files_created", "files_modified"}
+        self._emit_event(
+            event_type=EventType.IMPL_CODE_COMPLETE,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            payload={
+                "issue_number": issue_number,
+                "files_created": files_created,
+                "files_modified": files_modified,
             },
         )
 

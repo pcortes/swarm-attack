@@ -944,6 +944,8 @@ def approve(
     Use --auto to enable auto-approval mode (routine decisions proceed automatically).
     Use --manual to force manual mode (all decisions require human approval).
     """
+    from swarm_attack.auto_approval import SpecAutoApprover
+    from swarm_attack.event_logger import get_event_logger
     from swarm_attack.state_store import get_store
     from swarm_attack.utils.fs import file_exists, read_file, safe_write
 
@@ -956,6 +958,7 @@ def approve(
     init_swarm_directory(config)
 
     store = get_store(config)
+    event_logger = get_event_logger(config)
 
     # Check feature exists
     state = store.load(feature_id)
@@ -967,6 +970,31 @@ def approve(
     if auto:
         store.set_manual_mode(feature_id, False)
         console.print("[green]Auto-approval mode enabled.[/green]")
+
+        # Try auto-approval first
+        approver = SpecAutoApprover(store, event_logger)
+        result = approver.auto_approve_if_ready(feature_id)
+
+        if result.approved:
+            console.print(f"[green]{result.reason}[/green]")
+            console.print(f"[dim]Confidence:[/dim] {result.confidence:.2f}")
+            # Still need to copy draft to final
+            spec_dir = get_spec_dir(config, feature_id)
+            draft_path = spec_dir / "spec-draft.md"
+            final_path = spec_dir / "spec-final.md"
+            if file_exists(draft_path):
+                draft_content = read_file(draft_path)
+                safe_write(final_path, draft_content)
+            # Phase already updated by approver
+            state = store.load(feature_id)
+            console.print(f"[green]Spec approved![/green]")
+            console.print(f"[dim]Final spec:[/dim] {final_path}")
+            console.print(f"[dim]Phase:[/dim] {format_phase(state.phase if state else FeaturePhase.SPEC_APPROVED)}")
+            return
+        else:
+            console.print(f"[yellow]Auto-approval not triggered:[/yellow] {result.reason}")
+            console.print("  Proceeding with manual approval...")
+
     elif manual:
         store.set_manual_mode(feature_id, True)
         console.print("[yellow]Manual mode enabled - all decisions require human approval.[/yellow]")
@@ -1085,29 +1113,72 @@ def greenlight(
         ...,
         help="Feature ID to greenlight for implementation.",
     ),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help="Enable auto-greenlight mode if all issues pass validation.",
+    ),
+    manual: bool = typer.Option(
+        False,
+        "--manual",
+        help="Enable manual mode (require human approval for all decisions).",
+    ),
 ) -> None:
     """
     Greenlight issues for implementation.
 
     After issues have been created and reviewed, use this command to
     approve them and move to the implementation phase.
+
+    Use --auto to enable auto-greenlight mode (proceeds if all issues pass validation).
+    Use --manual to force manual mode (require human review).
     """
     import json
 
+    from swarm_attack.auto_approval import IssueAutoGreenlighter
+    from swarm_attack.event_logger import get_event_logger
     from swarm_attack.models import TaskRef
     from swarm_attack.state_store import get_store
     from swarm_attack.utils.fs import read_file
+
+    # Check for mutually exclusive flags
+    if auto and manual:
+        console.print("[red]Error:[/red] Cannot use both --auto and --manual flags together.")
+        raise typer.Exit(1)
 
     config = get_config_or_default()
     init_swarm_directory(config)
 
     store = get_store(config)
+    event_logger = get_event_logger(config)
 
     # Check feature exists
     state = store.load(feature_id)
     if state is None:
         console.print(f"[red]Error:[/red] Feature '{feature_id}' not found.")
         raise typer.Exit(1)
+
+    # Handle manual/auto mode settings
+    if manual:
+        store.set_manual_mode(feature_id, True)
+        console.print("[yellow]Manual mode enabled - all decisions require human approval.[/yellow]")
+    elif auto:
+        store.set_manual_mode(feature_id, False)
+        console.print("[green]Auto-greenlight mode enabled.[/green]")
+
+        # Try auto-greenlight first
+        greenlighter = IssueAutoGreenlighter(store, event_logger)
+        result = greenlighter.auto_greenlight_if_ready(feature_id)
+
+        if result.approved:
+            console.print(f"[green]{result.reason}[/green]")
+            console.print(f"[dim]Phase:[/dim] READY_TO_IMPLEMENT")
+            console.print(f"\n[cyan]Next step:[/cyan] Run implementation with:")
+            console.print(f"  [cyan]swarm-attack run {feature_id}[/cyan]")
+            return
+        else:
+            console.print(f"[yellow]Auto-greenlight not triggered:[/yellow] {result.reason}")
+            console.print("  Proceeding with manual greenlight...")
 
     # Check phase - should be ISSUES_NEED_REVIEW or SPEC_APPROVED (if issues were created)
     valid_phases = [FeaturePhase.ISSUES_NEED_REVIEW, FeaturePhase.SPEC_APPROVED]
