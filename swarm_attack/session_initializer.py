@@ -284,8 +284,9 @@ class SessionInitializer:
         import re
 
         failures = []
-        # Look for FAILED test names
-        for match in re.finditer(r"FAILED\s+([^\s]+)", output):
+        # Look for FAILED test names with :: separator (pytest format: file.py::test_name)
+        # Pattern requires :: to avoid matching progress indicators like '[ 75%]'
+        for match in re.finditer(r"FAILED\s+([\w/._-]+::[\w:]+)", output):
             failures.append(match.group(1))
 
         return failures[:5]  # Limit to first 5 failures
