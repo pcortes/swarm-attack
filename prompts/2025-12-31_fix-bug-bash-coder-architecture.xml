@@ -1,0 +1,370 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PRIORITY CONTINUATION PROMPT: Fix Bug Bash Coder Architecture Gap
+
+  CRITICAL ISSUE DISCOVERED: Bug bash fix() method has NO LLM/Coder!
+  It just does dumb string replace of fix plan code snippets.
+
+  This must be fixed BEFORE continuing with other bugs.
+
+  Created: 2025-12-31
+  Priority: P0 - CRITICAL ARCHITECTURE FIX
+  Worktree: /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+  Branch: fix/swarm-internal-bugs
+-->
+<continuation_prompt>
+  <metadata>
+    <task>Fix bug bash coder architecture - add real LLM-based fix implementation</task>
+    <repo>/Users/philipjcortes/Desktop/swarm-attack</repo>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs</worktree>
+    <branch>fix/swarm-internal-bugs</branch>
+    <target_branch>master</target_branch>
+    <created>2025-12-31</created>
+    <priority>P0 - CRITICAL</priority>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- CRITICAL ISSUE SUMMARY                                        -->
+  <!-- ============================================================ -->
+  <critical_issue>
+    <title>Bug Bash fix() Method Has No LLM/Coder - Just String Replace</title>
+
+    <location>swarm_attack/bug_orchestrator.py:1140-1154</location>
+
+    <current_broken_code><![CDATA[
+# Execute fix (simplified implementation)
+# In a full implementation, this would use a CoderAgent  <-- NEVER IMPLEMENTED!
+files_changed = []
+try:
+    for change in state.fix_plan.changes:
+        if change.change_type == "modify" and change.current_code and change.proposed_code:
+            file_path = Path(self.config.repo_root) / change.file_path
+            if file_path.exists():
+                content = file_path.read_text()
+                # Apply change (simple replace)
+                new_content = content.replace(change.current_code, change.proposed_code)
+                if content != new_content:
+                    file_path.write_text(new_content)
+                    files_changed.append(change.file_path)
+    ]]></current_broken_code>
+
+    <why_this_breaks>
+      <reason>String replace requires EXACT match - whitespace sensitive</reason>
+      <reason>No syntax validation before writing</reason>
+      <reason>No context awareness - doesn't know surrounding code</reason>
+      <reason>If proposed_code has formatting issues, they're applied verbatim</reason>
+      <reason>Spends $1.5-2 on analysis but uses dumb replace for fix</reason>
+    </why_this_breaks>
+
+    <evidence>
+      BUG-004 fix failed because proposed_code was missing a blank line.
+      The string replace inserted code without proper spacing → syntax error.
+    </evidence>
+  </critical_issue>
+
+  <!-- ============================================================ -->
+  <!-- WHAT FEATURE SWARM DOES RIGHT                                 -->
+  <!-- ============================================================ -->
+  <reference_implementation>
+    <title>Feature Swarm CoderAgent (swarm_attack/agents/coder.py)</title>
+
+    <what_it_does>
+      <step>Loads spec content from spec-final.md</step>
+      <step>Loads issues.json with full issue body</step>
+      <step>Reads existing implementation from target files</step>
+      <step>Builds rich context with module_registry and completed_summaries</step>
+      <step>Uses UniversalContextBuilder for right-sized context</step>
+      <step>Invokes Claude CLI with proper prompts</step>
+      <step>Iterates on test failures (TDD) up to 5 times</step>
+      <step>Validates syntax by running tests</step>
+    </what_it_does>
+
+    <key_files>
+      <file purpose="CoderAgent implementation">swarm_attack/agents/coder.py</file>
+      <file purpose="Context builder">swarm_attack/universal_context_builder.py</file>
+      <file purpose="Coder skill prompt">.claude/skills/coder/SKILL.md</file>
+    </key_files>
+  </reference_implementation>
+
+  <!-- ============================================================ -->
+  <!-- PROPOSED FIX                                                  -->
+  <!-- ============================================================ -->
+  <proposed_fix>
+    <approach>Option 1: Call Claude CLI directly with fix plan context</approach>
+
+    <rationale>
+      Simpler than full CoderAgent integration. Use Claude CLI subprocess
+      with Edit tool enabled, passing fix plan as context. This is the same
+      pattern used in commit_review/dispatcher.py.
+    </rationale>
+
+    <implementation_plan>
+      <step order="1">
+        <title>Create BugFixerAgent class</title>
+        <file>swarm_attack/agents/bug_fixer.py</file>
+        <description>
+          New agent that takes a fix plan and applies it using Claude CLI.
+          Similar pattern to CoderAgent but simpler - just applies fix plan.
+        </description>
+      </step>
+
+      <step order="2">
+        <title>Create bug-fixer skill prompt</title>
+        <file>.claude/skills/bug-fixer/SKILL.md</file>
+        <description>
+          Skill prompt that instructs Claude to:
+          1. Read the files to be modified
+          2. Understand the fix plan changes
+          3. Apply changes using Edit tool
+          4. Ensure proper formatting (blank lines, indentation)
+          5. Validate syntax by importing
+        </description>
+      </step>
+
+      <step order="3">
+        <title>Wire up BugFixerAgent in bug_orchestrator.fix()</title>
+        <file>swarm_attack/bug_orchestrator.py</file>
+        <description>
+          Replace the dumb string replace with BugFixerAgent.run()
+        </description>
+      </step>
+
+      <step order="4">
+        <title>Add tests for BugFixerAgent</title>
+        <file>tests/unit/test_bug_fixer.py</file>
+        <description>
+          Test that the agent correctly applies fix plans
+        </description>
+      </step>
+    </implementation_plan>
+
+    <bug_fixer_skill_template><![CDATA[
+# Bug Fixer Agent
+
+You are a Bug Fixer Agent. Your job is to apply a fix plan to the codebase.
+
+## Fix Plan
+
+{fix_plan_markdown}
+
+## Instructions
+
+1. **Read First**: Use the Read tool to read each file that needs modification
+2. **Understand Context**: Look at the surrounding code to understand formatting
+3. **Apply Changes**: Use the Edit tool to apply each change from the fix plan
+4. **Ensure Formatting**:
+   - Add blank lines between function/class definitions
+   - Match existing indentation style
+   - Preserve existing imports
+5. **Validate Syntax**: After editing, verify with:
+   ```python
+   python -c "import {module_name}; print('OK')"
+   ```
+
+## CRITICAL RULES
+
+- NEVER do blind string replacement
+- ALWAYS read the file first to understand context
+- ALWAYS ensure proper blank lines between definitions
+- If the current_code doesn't match exactly, find the correct location manually
+- After editing, ALWAYS verify syntax compiles
+
+## Output
+
+When done, output a JSON summary:
+```json
+{
+  "files_changed": ["path/to/file.py"],
+  "success": true,
+  "syntax_verified": true
+}
+```
+    ]]></bug_fixer_skill_template>
+  </proposed_fix>
+
+  <!-- ============================================================ -->
+  <!-- ENVIRONMENT SETUP                                             -->
+  <!-- ============================================================ -->
+  <setup>
+    <commands><![CDATA[
+# Already in the worktree
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+git branch   # Must show: * fix/swarm-internal-bugs
+
+# Check current status
+git log --oneline -5
+git status --short
+
+# Read the critical analysis
+cat .swarm/bugs/2025-12-31_bug-bash-coder-analysis.md
+    ]]></commands>
+  </setup>
+
+  <!-- ============================================================ -->
+  <!-- TDD IMPLEMENTATION WORKFLOW                                   -->
+  <!-- ============================================================ -->
+  <tdd_workflow>
+    <phase name="RED">
+      <step>Write failing tests for BugFixerAgent in tests/unit/test_bug_fixer.py</step>
+      <step>Tests should verify:
+        - Agent reads files before editing
+        - Agent uses Edit tool (not string replace)
+        - Agent validates syntax after changes
+        - Agent handles missing blank lines gracefully
+        - Agent returns proper success/failure status
+      </step>
+      <step>Run tests: PYTHONPATH=. pytest tests/unit/test_bug_fixer.py -v</step>
+      <step>Verify tests FAIL (no implementation yet)</step>
+    </phase>
+
+    <phase name="GREEN">
+      <step>Create .claude/skills/bug-fixer/SKILL.md with prompt</step>
+      <step>Create swarm_attack/agents/bug_fixer.py with BugFixerAgent class</step>
+      <step>Pattern after commit_review/dispatcher.py for Claude CLI calls</step>
+      <step>Run tests until they pass</step>
+    </phase>
+
+    <phase name="REFACTOR">
+      <step>Wire BugFixerAgent into bug_orchestrator.fix()</step>
+      <step>Remove the dumb string replace code</step>
+      <step>Run full test suite: PYTHONPATH=. pytest tests/ -v --tb=short</step>
+    </phase>
+  </tdd_workflow>
+
+  <!-- ============================================================ -->
+  <!-- REFERENCE: Claude CLI Pattern from dispatcher.py              -->
+  <!-- ============================================================ -->
+  <reference_claude_cli_pattern>
+    <file>swarm_attack/commit_review/dispatcher.py</file>
+    <pattern><![CDATA[
+def _call_claude_cli(self, prompt: str) -> dict:
+    """Call Claude CLI and return parsed JSON response."""
+    result = subprocess.run(
+        [
+            "claude",
+            "-p", prompt,
+            "--output-format", "json",
+            "--max-turns", "10",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        cwd=str(self._repo_root),
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude CLI failed: {result.stderr}")
+
+    return json.loads(result.stdout)
+    ]]></pattern>
+  </reference_claude_cli_pattern>
+
+  <!-- ============================================================ -->
+  <!-- AFTER FIXING BUG BASH CODER                                   -->
+  <!-- ============================================================ -->
+  <after_main_fix>
+    <title>Then apply remaining bug fixes</title>
+
+    <bugs_to_fix>
+      <bug id="BUG-004" priority="1">
+        <description>Issues not persisted when validation fails</description>
+        <action>Re-run with new BugFixerAgent: swarm-attack bug fix issues-not-persisted</action>
+      </bug>
+      <bug id="BUG-001" priority="2">Rate limit handling in spec critic</bug>
+      <bug id="BUG-003" priority="3">Auth error handling</bug>
+      <bug id="BUG-005" priority="3">Vague error messages</bug>
+      <bug id="BUG-002" priority="4">State machine transition</bug>
+    </bugs_to_fix>
+  </after_main_fix>
+
+  <!-- ============================================================ -->
+  <!-- SUCCESS CRITERIA                                              -->
+  <!-- ============================================================ -->
+  <success_criteria>
+    <criterion>BugFixerAgent class exists with Claude CLI integration</criterion>
+    <criterion>bug-fixer skill prompt exists at .claude/skills/bug-fixer/SKILL.md</criterion>
+    <criterion>bug_orchestrator.fix() uses BugFixerAgent instead of string replace</criterion>
+    <criterion>Unit tests pass for BugFixerAgent</criterion>
+    <criterion>BUG-004 fix succeeds with new BugFixerAgent</criterion>
+    <criterion>All changes committed to fix/swarm-internal-bugs branch</criterion>
+    <criterion>Merged to master</criterion>
+  </success_criteria>
+
+  <!-- ============================================================ -->
+  <!-- KEY FILES REFERENCE                                           -->
+  <!-- ============================================================ -->
+  <key_files>
+    <file purpose="BROKEN - needs fix">
+      swarm_attack/bug_orchestrator.py (lines 1140-1154)
+    </file>
+    <file purpose="Critical analysis">
+      .swarm/bugs/2025-12-31_bug-bash-coder-analysis.md
+    </file>
+    <file purpose="Reference - how feature swarm does it">
+      swarm_attack/agents/coder.py
+    </file>
+    <file purpose="Reference - Claude CLI pattern">
+      swarm_attack/commit_review/dispatcher.py
+    </file>
+    <file purpose="Session log">
+      .swarm/bugs/2025-12-31_bug-bash-session.md
+    </file>
+    <file purpose="BUG-004 fix plan (to re-apply after fix)">
+      .swarm/bugs/issues-not-persisted/fix-plan.md
+    </file>
+  </key_files>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# TASK: Fix Bug Bash Coder Architecture Gap
+
+## CRITICAL ISSUE
+
+The bug bash `fix()` method in `bug_orchestrator.py` does NOT use any LLM.
+It just does a dumb string replace: `content.replace(current_code, proposed_code)`
+
+This causes fixes to fail when:
+- Whitespace doesn't match exactly
+- Proposed code has formatting issues (missing blank lines)
+- Current code doesn't exist in file
+
+## YOUR TASK
+
+1. **Create BugFixerAgent** that uses Claude CLI to apply fix plans intelligently
+2. **Create bug-fixer skill prompt** that instructs Claude to:
+   - Read files first
+   - Use Edit tool (not string replace)
+   - Ensure proper formatting
+   - Validate syntax
+3. **Wire up BugFixerAgent** in `bug_orchestrator.fix()` to replace string replace
+4. **Test thoroughly** with TDD approach
+
+## TDD APPROACH
+
+1. Write failing tests first (tests/unit/test_bug_fixer.py)
+2. Implement BugFixerAgent to make tests pass
+3. Wire into bug_orchestrator.fix()
+4. Run full test suite
+5. Re-run BUG-004 fix to verify it works
+
+## REFERENCE FILES
+
+- Pattern for Claude CLI calls: `swarm_attack/commit_review/dispatcher.py`
+- How CoderAgent works: `swarm_attack/agents/coder.py`
+- What's broken: `swarm_attack/bug_orchestrator.py:1140-1154`
+
+## DO NOT
+
+- Do NOT just improve the string replace logic
+- Do NOT skip TDD - write tests first
+- Do NOT forget to validate syntax after edits
+
+## AFTER THIS IS FIXED
+
+Re-run `swarm-attack bug fix issues-not-persisted` to apply BUG-004 fix
+Then continue with remaining bugs (BUG-001, 003, 005, 002)
+  ]]></implementation_prompt>
+</continuation_prompt>
