@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Commit Quality Review - Testing & COO Integration
+
+  Created: 2025-12-31
+  Status: Implementation complete, needs testing and validation
+  Priority: HIGH - COO depends on this
+-->
+<continuation_prompt>
+  <metadata>
+    <task>Complete testing and validation of commit-quality-review skill</task>
+    <repo>/Users/philipjcortes/Desktop/swarm-attack</repo>
+    <branch>master</branch>
+    <created>2025-12-31</created>
+    <priority>HIGH</priority>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- CURRENT STATE                                                 -->
+  <!-- ============================================================ -->
+  <current_state>
+    <status>IMPLEMENTATION_COMPLETE_NEEDS_TESTING</status>
+
+    <what_was_done>
+      <item>Created full commit-quality-review module at swarm_attack/commit_review/</item>
+      <item>Implemented 5-expert panel review system (Dr. Elena Vasquez, Marcus Chen, Dr. Aisha Patel, James O'Brien, Dr. Sarah Kim)</item>
+      <item>Created CLI command: swarm-attack review-commits</item>
+      <item>Created SKILL.md at .claude/skills/commit-quality-review/</item>
+      <item>Wrote 66+ unit tests and integration tests</item>
+      <item>Updated CLAUDE.md with full documentation</item>
+      <item>Merged to master and pushed to origin</item>
+    </what_was_done>
+
+    <files_created>
+      <file>swarm_attack/commit_review/__init__.py</file>
+      <file>swarm_attack/commit_review/models.py</file>
+      <file>swarm_attack/commit_review/discovery.py</file>
+      <file>swarm_attack/commit_review/categorizer.py</file>
+      <file>swarm_attack/commit_review/prompts.py</file>
+      <file>swarm_attack/commit_review/dispatcher.py</file>
+      <file>swarm_attack/commit_review/synthesis.py</file>
+      <file>swarm_attack/commit_review/tdd_generator.py</file>
+      <file>swarm_attack/commit_review/report.py</file>
+      <file>swarm_attack/cli/review_commits.py</file>
+      <file>.claude/skills/commit-quality-review/SKILL.md</file>
+      <file>tests/unit/test_commit_discovery.py</file>
+      <file>tests/unit/test_commit_categorizer.py</file>
+      <file>tests/unit/test_agent_dispatch.py</file>
+      <file>tests/unit/test_finding_synthesis.py</file>
+      <file>tests/unit/test_tdd_plan_generator.py</file>
+      <file>tests/unit/test_report_generator.py</file>
+      <file>tests/unit/test_cli_review_commits.py</file>
+      <file>tests/integration/test_commit_review_e2e.py</file>
+    </files_created>
+
+    <what_needs_to_be_done>
+      <item priority="1">Run full test suite and fix any failures</item>
+      <item priority="2">Test CLI manually: swarm-attack review-commits --output json</item>
+      <item priority="3">Verify JSON output matches COO expected structure</item>
+      <item priority="4">Test with real git repo to ensure discovery works</item>
+      <item priority="5">Register CLI command in main CLI entry point if not done</item>
+      <item priority="6">Test parallel agent dispatch actually works</item>
+      <item priority="7">Validate error handling and exit codes</item>
+    </what_needs_to_be_done>
+  </current_state>
+
+  <!-- ============================================================ -->
+  <!-- SPECS AND DOCUMENTATION                                       -->
+  <!-- ============================================================ -->
+  <specs>
+    <implementation_spec>/Users/philipjcortes/Desktop/swarm-attack/specs/commit-quality-review/IMPLEMENTATION_SPEC.xml</implementation_spec>
+    <coo_integration_spec>/Users/philipjcortes/Desktop/coo/specs/commit-quality-integration/IMPLEMENTATION_SPEC.xml</coo_integration_spec>
+    <skill_definition>/Users/philipjcortes/Desktop/swarm-attack/.claude/skills/commit-quality-review/SKILL.md</skill_definition>
+    <documentation>/Users/philipjcortes/Desktop/swarm-attack/CLAUDE.md (see "Commit Quality Review" section)</documentation>
+  </specs>
+
+  <!-- ============================================================ -->
+  <!-- COO INTEGRATION CONTRACT                                      -->
+  <!-- ============================================================ -->
+  <coo_contract>
+    <description>
+      COO will invoke swarm-attack as a subprocess to review commits.
+      The output MUST match this exact structure for COO to parse it.
+    </description>
+
+    <invocation>
+      <command>swarm-attack review-commits --since "{checkpoint_time}" --output json</command>
+      <cwd>Repository path (e.g., /Users/philipjcortes/Desktop/swarm-attack)</cwd>
+      <timeout>300 seconds</timeout>
+    </invocation>
+
+    <expected_json_output><![CDATA[
+{
+  "generated_at": "2025-12-31T12:00:00",
+  "repo_path": "/path/to/repo",
+  "branch": "main",
+  "since": "24 hours ago",
+  "overall_score": 0.75,
+  "summary": "3 commits reviewed, 1 OK, 2 need fixes",
+  "commit_reviews": [
+    {
+      "commit_sha": "abc1234",
+      "message": "fix: handle edge case",
+      "author": "Dev User",
+      "score": 0.70,
+      "verdict": "fix",
+      "findings": [
+        {
+          "expert": "Dr. Elena Vasquez",
+          "severity": "medium",
+          "category": "production_reliability",
+          "description": "Bug fix without production evidence",
+          "evidence": "fix.py:45"
+        }
+      ],
+      "tdd_plans": [
+        {
+          "finding_id": "f1a2b3c4",
+          "red_phase": "Write test for production scenario...",
+          "green_phase": "Add production evidence check...",
+          "refactor_phase": "Extract to reusable validator..."
+        }
+      ]
+    }
+  ]
+}
+    ]]></expected_json_output>
+
+    <exit_codes>
+      <code value="0">Success - review completed</code>
+      <code value="1">Error - review failed or --strict mode with issues</code>
+    </exit_codes>
+
+    <error_handling>
+      <requirement>Errors MUST go to stderr, not stdout</requirement>
+      <requirement>stdout MUST be valid JSON even on partial failure</requirement>
+      <requirement>If no commits found, return valid JSON with empty commit_reviews[]</requirement>
+    </error_handling>
+  </coo_contract>
+
+  <!-- ============================================================ -->
+  <!-- EXPERT PANEL (from prompts.py)                                -->
+  <!-- ============================================================ -->
+  <expert_panel>
+    <expert id="production_reliability">
+      <name>Dr. Elena Vasquez</name>
+      <title>Director of Site Reliability</title>
+      <reviews>BUG_FIX commits</reviews>
+      <skeptical_of>Fixes for 'bugs' without production evidence</skeptical_of>
+    </expert>
+    <expert id="test_coverage">
+      <name>Marcus Chen</name>
+      <title>Director of Quality Engineering</title>
+      <reviews>TEST_CHANGE commits</reviews>
+      <skeptical_of>Tests that mock incorrectly</skeptical_of>
+    </expert>
+    <expert id="code_quality">
+      <name>Dr. Aisha Patel</name>
+      <title>Director of Engineering Excellence</title>
+      <reviews>FEATURE commits</reviews>
+      <skeptical_of>Partial implementations marked as complete</skeptical_of>
+    </expert>
+    <expert id="documentation">
+      <name>James O'Brien</name>
+      <title>Director of Developer Experience</title>
+      <reviews>DOCUMENTATION commits</reviews>
+      <skeptical_of>Session exhaust docs that won't be referenced</skeptical_of>
+    </expert>
+    <expert id="architecture">
+      <name>Dr. Sarah Kim</name>
+      <title>Chief Architect</title>
+      <reviews>REFACTOR commits</reviews>
+      <skeptical_of>Refactoring that changes behavior</skeptical_of>
+    </expert>
+  </expert_panel>
+
+  <!-- ============================================================ -->
+  <!-- TESTING CHECKLIST                                             -->
+  <!-- ============================================================ -->
+  <testing_checklist>
+    <phase name="Unit Tests">
+      <command>PYTHONPATH=. pytest tests/unit/test_commit_*.py tests/unit/test_agent_dispatch.py tests/unit/test_finding_synthesis.py tests/unit/test_tdd_plan_generator.py tests/unit/test_report_generator.py tests/unit/test_cli_review_commits.py -v</command>
+      <expected>All tests pass</expected>
+      <if_fails>Fix the failing tests - they validate COO contract</if_fails>
+    </phase>
+
+    <phase name="Integration Tests">
+      <command>PYTHONPATH=. pytest tests/integration/test_commit_review_e2e.py -v</command>
+      <expected>All tests pass</expected>
+    </phase>
+
+    <phase name="Manual CLI Test - JSON Output">
+      <command>cd /Users/philipjcortes/Desktop/swarm-attack && swarm-attack review-commits --since="1 week ago" --output json</command>
+      <expected>Valid JSON matching COO contract structure</expected>
+      <verify>
+        - Has "commit_reviews" array
+        - Has "overall_score" float
+        - Has "summary" string
+        - Each review has: commit_sha, message, score, verdict, findings[]
+      </verify>
+    </phase>
+
+    <phase name="Manual CLI Test - Markdown Output">
+      <command>swarm-attack review-commits --since="24 hours ago" --output markdown</command>
+      <expected>Readable markdown report</expected>
+    </phase>
+
+    <phase name="Manual CLI Test - No Commits">
+      <command>swarm-attack review-commits --since="1 minute ago" --output json</command>
+      <expected>Valid JSON with empty commit_reviews[] array</expected>
+    </phase>
+
+    <phase name="Exit Code Test">
+      <command>swarm-attack review-commits --output json; echo "Exit code: $?"</command>
+      <expected>Exit code: 0 on success</expected>
+    </phase>
+
+    <phase name="CLI Registration Check">
+      <command>swarm-attack --help | grep review-commits</command>
+      <expected>review-commits command should be listed</expected>
+      <if_fails>Register the command in swarm_attack/cli.py or swarm_attack/cli_legacy.py</if_fails>
+    </phase>
+  </testing_checklist>
+
+  <!-- ============================================================ -->
+  <!-- KNOWN ISSUES / GAPS                                           -->
+  <!-- ============================================================ -->
+  <known_issues>
+    <issue id="1" severity="HIGH">
+      <title>CLI command may not be registered in main CLI</title>
+      <description>
+        The review_commits.py file was created but may not be imported/registered
+        in the main CLI entry point (swarm_attack/cli.py or cli_legacy.py).
+      </description>
+      <fix>
+        Add import and register the review_commits command in the main CLI group.
+      </fix>
+    </issue>
+
+    <issue id="2" severity="MEDIUM">
+      <title>Dispatcher uses placeholder agent implementation</title>
+      <description>
+        The AgentDispatcher._run_agent() method is a placeholder that returns
+        empty findings. For real reviews, it needs to call Claude API.
+      </description>
+      <fix>
+        For MVP, this is OK since tests mock _run_agent().
+        For production, implement actual Claude API calls.
+      </fix>
+    </issue>
+
+    <issue id="3" severity="LOW">
+      <title>Git discovery may need real-world testing</title>
+      <description>
+        The git log parsing was unit tested with mocks.
+        Real git output may have edge cases not covered.
+      </description>
+      <fix>
+        Run manual tests against real repositories.
+      </fix>
+    </issue>
+  </known_issues>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# CONTINUATION: Commit Quality Review - Testing & Validation
+
+## Your Task
+
+Complete testing and validation of the commit-quality-review skill.
+The implementation is done but needs verification before COO can use it.
+
+## FIRST: Verify Your Environment
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack
+git branch   # Should show: master
+```
+
+## Step 1: Run Unit Tests
+
+```bash
+PYTHONPATH=. pytest tests/unit/test_commit_*.py tests/unit/test_agent_dispatch.py \
+  tests/unit/test_finding_synthesis.py tests/unit/test_tdd_plan_generator.py \
+  tests/unit/test_report_generator.py tests/unit/test_cli_review_commits.py -v --tb=short
+```
+
+**If tests fail:** Fix them. The tests validate the COO integration contract.
+
+## Step 2: Run Integration Tests
+
+```bash
+PYTHONPATH=. pytest tests/integration/test_commit_review_e2e.py -v --tb=short
+```
+
+## Step 3: Check CLI Registration
+
+```bash
+swarm-attack --help | grep -i review
+```
+
+**If review-commits not listed:** Register it in the main CLI.
+
+Look at swarm_attack/cli.py or swarm_attack/cli_legacy.py and add:
+```python
+from swarm_attack.cli.review_commits import review_commits
+# Then add review_commits to the CLI group
+```
+
+## Step 4: Manual CLI Tests
+
+```bash
+# Test JSON output (COO will use this)
+swarm-attack review-commits --since="1 week ago" --output json
+
+# Verify JSON structure has:
+# - commit_reviews[]
+# - overall_score
+# - summary
+
+# Test with no commits
+swarm-attack review-commits --since="1 minute ago" --output json
+# Should return valid JSON with empty commit_reviews[]
+
+# Test markdown output
+swarm-attack review-commits --output markdown
+```
+
+## Step 5: Validate COO Contract
+
+The JSON output MUST have this structure for COO to parse:
+
+```json
+{
+  "generated_at": "...",
+  "repo_path": "...",
+  "branch": "...",
+  "since": "...",
+  "overall_score": 0.75,
+  "summary": "...",
+  "commit_reviews": [
+    {
+      "commit_sha": "...",
+      "message": "...",
+      "author": "...",
+      "score": 0.7,
+      "verdict": "fix",
+      "findings": [...],
+      "tdd_plans": [...]
+    }
+  ]
+}
+```
+
+## Step 6: Fix Any Issues
+
+Common issues to check:
+1. CLI not registered in main entry point
+2. Exit codes not correct (should be 0 on success, 1 on error)
+3. Errors going to stdout instead of stderr
+4. JSON keys don't match expected names
+
+## Step 7: Commit Fixes
+
+If you made any fixes, commit them:
+
+```bash
+git add -A
+git commit -m "fix(commit-review): [describe what you fixed]
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+git push origin master
+```
+
+## Reference Files
+
+- Implementation spec: specs/commit-quality-review/IMPLEMENTATION_SPEC.xml
+- COO integration spec: /Users/philipjcortes/Desktop/coo/specs/commit-quality-integration/IMPLEMENTATION_SPEC.xml
+- Main module: swarm_attack/commit_review/
+- CLI command: swarm_attack/cli/review_commits.py
+- Skill definition: .claude/skills/commit-quality-review/SKILL.md
+- Documentation: CLAUDE.md (search for "Commit Quality Review")
+
+## Success Criteria
+
+- [ ] All unit tests pass
+- [ ] All integration tests pass
+- [ ] CLI command `review-commits` is registered and works
+- [ ] JSON output matches COO expected structure
+- [ ] Exit code is 0 on success
+- [ ] Errors go to stderr, not stdout
+- [ ] Empty commit list returns valid JSON
+  ]]></implementation_prompt>
+</continuation_prompt>

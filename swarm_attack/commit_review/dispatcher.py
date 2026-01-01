@@ -118,29 +118,16 @@ class AgentDispatcher:
 
         Returns:
             List of findings from this agent
-
-        Implementation Notes:
-            This should call Claude CLI via subprocess:
-            ```
-            claude --print --output-format json -p "{prompt}"
-            ```
-
-            Parse the JSON response to extract Finding objects.
-            See swarm_attack/agents/base.py for Claude CLI invocation patterns.
         """
-        # TODO: Implement Claude CLI call
-        # Pattern from swarm_attack/agents/base.py:
-        #   result = subprocess.run(
-        #       ["claude", "--print", "--output-format", "json", "-p", prompt],
-        #       capture_output=True, text=True, timeout=300
-        #   )
-        #   response = json.loads(result.stdout)
-        #   return self._parse_findings(response, commit.sha)
-
         logger.debug(f"Running agent for {commit.sha} ({category.value})")
 
-        # Placeholder - mocked in tests, implement with Claude CLI for production
-        return []
+        try:
+            # Call Claude CLI in a thread to avoid blocking async loop
+            response = await asyncio.to_thread(self._call_claude_cli, prompt)
+            return self._parse_findings(response, commit.sha, category)
+        except Exception as e:
+            logger.warning(f"Agent failed for {commit.sha}: {e}")
+            return []
 
     def _call_claude_cli(self, prompt: str) -> dict:
         """Call Claude CLI synchronously.

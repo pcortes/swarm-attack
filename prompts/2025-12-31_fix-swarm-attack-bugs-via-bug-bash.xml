@@ -1,0 +1,608 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Fix swarm-attack Bugs via Bug Bash Pipeline
+
+  APPROACH: Supervisor Mode
+  - Use swarm-attack bug bash to investigate and fix the bugs found
+  - Claude Code acts as supervisor, not implementer
+  - Log new bugs encountered in timestamped file
+  - Use all swarm-attack capabilities available
+
+  Created: 2025-12-31
+  Status: Ready for bug fixing
+  Priority: CRITICAL - Unblocks dispatcher implementation
+-->
+<continuation_prompt>
+  <metadata>
+    <task>Fix swarm-attack internal bugs using bug bash pipeline</task>
+    <repo>/Users/philipjcortes/Desktop/swarm-attack</repo>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs</worktree>
+    <branch>fix/swarm-internal-bugs</branch>
+    <target_branch>master</target_branch>
+    <created>2025-12-31</created>
+    <priority>CRITICAL</priority>
+    <mode>SUPERVISOR</mode>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- CONTEXT: What Happened                                       -->
+  <!-- ============================================================ -->
+  <context>
+    <summary>
+      We attempted to use swarm-attack to implement Claude CLI integration
+      in the AgentDispatcher. The implementation partially succeeded (2/7 issues
+      completed) but was blocked by internal swarm-attack bugs. These bugs
+      must be fixed before swarm-attack can reliably complete implementations.
+    </summary>
+
+    <original_task>
+      Implement Claude CLI calls in AgentDispatcher._run_agent() so expert
+      agents can actually review commits and return real findings.
+    </original_task>
+
+    <work_completed>
+      <item status="done">Issue #1: _parse_findings() helper method</item>
+      <item status="done">Issue #2: _call_claude_cli() sync helper method</item>
+      <item status="blocked">Issue #6: Core async orchestration with asyncio.to_thread</item>
+      <item status="blocked">Issue #7: Error handling with graceful degradation</item>
+      <item status="blocked">Issue #4: Unit tests for _run_agent()</item>
+      <item status="blocked">Issue #5: Run tests and verify</item>
+    </work_completed>
+
+    <blocking_issue>
+      BUG-007 (CRITICAL): Session initialization consistently fails with
+      garbled error: "Verification failed: ['[', '[', '[', '[', '[']"
+      This prevents ANY further issues from being implemented.
+    </blocking_issue>
+  </context>
+
+  <!-- ============================================================ -->
+  <!-- OPERATING MODE: SUPERVISOR                                    -->
+  <!-- ============================================================ -->
+  <operating_mode>
+    <role>SUPERVISOR</role>
+    <description>
+      You are a SUPERVISOR using swarm-attack to fix its own bugs. You will:
+      1. Use `swarm-attack bug init` to create bug investigations
+      2. Use `swarm-attack bug analyze` to run the full analysis pipeline
+      3. Use `swarm-attack bug approve` to approve fix plans
+      4. Use `swarm-attack bug fix` to apply fixes
+      5. Log ALL new bugs encountered in the timestamped bug file
+      6. DO NOT fix bugs manually - use swarm-attack bug bash
+      7. If swarm-attack bug bash itself fails, log that meta-bug and use workarounds
+    </description>
+
+    <bug_logging>
+      <file>/Users/philipjcortes/Desktop/swarm-attack/.swarm/bugs/2025-12-31_bug-bash-session.md</file>
+      <format><![CDATA[
+# Bug Bash Session Log
+Date: 2025-12-31
+Session: fix-swarm-attack-bugs-via-bug-bash
+Previous Session: dispatcher-claude-cli-implementation
+
+## Meta-Bugs (Bugs in bug bash itself)
+
+(none yet)
+
+---
+
+## Bug Fix Progress
+
+### BUG-001: [status]
+...
+
+---
+
+## Summary
+
+Total bugs from prior session: 7
+Bugs fixed: X
+Bugs remaining: Y
+New meta-bugs: Z
+      ]]></format>
+    </bug_logging>
+
+    <rules>
+      <rule>ALWAYS use swarm-attack bug bash commands first</rule>
+      <rule>If bug bash fails, log it as a meta-bug and try workarounds</rule>
+      <rule>DO NOT manually fix code unless bug bash is completely broken</rule>
+      <rule>Log every bug and meta-bug with timestamps</rule>
+      <rule>Test fixes before marking complete</rule>
+      <rule>Commit bug fixes incrementally</rule>
+    </rules>
+  </operating_mode>
+
+  <!-- ============================================================ -->
+  <!-- BUGS TO FIX (from prior session)                             -->
+  <!-- ============================================================ -->
+  <bugs_to_fix>
+    <bug id="BUG-001" severity="MEDIUM" priority="3">
+      <component>swarm-attack run (SpecCritic agent)</component>
+      <description>Codex rate limit reached during critic review</description>
+      <expected>SpecCritic should review the generated spec</expected>
+      <actual>Error: "Spec critic failed to review: Codex error: Codex rate limit reached"</actual>
+      <root_cause_hypothesis>Missing retry logic or rate limit handling in critic agent</root_cause_hypothesis>
+      <fix_approach>Add exponential backoff retry for rate limit errors (already exists in debate_retry.py - may need integration)</fix_approach>
+    </bug>
+
+    <bug id="BUG-002" severity="LOW" priority="5">
+      <component>swarm-attack approve (State Machine)</component>
+      <description>Feature stuck in "Review Needed" phase after critic rate limit</description>
+      <expected>Phase should be SPEC_NEEDS_APPROVAL after spec generation</expected>
+      <actual>Phase was "Review Needed" - approve command warned but proceeded anyway</actual>
+      <root_cause_hypothesis>State machine not transitioning correctly on partial failure</root_cause_hypothesis>
+      <fix_approach>Review state transitions in orchestrator.py when critic fails</fix_approach>
+    </bug>
+
+    <bug id="BUG-003" severity="MEDIUM" priority="4">
+      <component>swarm-attack issues (ComplexityGate validation)</component>
+      <description>Codex authentication required error during issue validation</description>
+      <expected>Issues should be validated successfully</expected>
+      <actual>"Codex error: Codex authentication required" - issues created before failure</actual>
+      <root_cause_hypothesis>Rate limit exhaustion causing auth fallback error OR separate auth issue</root_cause_hypothesis>
+      <fix_approach>Check error handling path and ensure issues persist even if validation fails</fix_approach>
+    </bug>
+
+    <bug id="BUG-004" severity="HIGH" priority="2">
+      <component>swarm-attack issues (Issue persistence)</component>
+      <description>Issues created but not saved to state when validation fails</description>
+      <expected>Issues should be persisted even if validation fails (with validation_failed flag)</expected>
+      <actual>Phase goes to BLOCKED, tasks[] stays empty despite "Created 5 issues" message</actual>
+      <root_cause_hypothesis>Transaction not committed before validation; rollback on validation failure</root_cause_hypothesis>
+      <fix_approach>Persist issues before validation, mark validation status separately</fix_approach>
+      <files_likely_involved>
+        <file>swarm_attack/orchestrator.py</file>
+        <file>swarm_attack/state_store.py</file>
+        <file>swarm_attack/agents/issue_creator.py</file>
+      </files_likely_involved>
+    </bug>
+
+    <bug id="BUG-005" severity="MEDIUM" priority="4">
+      <component>swarm-attack run (Coder agent)</component>
+      <description>Issue #3 implementation failed with vague "Error: None"</description>
+      <expected>Clear error message indicating what failed</expected>
+      <actual>"Implementation failed. Error: None" - no actionable info</actual>
+      <root_cause_hypothesis>Exception not captured or logged; error field not populated</root_cause_hypothesis>
+      <fix_approach>Improve error capture in coder agent and CLI output</fix_approach>
+    </bug>
+
+    <bug id="BUG-006" severity="HIGH" priority="1">
+      <component>swarm-attack run (SessionInitializer)</component>
+      <description>Session initialization failed with garbled error message</description>
+      <expected>Clear error about what verification failed</expected>
+      <actual>"Verification failed: ['[', '[', '[', '[', '[']" - parsing issue</actual>
+      <root_cause_hypothesis>JSON/array parsing error in session_initializer.py or verification_tracker.py</root_cause_hypothesis>
+      <fix_approach>Find the parsing code that produces this error, fix the parser</fix_approach>
+      <files_likely_involved>
+        <file>swarm_attack/session_initializer.py</file>
+        <file>swarm_attack/verification_tracker.py</file>
+      </files_likely_involved>
+    </bug>
+
+    <bug id="BUG-007" severity="CRITICAL" priority="1">
+      <component>swarm-attack run (SessionInitializer)</component>
+      <description>Session initialization consistently fails preventing further implementation</description>
+      <expected>Session should initialize and coder should run</expected>
+      <actual>Same garbled error persists: "Verification failed: ['[', '[', '[', '[', '[']"</actual>
+      <root_cause_hypothesis>Same root cause as BUG-006 - likely same fix</root_cause_hypothesis>
+      <note>This is the BLOCKING BUG - fix this first!</note>
+    </bug>
+  </bugs_to_fix>
+
+  <!-- ============================================================ -->
+  <!-- PRIORITY ORDER                                                -->
+  <!-- ============================================================ -->
+  <priority_order>
+    <priority rank="1">BUG-006/BUG-007 (CRITICAL) - Session initialization parsing error</priority>
+    <priority rank="2">BUG-004 (HIGH) - Issues not persisted on validation failure</priority>
+    <priority rank="3">BUG-001 (MEDIUM) - Rate limit handling in spec critic</priority>
+    <priority rank="4">BUG-003/BUG-005 (MEDIUM) - Better error handling/messages</priority>
+    <priority rank="5">BUG-002 (LOW) - State machine transition on partial failure</priority>
+  </priority_order>
+
+  <!-- ============================================================ -->
+  <!-- REFERENCE FILES                                               -->
+  <!-- ============================================================ -->
+  <reference_files>
+    <file purpose="Prior bug log with full details">
+      /Users/philipjcortes/Desktop/swarm-attack/.swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+    </file>
+    <file purpose="Session initializer (likely BUG-006/007 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/session_initializer.py
+    </file>
+    <file purpose="Verification tracker (likely BUG-006/007 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/verification_tracker.py
+    </file>
+    <file purpose="Orchestrator (BUG-002/004 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/orchestrator.py
+    </file>
+    <file purpose="State store (BUG-004 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/state_store.py
+    </file>
+    <file purpose="Debate retry (may help BUG-001)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/debate_retry.py
+    </file>
+    <file purpose="Coder agent (BUG-005 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/agents/coder.py
+    </file>
+    <file purpose="CLI output (BUG-005 location)">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/cli.py
+    </file>
+  </reference_files>
+
+  <!-- ============================================================ -->
+  <!-- SWARM-ATTACK BUG BASH COMMANDS                                -->
+  <!-- ============================================================ -->
+  <bug_bash_commands>
+    <command name="init">
+      <syntax>swarm-attack bug init "description" --id BUG-ID --test tests/path.py -e "error message"</syntax>
+      <description>Initialize a bug investigation with description, ID, test path, and error</description>
+      <example>swarm-attack bug init "Session init fails with garbled parsing error" --id session-init-parse --test tests/unit/test_session_initializer.py -e "Verification failed: ['['"</example>
+    </command>
+
+    <command name="analyze">
+      <syntax>swarm-attack bug analyze BUG-ID</syntax>
+      <description>Run full analysis: BugResearcher + RootCauseAnalyzer + FixPlanner</description>
+    </command>
+
+    <command name="status">
+      <syntax>swarm-attack bug status BUG-ID</syntax>
+      <description>Check bug investigation status</description>
+    </command>
+
+    <command name="approve">
+      <syntax>swarm-attack bug approve BUG-ID [--auto|--manual]</syntax>
+      <description>Approve the fix plan (--auto for auto-approval mode)</description>
+    </command>
+
+    <command name="fix">
+      <syntax>swarm-attack bug fix BUG-ID</syntax>
+      <description>Execute the approved fix via Implementation Agent</description>
+    </command>
+
+    <command name="list">
+      <syntax>swarm-attack bug list</syntax>
+      <description>List all bug investigations</description>
+    </command>
+
+    <command name="unblock">
+      <syntax>swarm-attack bug unblock BUG-ID</syntax>
+      <description>Unblock a stuck bug investigation</description>
+    </command>
+  </bug_bash_commands>
+
+  <!-- ============================================================ -->
+  <!-- SUPERVISOR WORKFLOW                                           -->
+  <!-- ============================================================ -->
+  <supervisor_workflow>
+    <step order="0">
+      <action>Create worktree for bug fixing work</action>
+      <rationale>
+        Work in a dedicated worktree to isolate bug fixes. This allows
+        parallel work and clean commits.
+      </rationale>
+      <commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack
+git pull origin master
+
+# Create worktree for bug fixing
+git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs -b fix/swarm-internal-bugs
+
+# Switch to worktree
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+git branch   # Must show: * fix/swarm-internal-bugs
+      ]]></commands>
+    </step>
+
+    <step order="1">
+      <action>Setup environment and create bug bash log</action>
+      <commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+pwd      # Must show worktree path
+git status   # Should be on fix/swarm-internal-bugs
+
+# Create bug bash session log
+cat > .swarm/bugs/2025-12-31_bug-bash-session.md << 'EOF'
+# Bug Bash Session Log
+Date: 2025-12-31
+Session: fix-swarm-attack-bugs-via-bug-bash
+Previous Session: dispatcher-claude-cli-implementation
+
+## Meta-Bugs (Bugs in bug bash itself)
+
+(none yet)
+
+---
+
+## Bug Fix Progress
+
+### BUG-006/007: Session Initialization Parsing Error
+**Status:** NOT STARTED
+**Priority:** 1 (CRITICAL)
+
+### BUG-004: Issues Not Persisted
+**Status:** NOT STARTED
+**Priority:** 2 (HIGH)
+
+### BUG-001: Rate Limit Handling
+**Status:** NOT STARTED
+**Priority:** 3 (MEDIUM)
+
+### BUG-003: Auth Error Handling
+**Status:** NOT STARTED
+**Priority:** 4 (MEDIUM)
+
+### BUG-005: Vague Error Messages
+**Status:** NOT STARTED
+**Priority:** 4 (MEDIUM)
+
+### BUG-002: State Machine Transition
+**Status:** NOT STARTED
+**Priority:** 5 (LOW)
+
+---
+
+## Summary
+
+Total bugs from prior session: 7 (6 unique, BUG-006/007 are same root cause)
+Bugs fixed: 0
+Bugs remaining: 6
+New meta-bugs: 0
+EOF
+      ]]></commands>
+    </step>
+
+    <step order="2">
+      <action>First, research BUG-006/007 root cause before using bug bash</action>
+      <rationale>
+        The parsing error is unusual - investigate the code first to understand
+        what's happening before feeding it to bug bash. This will help write
+        a better bug description for the bug bash pipeline.
+      </rationale>
+      <commands><![CDATA[
+# Search for the error source
+grep -rn "Verification failed" swarm_attack/
+grep -rn "\['\\['" swarm_attack/
+
+# Read the session initializer
+cat swarm_attack/session_initializer.py
+
+# Read verification tracker
+cat swarm_attack/verification_tracker.py
+      ]]></commands>
+    </step>
+
+    <step order="3">
+      <action>Initialize bug investigation for BUG-006/007</action>
+      <commands><![CDATA[
+# Find a relevant test file
+ls tests/unit/test_session*.py tests/unit/test_verification*.py 2>/dev/null
+
+# Initialize the bug
+swarm-attack bug init \
+  "Session initialization fails with garbled parsing error: Verification failed: ['[', '[', '[', '[', '[']" \
+  --id session-init-parse \
+  --test tests/unit/test_session_initializer.py \
+  -e "Verification failed: ['[', '[', '[', '[', '[']"
+      ]]></commands>
+    </step>
+
+    <step order="4">
+      <action>Run bug analysis</action>
+      <commands><![CDATA[
+swarm-attack bug analyze session-init-parse
+      ]]></commands>
+      <on_failure>
+        <action>Log as meta-bug and investigate manually</action>
+        <log_template><![CDATA[
+### META-BUG-001: [timestamp]
+**Component:** swarm-attack bug analyze
+**Description:** Bug analysis failed
+**Error:** [error message]
+**Workaround:** Manual investigation required
+        ]]></log_template>
+      </on_failure>
+    </step>
+
+    <step order="5">
+      <action>Check bug status and approve if analysis succeeded</action>
+      <commands><![CDATA[
+swarm-attack bug status session-init-parse
+
+# If analysis succeeded and fix plan looks good:
+swarm-attack bug approve session-init-parse --auto
+      ]]></commands>
+    </step>
+
+    <step order="6">
+      <action>Apply the fix</action>
+      <commands><![CDATA[
+swarm-attack bug fix session-init-parse
+      ]]></commands>
+    </step>
+
+    <step order="7">
+      <action>Verify the fix works</action>
+      <commands><![CDATA[
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_session_initializer.py -v
+
+# Try the original failing scenario
+swarm-attack status dispatcher-claude-cli
+swarm-attack run dispatcher-claude-cli --issue 6
+      ]]></commands>
+    </step>
+
+    <step order="8">
+      <action>Repeat for remaining bugs in priority order</action>
+      <bugs_remaining>
+        <bug>BUG-004: Issues not persisted</bug>
+        <bug>BUG-001: Rate limit handling</bug>
+        <bug>BUG-003: Auth error handling</bug>
+        <bug>BUG-005: Vague error messages</bug>
+        <bug>BUG-002: State machine transition</bug>
+      </bugs_remaining>
+    </step>
+
+    <step order="9">
+      <action>Finalize and commit</action>
+      <commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+
+# Update bug bash log with final summary
+# Commit all fixes
+git add -A
+git commit -m "fix: resolve swarm-attack internal bugs from bug bash session
+
+- BUG-006/007: [describe fix]
+- BUG-004: [describe fix]
+- ... etc
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
+
+# Push branch
+git push origin fix/swarm-internal-bugs
+
+# Merge to master
+cd /Users/philipjcortes/Desktop/swarm-attack
+git fetch origin fix/swarm-internal-bugs
+git merge origin/fix/swarm-internal-bugs --no-edit
+git push origin master
+
+# Cleanup worktree
+git worktree remove /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+      ]]></commands>
+    </step>
+
+    <step order="10">
+      <action>Resume dispatcher implementation</action>
+      <commands><![CDATA[
+# Now that bugs are fixed, resume the dispatcher implementation
+swarm-attack run dispatcher-claude-cli
+
+# Verify all tests pass
+PYTHONPATH=. pytest tests/generated/dispatcher-claude-cli/ -v
+      ]]></commands>
+    </step>
+  </supervisor_workflow>
+
+  <!-- ============================================================ -->
+  <!-- SUCCESS CRITERIA                                              -->
+  <!-- ============================================================ -->
+  <success_criteria>
+    <criterion id="SC1">All 6 unique bugs are fixed and tested</criterion>
+    <criterion id="SC2">dispatcher-claude-cli implementation can resume</criterion>
+    <criterion id="SC3">All bug fixes are committed to master</criterion>
+    <criterion id="SC4">Bug bash session log is complete with all findings</criterion>
+    <criterion id="SC5">Any meta-bugs (bugs in bug bash) are logged</criterion>
+  </success_criteria>
+
+  <!-- ============================================================ -->
+  <!-- WORKAROUND STRATEGIES                                         -->
+  <!-- ============================================================ -->
+  <workaround_strategies>
+    <strategy when="bug analyze fails">
+      <action>Manually investigate root cause using grep, read files</action>
+      <action>Create a minimal reproduction test</action>
+      <action>Log as meta-bug in session log</action>
+    </strategy>
+
+    <strategy when="bug fix fails">
+      <action>Check the fix plan in .swarm/bugs/BUG-ID/fix-plan.md</action>
+      <action>Try to apply fix manually following the plan</action>
+      <action>Log as meta-bug with details</action>
+    </strategy>
+
+    <strategy when="rate limit errors">
+      <action>Wait 60 seconds and retry</action>
+      <action>If persistent, log and skip to next bug</action>
+    </strategy>
+
+    <strategy when="auth errors">
+      <action>Check if using Codex vs Claude CLI</action>
+      <action>May need to use Claude CLI directly</action>
+    </strategy>
+  </workaround_strategies>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# TASK: Fix swarm-attack Internal Bugs via Bug Bash Pipeline
+
+## Your Role: SUPERVISOR
+
+You are a SUPERVISOR using swarm-attack's bug bash pipeline to fix swarm-attack's
+own internal bugs. You will:
+1. Use `swarm-attack bug *` commands to investigate and fix bugs
+2. Log ALL new bugs (meta-bugs) encountered in the session log
+3. DO NOT fix bugs manually unless bug bash is completely broken
+4. Test all fixes before marking complete
+5. Commit incrementally and push to master
+
+## FIRST: Read the Prior Bug Log
+
+```bash
+cat /Users/philipjcortes/Desktop/swarm-attack/.swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+```
+
+## Bug Priority Order
+
+1. **BUG-006/007 (CRITICAL)**: Session initialization parsing error - BLOCKS ALL IMPLEMENTATION
+2. **BUG-004 (HIGH)**: Issues not persisted when validation fails
+3. **BUG-001 (MEDIUM)**: Rate limit handling in spec critic
+4. **BUG-003/005 (MEDIUM)**: Better error handling
+5. **BUG-002 (LOW)**: State machine transition
+
+## Bug Bash Commands
+
+```bash
+# Initialize bug investigation
+swarm-attack bug init "description" --id BUG-ID --test tests/path.py -e "error"
+
+# Run analysis (BugResearcher + RootCauseAnalyzer + FixPlanner)
+swarm-attack bug analyze BUG-ID
+
+# Check status
+swarm-attack bug status BUG-ID
+
+# Approve fix plan
+swarm-attack bug approve BUG-ID --auto
+
+# Apply fix
+swarm-attack bug fix BUG-ID
+
+# List all bugs
+swarm-attack bug list
+```
+
+## Session Log Location
+
+Log all progress and meta-bugs to:
+`/Users/philipjcortes/Desktop/swarm-attack/.swarm/bugs/2025-12-31_bug-bash-session.md`
+
+## After Fixing Bugs
+
+Resume the dispatcher-claude-cli implementation:
+```bash
+swarm-attack run dispatcher-claude-cli
+```
+
+## DO NOT
+
+- Do NOT fix bugs manually unless bug bash is completely broken
+- Do NOT skip logging meta-bugs
+- Do NOT push without testing fixes
+
+## DO
+
+- DO use bug bash commands for everything
+- DO log every meta-bug with timestamps
+- DO test each fix before moving to next bug
+- DO commit incrementally
+- DO push to master when all bugs are fixed
+  ]]></implementation_prompt>
+</continuation_prompt>

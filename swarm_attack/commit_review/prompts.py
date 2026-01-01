@@ -132,11 +132,18 @@ You are reviewing as **{expert['name']}**, {expert['title']}.
 4. Could this fix introduce new failure modes?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** production_reliability
-- **Description:** Clear explanation of the issue
-- **Evidence:** file.py:line_number - specific code reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "production_reliability",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.py:42 - specific code reference"
+  }
+]
+```
 """
 
 
@@ -160,11 +167,18 @@ You are reviewing as **{expert['name']}**, {expert['title']}.
 4. Is there any dead code introduced?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** code_quality
-- **Description:** Clear explanation of the issue
-- **Evidence:** file.py:line_number - specific code reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "code_quality",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.py:42 - specific code reference"
+  }
+]
+```
 """
 
 
@@ -188,11 +202,18 @@ You are reviewing as **{expert['name']}**, {expert['title']}.
 4. Is the refactoring consistent with the architecture?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** architecture
-- **Description:** Clear explanation of the issue
-- **Evidence:** file.py:line_number - specific code reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "architecture",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.py:42 - specific code reference"
+  }
+]
+```
 """
 
 
@@ -216,11 +237,18 @@ You are reviewing as **{expert['name']}**, {expert['title']}.
 4. Are there any deleted tests without justification?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** test_coverage
-- **Description:** Clear explanation of the issue
-- **Evidence:** file.py:line_number - specific code reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "test_coverage",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.py:42 - specific code reference"
+  }
+]
+```
 """
 
 
@@ -244,11 +272,18 @@ You are reviewing as **{expert['name']}**, {expert['title']}.
 4. Does it duplicate existing documentation?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** documentation
-- **Description:** Clear explanation of the issue
-- **Evidence:** file.md:line_number - specific reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "documentation",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.md:42 - specific reference"
+  }
+]
+```
 """
 
 
@@ -265,9 +300,16 @@ You are reviewing a general commit. Apply standard code review practices.
 4. Are there any security concerns?
 
 ### Output Format:
-For each finding, provide:
-- **Severity:** LOW | MEDIUM | HIGH | CRITICAL
-- **Category:** general
-- **Description:** Clear explanation of the issue
-- **Evidence:** file:line_number - specific code reference
+Return findings as a JSON array. If no issues found, return an empty array [].
+
+```json
+[
+  {
+    "severity": "LOW|MEDIUM|HIGH|CRITICAL",
+    "category": "general",
+    "description": "Clear explanation of the issue",
+    "evidence": "file.py:42 - specific code reference"
+  }
+]
+```
 """

@@ -186,21 +186,23 @@ swarm-attack bug fix bug-id           # Apply fix
 | Command | Description |
 |---------|-------------|
 | `research "query"` | Research external libraries with evidence-backed responses |
-| `research "query" --depth quick` | Quick lookup (less thorough) |
-| `research "query" --depth thorough` | Deep comprehensive research |
-| `research "query" --library NAME` | Focus on specific library |
-| `research "query" --type TYPE` | Override request type (conceptual, implementation, context, comprehensive) |
+| `research --depth quick "query"` | Quick lookup (less thorough) |
+| `research --depth thorough "query"` | Deep comprehensive research |
+| `research --library NAME "query"` | Focus on specific library |
+| `research --type TYPE "query"` | Override request type (conceptual, implementation, context, comprehensive) |
+
+**Note:** Options must come before the query argument.
 
 **Example:**
 ```bash
 # Basic research
 swarm-attack research "How do I use pydantic validators?"
 
-# Focused search
-swarm-attack research "retry logic" --library tenacity --depth quick
+# Focused search (options must come before query)
+swarm-attack research --library tenacity --depth quick "retry logic"
 
 # Implementation details
-swarm-attack research "connection pooling" --library httpx --type implementation
+swarm-attack research --library httpx --type implementation "connection pooling"
 ```
 
 **Key Files:**

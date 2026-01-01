@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<architecture_decision_record>
+  <metadata>
+    <title>COO and Swarm-Attack Unification Architecture</title>
+    <date>2025-12-31</date>
+    <status>APPROVED</status>
+    <authors>
+      <author role="analyst">Claude Opus 4.5 Expert Team</author>
+      <author role="stakeholder">Philip Cortes</author>
+    </authors>
+    <decision_id>ADR-2025-12-31-001</decision_id>
+  </metadata>
+
+  <executive_summary>
+    <vision>
+      One integrated system where COO (Chief Operating Officer) functions alongside
+      coders, bug bashers, and QA teams - all orchestrated by swarm-attack.
+    </vision>
+    <decision>
+      Adopt a layered architecture with COO as the Strategic Layer, Chief of Staff
+      as the Tactical Layer, and existing agents as the Execution Layer. Priority
+      Board serves as the bridge proving the integration pattern.
+    </decision>
+    <rationale>
+      The two codebases serve fundamentally different purposes (development automation
+      vs expert oversight) with zero actual code duplication. Full merge is feasible
+      (1-2 weeks) but should follow Priority Board completion to prove the pattern.
+    </rationale>
+  </executive_summary>
+
+  <current_state>
+    <repositories>
+      <repository name="swarm-attack">
+        <location>/Users/philipjcortes/Desktop/swarm-attack</location>
+        <purpose>Development automation (spec → code → test)</purpose>
+        <scope>Single project, recursive orchestration</scope>
+        <loc>~50,000+</loc>
+        <tests>4,329</tests>
+        <functions>
+          <function name="Feature Swarm">PRD → Spec Debate → Issues → Implementation → Verify</function>
+          <function name="Bug Bash">Bug Report → Reproduce → Analyze → Plan → Fix → Verify</function>
+          <function name="QA Testing">Adaptive testing with depth-based agent dispatch</function>
+          <function name="Chief of Staff">Autopilot, campaigns, checkpoints, goal tracking</function>
+        </functions>
+      </repository>
+
+      <repository name="coo">
+        <location>/Users/philipjcortes/Desktop/coo</location>
+        <purpose>Expert review and multi-project oversight</purpose>
+        <scope>5 projects (miami, moderndoc, swarm-attack, qa-agent, coo)</scope>
+        <loc>6,751</loc>
+        <tests>755</tests>
+        <functions>
+          <function name="Daily Digest">Consolidated daily reports across all projects</function>
+          <function name="Strategic Advisory Board">5-expert morning/midday reviews</function>
+          <function name="Expert Reviews">Domain-specific reviewers per project</function>
+          <function name="Spec Archival">Auto-detect and archive specs with timestamps</function>
+          <function name="Priority Board" status="in-progress">Forward-looking prioritization</function>
+        </functions>
+      </repository>
+    </repositories>
+
+    <integration_status>
+      <coupling_type>Loose (CLI subprocess)</coupling_type>
+      <shared_code_percent>0</shared_code_percent>
+      <notes>
+        File name overlaps (config.py, skill_loader.py) are coincidental -
+        completely different implementations serving different purposes.
+      </notes>
+    </integration_status>
+
+    <priority_board_status>
+      <branch>feature/coo-priority-board</branch>
+      <issues_total>16</issues_total>
+      <issues_done>4</issues_done>
+      <issues_skipped>1</issues_skipped>
+      <issues_ready>1</issues_ready>
+      <issues_backlog>10</issues_backlog>
+      <completed_issues>
+        <issue number="1" title="Priority data models" tests="62">DONE</issue>
+        <issue number="2" title="Codex client adapter" tests="0">DONE</issue>
+        <issue number="3" title="SubAgentRunner" tests="122">DONE</issue>
+        <issue number="4" title="Librarian skill" tests="0">SKIPPED (cross-repo)</issue>
+        <issue number="5" title="ConsensusChecker" tests="95">DONE</issue>
+      </completed_issues>
+      <next_issue number="6" title="PriorityPanel" status="READY"/>
+      <dependencies_on_coo>ZERO - self-contained, runs in COO context only</dependencies_on_coo>
+    </priority_board_status>
+  </current_state>
+
+  <target_architecture>
+    <diagram>
+      <![CDATA[
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SWARM-ATTACK (Unified)                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  STRATEGIC LAYER (swarm_attack/coo/)                                │   │
+│  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                                │   │
+│  │  • Priority Board - what to build next (multi-round debate)         │   │
+│  │  • Strategic Advisory Board - backward-looking analysis             │   │
+│  │  • Cross-project oversight - manages 5+ repos                       │   │
+│  │  • Daily digests & expert reviews                                   │   │
+│  │  • Spec/prompt archival with library science principles             │   │
+│  │                                                                     │   │
+│  │  CLI: swarm-attack coo prioritize | digest | review | archive       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    ↓                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  TACTICAL LAYER (swarm_attack/chief_of_staff/)                      │   │
+│  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                        │   │
+│  │  • Daily goal generation (P1/P2/P3 from feature/bug state)          │   │
+│  │  • Campaign planning (multi-day backward from deadlines)            │   │
+│  │  • Autopilot execution with checkpoint gates                        │   │
+│  │  • Cost/UX/Architecture triggers for human review                   │   │
+│  │  • Feedback storage and learning                                    │   │
+│  │                                                                     │   │
+│  │  CLI: swarm-attack cos standup | autopilot | campaign-run           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    ↓                                        │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  EXECUTION LAYER (swarm_attack/agents/ + swarm_attack/qa/)          │   │
+│  │  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━            │   │
+│  │                                                                     │   │
+│  │  Feature Swarm:           Bug Bash:            QA:                  │   │
+│  │  • SpecAuthor             • BugResearcher      • Behavioral Tester  │   │
+│  │  • SpecCritic             • RootCauseAnalyzer  • Contract Validator │   │
+│  │  • SpecModerator          • FixPlanner         • Regression Scanner │   │
+│  │  • IssueCreator           • Implementation     • Coverage Tracker   │   │
+│  │  • ComplexityGate                                                   │   │
+│  │  • Coder (TDD)                                                      │   │
+│  │  • Verifier                                                         │   │
+│  │                                                                     │   │
+│  │  CLI: swarm-attack run | bug analyze | qa run                       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+      ]]>
+    </diagram>
+
+    <layer name="strategic" module="swarm_attack/coo/">
+      <responsibility>What to build and why</responsibility>
+      <components>
+        <component name="priority_board.py">Multi-round debate for priority ranking</component>
+        <component name="strategic_advisor.py">Morning/midday expert reviews</component>
+        <component name="expert_reviewer.py">Domain-specific project reviews</component>
+        <component name="digest_generator.py">Consolidated daily reports</component>
+        <component name="spec_archiver.py">Spec/prompt archival with timestamps</component>
+        <component name="project_registry.py">Multi-project management</component>
+      </components>
+      <cli_commands>
+        <command>swarm-attack coo prioritize [--project X] [--rollup-only]</command>
+        <command>swarm-attack coo digest [--date YYYY-MM-DD]</command>
+        <command>swarm-attack coo strategic-review [--mode morning|midday]</command>
+        <command>swarm-attack coo review --project X --skill Y</command>
+        <command>swarm-attack coo archive [--import] [--detect]</command>
+      </cli_commands>
+    </layer>
+
+    <layer name="tactical" module="swarm_attack/chief_of_staff/">
+      <responsibility>How to execute daily work</responsibility>
+      <components>
+        <component name="autopilot_runner.py">Goal execution with checkpoint gates</component>
+        <component name="campaign_planner.py">Multi-day backward planning</component>
+        <component name="goal_tracker.py">Daily goal management</component>
+        <component name="checkpoints.py">Cost/UX/Architecture triggers</component>
+        <component name="feedback.py">Human feedback storage</component>
+      </components>
+      <cli_commands>
+        <command>swarm-attack cos standup [--github]</command>
+        <command>swarm-attack cos autopilot --budget N</command>
+        <command>swarm-attack cos campaign-run ID</command>
+        <command>swarm-attack cos checkpoints</command>
+      </cli_commands>
+    </layer>
+
+    <layer name="execution" module="swarm_attack/agents/">
+      <responsibility>Implementation of work items</responsibility>
+      <components>
+        <component name="spec_author.py">Generate specs from PRDs</component>
+        <component name="coder.py">TDD implementation agent</component>
+        <component name="verifier.py">Test execution and validation</component>
+        <component name="bug_researcher.py">Bug reproduction</component>
+        <component name="fix_planner.py">Fix plan generation</component>
+      </components>
+      <cli_commands>
+        <command>swarm-attack run FEATURE</command>
+        <command>swarm-attack bug analyze BUG-ID</command>
+        <command>swarm-attack qa run [--depth quick|normal|thorough]</command>
+      </cli_commands>
+    </layer>
+  </target_architecture>
+
+  <migration_plan>
+    <phase number="0" name="current" timeframe="now">
+      <title>Finish Priority Board in COO Worktree</title>
+      <actions>
+        <action>Complete Issues #6-16 in COO worktree</action>
+        <action>Priority Board proves swarm-attack patterns work in COO context</action>
+        <action>Keep separation - COO orchestrates, swarm-attack provides primitives</action>
+        <action>Don't copy files - import from swarm-attack if needed</action>
+      </actions>
+      <deliverables>
+        <deliverable>Working Priority Board with CLI commands</deliverable>
+        <deliverable>Integration with COO daily cron</deliverable>
+        <deliverable>Dashboard output to GitHub Pages</deliverable>
+      </deliverables>
+      <risk>LOW - self-contained work</risk>
+      <effort>3-5 days remaining</effort>
+    </phase>
+
+    <phase number="1" name="extract_shared" timeframe="1-2 weeks after Phase 0">
+      <title>Extract Shared Libraries</title>
+      <actions>
+        <action>Create swarm_attack/shared/ package</action>
+        <action>Extract debate_loop from orchestrator.py</action>
+        <action>Extract consensus detection logic</action>
+        <action>Extract codex_client for external reviews</action>
+        <action>Standardize skill loading interface</action>
+      </actions>
+      <deliverables>
+        <deliverable>swarm_attack/shared/debate.py</deliverable>
+        <deliverable>swarm_attack/shared/consensus.py</deliverable>
+        <deliverable>swarm_attack/shared/external_review.py</deliverable>
+      </deliverables>
+      <risk>LOW - already isolated in both codebases</risk>
+      <effort>15-20 hours</effort>
+    </phase>
+
+    <phase number="2" name="port_coo" timeframe="1 month after Phase 1">
+      <title>COO Becomes Strategic Layer Module</title>
+      <actions>
+        <action>Create swarm_attack/coo/ package</action>
+        <action>Port COO Category A modules (2,844 LOC)</action>
+        <action>Refactor Category B modules to use swarm-attack primitives</action>
+        <action>Migrate tests (13,089 LOC)</action>
+        <action>Create unified CLI commands</action>
+      </actions>
+      <modules_to_port>
+        <module name="strategic_advisor.py" loc="495" category="A"/>
+        <module name="repo_reviewer.py" loc="340" category="A"/>
+        <module name="consolidated_digest.py" loc="353" category="A"/>
+        <module name="spec_detector.py" loc="431" category="A"/>
+        <module name="cli.py" loc="1268" category="A" note="Adapt to Typer"/>
+        <module name="git_helpers.py" loc="411" category="B"/>
+        <module name="scheduler.py" loc="311" category="B"/>
+        <module name="daily_collector.py" loc="231" category="B"/>
+      </modules_to_port>
+      <deliverables>
+        <deliverable>swarm_attack/coo/ package with all COO functionality</deliverable>
+        <deliverable>Unified test suite</deliverable>
+        <deliverable>Migration documentation</deliverable>
+      </deliverables>
+      <risk>MEDIUM - 1-2 weeks of focused work</risk>
+      <effort>85-110 hours total</effort>
+    </phase>
+
+    <phase number="3" name="deprecate_standalone" timeframe="2+ months">
+      <title>Full Unified CLI</title>
+      <actions>
+        <action>Update cron scripts to use swarm-attack coo commands</action>
+        <action>Move projects.yaml into swarm-attack config</action>
+        <action>Archive standalone COO repository</action>
+        <action>Update all documentation</action>
+      </actions>
+      <deliverables>
+        <deliverable>Single pip install for all functionality</deliverable>
+        <deliverable>Unified CLI: swarm-attack [coo|cos|feature|bug|qa]</deliverable>
+        <deliverable>Single .swarm/ state directory</deliverable>
+      </deliverables>
+      <risk>LOW - mostly configuration and documentation</risk>
+      <effort>15-20 hours</effort>
+    </phase>
+  </migration_plan>
+
+  <key_decisions>
+    <decision id="1">
+      <question>Should we merge codebases now?</question>
+      <answer>No - finish Priority Board first to prove the pattern</answer>
+      <rationale>
+        Both codebases are actively changing. Priority Board is the natural bridge.
+        Once working, the unification path becomes clear with lower risk.
+      </rationale>
+    </decision>
+
+    <decision id="2">
+      <question>Where does Priority Board live?</question>
+      <answer>Pure logic in swarm-attack, orchestration runs in COO context</answer>
+      <rationale>
+        Priority Board has zero hard dependencies on COO code. The models and
+        algorithms are reusable, while the orchestration is COO-specific.
+      </rationale>
+    </decision>
+
+    <decision id="3">
+      <question>Chief of Staff vs COO - redundant?</question>
+      <answer>No - different layers. CoS is tactical (daily goals), COO is strategic (what to build)</answer>
+      <rationale>
+        Chief of Staff executes work within a single project. COO provides
+        cross-project oversight and strategic direction. They complement each other.
+      </rationale>
+    </decision>
+
+    <decision id="4">
+      <question>Should COO remain an "observer" or become an "actor"?</question>
+      <answer>COO observes and advises; CoS and agents act</answer>
+      <rationale>
+        Per COO's CLAUDE.md: "It doesn't implement, it oversees." This separation
+        of concerns maintains clean architecture and prevents scope creep.
+      </rationale>
+    </decision>
+  </key_decisions>
+
+  <shared_patterns>
+    <pattern name="Debate Loop">
+      <description>Multi-round Author → Critic → Moderator refinement</description>
+      <used_by>Feature Swarm (spec debate), Bug Bash (root cause debate), Priority Board</used_by>
+      <location>swarm_attack/debate.py, swarm_attack/debate_retry.py</location>
+    </pattern>
+
+    <pattern name="Skill Loading">
+      <description>Load prompts from .claude/skills/{name}/SKILL.md</description>
+      <used_by>All agents in both codebases</used_by>
+      <format>YAML frontmatter + Markdown body</format>
+    </pattern>
+
+    <pattern name="CLI Subprocess">
+      <description>Invoke Claude CLI via subprocess with JSON output</description>
+      <used_by>COO expert reviews, swarm-attack agents</used_by>
+      <implementation>CLIReviewRunner, SubAgentRunner</implementation>
+    </pattern>
+
+    <pattern name="State Machine">
+      <description>Phase enum + valid transitions + atomic persistence</description>
+      <used_by>Feature lifecycle, Bug lifecycle, Priority Board rounds</used_by>
+      <storage>.swarm/state/{id}.json with file locking</storage>
+    </pattern>
+
+    <pattern name="Checkpoint Gates">
+      <description>Pause for human approval on risky changes</description>
+      <used_by>Chief of Staff (cost, UX, architecture triggers)</used_by>
+      <future>Priority Board could use for strategic pivots</future>
+    </pattern>
+  </shared_patterns>
+
+  <risks_and_mitigations>
+    <risk severity="medium">
+      <description>CLI Architecture Mismatch</description>
+      <details>COO uses argparse, swarm-attack uses Typer. Different command structures.</details>
+      <mitigation>Create adapter layer or rewrite COO CLI in Typer during Phase 2</mitigation>
+    </risk>
+
+    <risk severity="medium">
+      <description>Multi-Project State Management</description>
+      <details>COO manages 5 projects, swarm-attack focuses on single project</details>
+      <mitigation>Extend swarm-attack's StateStore with project namespace support</mitigation>
+    </risk>
+
+    <risk severity="low">
+      <description>Test Migration</description>
+      <details>13,089 LOC of COO tests need to be ported</details>
+      <mitigation>Port tests alongside modules; maintain 1.94:1 test-to-code ratio</mitigation>
+    </risk>
+
+    <risk severity="low">
+      <description>Configuration Consolidation</description>
+      <details>Two config systems with different structures</details>
+      <mitigation>COO config is minimal (161 LOC); can adapt to swarm-attack's structure</mitigation>
+    </risk>
+  </risks_and_mitigations>
+
+  <success_criteria>
+    <criterion phase="0">Priority Board generates ranked priorities for all 5 projects</criterion>
+    <criterion phase="0">Priority Board integrates with COO daily cron</criterion>
+    <criterion phase="1">Shared libraries extracted and used by both codebases</criterion>
+    <criterion phase="2">All COO functionality accessible via swarm-attack coo commands</criterion>
+    <criterion phase="2">All 755+ COO tests passing in unified test suite</criterion>
+    <criterion phase="3">Single pip install provides all functionality</criterion>
+    <criterion phase="3">Standalone COO repo archived</criterion>
+  </success_criteria>
+
+  <appendix>
+    <codebase_metrics>
+      <metric name="swarm_attack_loc">~50,000+</metric>
+      <metric name="coo_loc">6,751</metric>
+      <metric name="swarm_attack_tests">4,329</metric>
+      <metric name="coo_tests">755</metric>
+      <metric name="coo_test_loc">13,089</metric>
+      <metric name="coo_test_ratio">1.94:1</metric>
+      <metric name="actual_code_overlap">0%</metric>
+      <metric name="pattern_similarity">~40%</metric>
+    </codebase_metrics>
+
+    <coo_modules_by_category>
+      <category name="A" title="Core/Unique to COO" loc="2844">
+        <module>cli.py (1268)</module>
+        <module>strategic_advisor.py (495)</module>
+        <module>spec_detector.py (431)</module>
+        <module>consolidated_digest.py (353)</module>
+        <module>repo_reviewer.py (340)</module>
+      </category>
+      <category name="B" title="Integration Points" loc="1853">
+        <module>git_helpers.py (411)</module>
+        <module>scheduler.py (311)</module>
+        <module>recommendation_tracker.py (303)</module>
+        <module>delta_collector.py (292)</module>
+        <module>validators.py (270)</module>
+        <module>midday_state.py (260)</module>
+        <module>daily_collector.py (231)</module>
+        <module>github_integration.py (229)</module>
+        <module>implementation_tracker.py (206)</module>
+      </category>
+      <category name="C" title="Utility/Support" loc="2054">
+        <module>result_parser.py (310)</module>
+        <module>review_runner.py (228)</module>
+        <module>cli_runner.py (211)</module>
+        <module>skill_loader.py (200)</module>
+        <module>review_archiver.py (164)</module>
+        <module>config.py (161)</module>
+        <module>index_updater.py (76)</module>
+      </category>
+    </coo_modules_by_category>
+
+    <worktrees_status date="2025-12-31">
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack" branch="feature/coo-priority-board" status="active"/>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/cos-v3-completion" branch="feature/cos-v3-completion" status="clean"/>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/debate-retry" branch="fix/debate-retry-logic" status="clean"/>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/living-spec-system" branch="feature/living-spec-system" status="active"/>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack/worktrees/qa-enhancements" branch="enhance/qa-pm-ux" status="active"/>
+      <worktree path="/Users/philipjcortes/Desktop/coo/worktrees/feature-priority-board" branch="feature/priority-board" status="active"/>
+    </worktrees_status>
+  </appendix>
+</architecture_decision_record>

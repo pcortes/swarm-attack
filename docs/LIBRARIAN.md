@@ -17,11 +17,11 @@ The Librarian agent provides research capabilities for external open-source libr
 # Basic research query
 swarm-attack research "How does React Query handle caching?"
 
-# Quick lookup focused on specific library
-swarm-attack research "retry logic" --library tenacity --depth quick
+# Quick lookup focused on specific library (options before query)
+swarm-attack research --library tenacity --depth quick "retry logic"
 
 # Thorough implementation search with type override
-swarm-attack research "connection pooling" --library httpx --depth thorough --type implementation
+swarm-attack research --library httpx --depth thorough --type implementation "connection pooling"
 ```
 
 ## CLI Options

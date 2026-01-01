@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Implement Claude CLI Integration in AgentDispatcher
+
+  APPROACH: Supervisor Mode
+  - Use swarm-attack to do the implementation work
+  - Claude Code acts as supervisor, not implementer
+  - Log bugs encountered in timestamped file
+  - Do NOT fix swarm-attack bugs - just log and continue
+
+  Created: 2025-12-31
+  Status: Ready for implementation
+  Priority: HIGH - Enables real commit reviews
+-->
+<continuation_prompt>
+  <metadata>
+    <task>Supervise swarm-attack implementing Claude CLI in AgentDispatcher</task>
+    <repo>/Users/philipjcortes/Desktop/swarm-attack</repo>
+    <branch>master</branch>
+    <created>2025-12-31</created>
+    <priority>HIGH</priority>
+    <mode>SUPERVISOR</mode>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- OPERATING MODE: SUPERVISOR                                    -->
+  <!-- ============================================================ -->
+  <operating_mode>
+    <role>SUPERVISOR</role>
+    <description>
+      You are a SUPERVISOR, not an implementer. You will:
+      1. Create a feature spec/PRD for the dispatcher implementation
+      2. Use swarm-attack CLI to run the feature pipeline
+      3. Observe and log any bugs/issues encountered
+      4. DO NOT fix swarm-attack bugs - just log them and continue
+      5. Guide the pipeline to completion
+    </description>
+
+    <bug_logging>
+      <file>/Users/philipjcortes/Desktop/swarm-attack/.swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md</file>
+      <format><![CDATA[
+# Bug Log: Dispatcher Claude CLI Implementation
+Date: 2025-12-31
+Session: dispatcher-claude-cli-implementation
+
+## Bugs Encountered
+
+### BUG-001: [timestamp]
+**Component:** [which part of swarm-attack]
+**Severity:** [LOW|MEDIUM|HIGH|CRITICAL]
+**Description:** [what happened]
+**Expected:** [what should have happened]
+**Actual:** [what actually happened]
+**Workaround:** [how you continued despite the bug]
+
+---
+      ]]></format>
+    </bug_logging>
+
+    <rules>
+      <rule>DO NOT modify swarm-attack source code to fix bugs</rule>
+      <rule>DO log all bugs with timestamps in the bug file</rule>
+      <rule>DO continue implementation despite bugs (use workarounds)</rule>
+      <rule>DO use swarm-attack CLI commands to drive implementation</rule>
+      <rule>DO supervise and guide, not implement directly</rule>
+    </rules>
+  </operating_mode>
+
+  <!-- ============================================================ -->
+  <!-- CONTEXT: What Was Done                                       -->
+  <!-- ============================================================ -->
+  <previous_session>
+    <what_was_done>
+      <item>Created full commit-quality-review module at swarm_attack/commit_review/</item>
+      <item>Implemented 5-expert panel review system</item>
+      <item>Created CLI command: swarm-attack review-commits</item>
+      <item>Wrote 70+ tests (all passing)</item>
+      <item>Fixed CLI registration in cli_legacy.py</item>
+      <item>Fixed JSON output for edge cases (no commits, errors)</item>
+      <item>Added Claude CLI documentation to spec and dispatcher.py</item>
+      <item>Pushed all changes to origin/master</item>
+    </what_was_done>
+
+    <current_state>
+      <item>CLI works: swarm-attack review-commits --output json</item>
+      <item>Returns valid JSON with empty commit_reviews[] (placeholder)</item>
+      <item>AgentDispatcher._run_agent() is a placeholder returning []</item>
+      <item>Need to implement actual Claude CLI calls</item>
+    </current_state>
+  </previous_session>
+
+  <!-- ============================================================ -->
+  <!-- TASK: What Needs To Be Done                                  -->
+  <!-- ============================================================ -->
+  <task>
+    <summary>
+      Use swarm-attack to implement Claude CLI integration in the dispatcher.
+      You supervise the process and log any bugs encountered.
+    </summary>
+
+    <feature_to_implement>
+      <name>dispatcher-claude-cli</name>
+      <description>
+        Implement the Claude CLI call in AgentDispatcher._run_agent() so that
+        expert agents actually review commits and return real findings.
+      </description>
+      <files>
+        <file>swarm_attack/commit_review/dispatcher.py</file>
+        <file>tests/unit/test_agent_dispatch.py</file>
+      </files>
+    </feature_to_implement>
+  </task>
+
+  <!-- ============================================================ -->
+  <!-- STEP-BY-STEP SUPERVISOR WORKFLOW                              -->
+  <!-- ============================================================ -->
+  <supervisor_workflow>
+    <step order="1">
+      <action>Initialize environment and bug log</action>
+      <commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack
+git status   # Should be on master
+git pull origin master
+
+# Create bug log file
+mkdir -p .swarm/bugs
+cat > .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md << 'EOF'
+# Bug Log: Dispatcher Claude CLI Implementation
+Date: 2025-12-31
+Session: dispatcher-claude-cli-implementation
+
+## Bugs Encountered
+
+(none yet)
+
+---
+EOF
+      ]]></commands>
+    </step>
+
+    <step order="2">
+      <action>Create PRD for the feature</action>
+      <commands><![CDATA[
+# Create PRD in .claude/prds/
+cat > .claude/prds/dispatcher-claude-cli.md << 'EOF'
+# PRD: Dispatcher Claude CLI Integration
+
+## Problem Statement
+The AgentDispatcher._run_agent() method is a placeholder that returns empty findings.
+We need it to call Claude CLI to get real expert reviews of commits.
+
+## Requirements
+
+### Functional Requirements
+1. _run_agent() must call Claude CLI via subprocess
+2. Parse JSON response into Finding objects
+3. Handle errors gracefully (timeout, invalid JSON, CLI errors)
+4. Log warnings but don't crash on failures
+
+### Technical Requirements
+1. Use subprocess.run() with ["claude", "--print", "--output-format", "json", "-p", prompt]
+2. Timeout of 300 seconds per agent call
+3. Return empty list on any error (graceful degradation)
+
+### Interface Contract
+```python
+async def _run_agent(
+    self,
+    commit: CommitInfo,
+    category: CommitCategory,
+    prompt: str,
+) -> list[Finding]:
+```
+
+### Test Requirements
+1. Test Claude CLI is called with correct args
+2. Test JSON response parsed correctly
+3. Test timeout handling
+4. Test invalid JSON handling
+5. Test CLI error handling
+
+## Reference Files
+- Pattern: swarm_attack/agents/base.py (see _run_claude)
+- Models: swarm_attack/commit_review/models.py
+- Prompts: swarm_attack/commit_review/prompts.py
+- Spec: specs/commit-quality-review/IMPLEMENTATION_SPEC.xml
+
+## Acceptance Criteria
+- [ ] Claude CLI called via subprocess
+- [ ] Findings parsed from JSON response
+- [ ] All error cases handled gracefully
+- [ ] 5 new unit tests pass
+- [ ] Existing tests still pass
+EOF
+      ]]></commands>
+    </step>
+
+    <step order="3">
+      <action>Initialize the feature with swarm-attack</action>
+      <commands><![CDATA[
+swarm-attack init dispatcher-claude-cli
+      ]]></commands>
+      <on_error>
+        <action>Log bug and continue manually if needed</action>
+        <log_template>
+### BUG-XXX: [timestamp]
+**Component:** swarm-attack init
+**Severity:** [assess]
+**Description:** [what failed]
+**Workaround:** [how to proceed]
+        </log_template>
+      </on_error>
+    </step>
+
+    <step order="4">
+      <action>Run the spec pipeline</action>
+      <commands><![CDATA[
+swarm-attack run dispatcher-claude-cli
+      ]]></commands>
+      <expected>Spec generated and debate runs</expected>
+      <on_error>Log bug, check status, try to continue</on_error>
+    </step>
+
+    <step order="5">
+      <action>Check status and approve spec if ready</action>
+      <commands><![CDATA[
+swarm-attack status dispatcher-claude-cli
+# If in SPEC_NEEDS_APPROVAL:
+swarm-attack approve dispatcher-claude-cli
+      ]]></commands>
+    </step>
+
+    <step order="6">
+      <action>Create issues from spec</action>
+      <commands><![CDATA[
+swarm-attack issues dispatcher-claude-cli
+      ]]></commands>
+    </step>
+
+    <step order="7">
+      <action>Greenlight for implementation</action>
+      <commands><![CDATA[
+swarm-attack greenlight dispatcher-claude-cli
+      ]]></commands>
+    </step>
+
+    <step order="8">
+      <action>Run implementation</action>
+      <commands><![CDATA[
+swarm-attack run dispatcher-claude-cli
+      ]]></commands>
+      <monitor>
+        <description>Watch for issues, log any bugs encountered</description>
+        <check_periodically>swarm-attack status dispatcher-claude-cli</check_periodically>
+      </monitor>
+    </step>
+
+    <step order="9">
+      <action>Verify implementation</action>
+      <commands><![CDATA[
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_agent_dispatch.py -v --tb=short
+
+# Manual test
+swarm-attack review-commits --since="24 hours ago" --output json
+      ]]></commands>
+    </step>
+
+    <step order="10">
+      <action>Finalize bug log and commit</action>
+      <commands><![CDATA[
+# Update bug log with summary
+echo "## Summary" >> .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+echo "Total bugs logged: [count]" >> .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+echo "Implementation status: [COMPLETE|PARTIAL|BLOCKED]" >> .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+
+# Commit bug log
+git add .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+git commit -m "docs: add bug log from dispatcher-claude-cli implementation session"
+      ]]></commands>
+    </step>
+  </supervisor_workflow>
+
+  <!-- ============================================================ -->
+  <!-- BUG LOGGING PROTOCOL                                          -->
+  <!-- ============================================================ -->
+  <bug_logging_protocol>
+    <when_to_log>
+      <trigger>Any unexpected error or behavior from swarm-attack</trigger>
+      <trigger>CLI command fails or hangs</trigger>
+      <trigger>Output doesn't match expected</trigger>
+      <trigger>Agent produces incorrect code</trigger>
+      <trigger>Tests fail unexpectedly</trigger>
+      <trigger>Pipeline gets stuck</trigger>
+    </when_to_log>
+
+    <how_to_log>
+      <step>Note the timestamp</step>
+      <step>Identify the component (CLI, orchestrator, agent, etc.)</step>
+      <step>Assess severity (LOW/MEDIUM/HIGH/CRITICAL)</step>
+      <step>Describe what happened vs what should have happened</step>
+      <step>Document your workaround to continue</step>
+      <step>Append to .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md</step>
+    </how_to_log>
+
+    <do_not>
+      <item>Do NOT stop to fix the bug</item>
+      <item>Do NOT modify swarm-attack source to workaround</item>
+      <item>Do NOT skip logging even for minor issues</item>
+    </do_not>
+
+    <example_log_entry><![CDATA[
+### BUG-003: 2025-12-31 14:32:00
+**Component:** swarm-attack run (Coder agent)
+**Severity:** MEDIUM
+**Description:** Coder agent generated code that doesn't match interface contract
+**Expected:** _run_agent() should return list[Finding]
+**Actual:** Generated code returns dict instead of list
+**Workaround:** Manually noted the issue, let pipeline continue, will need manual fix after
+---
+    ]]></example_log_entry>
+  </bug_logging_protocol>
+
+  <!-- ============================================================ -->
+  <!-- REFERENCE FILES                                               -->
+  <!-- ============================================================ -->
+  <reference_files>
+    <file purpose="Full implementation spec with Claude CLI section">
+      /Users/philipjcortes/Desktop/swarm-attack/specs/commit-quality-review/IMPLEMENTATION_SPEC.xml
+    </file>
+    <file purpose="Canonical Claude CLI pattern">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/agents/base.py
+    </file>
+    <file purpose="File to be modified by swarm-attack">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/commit_review/dispatcher.py
+    </file>
+    <file purpose="Finding and Severity models">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/commit_review/models.py
+    </file>
+    <file purpose="Expert prompts">
+      /Users/philipjcortes/Desktop/swarm-attack/swarm_attack/commit_review/prompts.py
+    </file>
+  </reference_files>
+
+  <!-- ============================================================ -->
+  <!-- EXPECTED IMPLEMENTATION                                       -->
+  <!-- ============================================================ -->
+  <expected_implementation>
+    <description>
+      This is what swarm-attack SHOULD produce. Use this to verify the output
+      and log bugs if it differs significantly.
+    </description>
+
+    <run_agent_method><![CDATA[
+async def _run_agent(
+    self,
+    commit: CommitInfo,
+    category: CommitCategory,
+    prompt: str,
+) -> list[Finding]:
+    """Run a single review agent via Claude CLI."""
+    try:
+        result = subprocess.run(
+            ["claude", "--print", "--output-format", "json", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"Claude CLI failed for {commit.sha}: {result.stderr}")
+            return []
+
+        response = json.loads(result.stdout)
+        return self._parse_findings(response, commit.sha)
+
+    except subprocess.TimeoutExpired:
+        logger.warning(f"Claude CLI timed out for {commit.sha}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.warning(f"Invalid JSON from Claude CLI: {e}")
+        return []
+    ]]></run_agent_method>
+
+    <parse_findings_method><![CDATA[
+def _parse_findings(self, response: dict, commit_sha: str) -> list[Finding]:
+    """Parse Claude CLI response into Finding objects."""
+    findings = []
+    raw_findings = response.get("findings", [])
+
+    for f in raw_findings:
+        try:
+            finding = Finding(
+                commit_sha=commit_sha,
+                expert=f.get("expert", "Unknown"),
+                severity=Severity(f.get("severity", "low").lower()),
+                category=f.get("category", "general"),
+                description=f.get("description", ""),
+                evidence=f.get("evidence", ""),
+            )
+            findings.append(finding)
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Could not parse finding: {e}")
+
+    return findings
+    ]]></parse_findings_method>
+  </expected_implementation>
+
+  <!-- ============================================================ -->
+  <!-- SUCCESS CRITERIA                                              -->
+  <!-- ============================================================ -->
+  <success_criteria>
+    <criterion id="SC1">
+      swarm-attack pipeline runs to completion (with or without bugs)
+    </criterion>
+    <criterion id="SC2">
+      All bugs encountered are logged in the bug file
+    </criterion>
+    <criterion id="SC3">
+      Implementation exists (even if manual fixes needed)
+    </criterion>
+    <criterion id="SC4">
+      Tests pass (or failures are logged as bugs)
+    </criterion>
+    <criterion id="SC5">
+      Bug log committed to repo
+    </criterion>
+  </success_criteria>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# TASK: Supervise swarm-attack Implementing Claude CLI in Dispatcher
+
+## Your Role: SUPERVISOR
+
+You are a SUPERVISOR, not an implementer. You will:
+1. Use swarm-attack CLI to drive the implementation
+2. Log ALL bugs encountered in a timestamped file
+3. DO NOT fix swarm-attack bugs - just log and continue
+4. Guide the pipeline to completion
+
+## FIRST: Setup Environment and Bug Log
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack
+git pull origin master
+
+# Create bug log
+mkdir -p .swarm/bugs
+cat > .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md << 'EOF'
+# Bug Log: Dispatcher Claude CLI Implementation
+Date: 2025-12-31
+Session: dispatcher-claude-cli-implementation
+
+## Bugs Encountered
+
+(none yet)
+
+---
+EOF
+```
+
+## Step 1: Create PRD
+
+Create `.claude/prds/dispatcher-claude-cli.md` with requirements for:
+- _run_agent() calling Claude CLI via subprocess
+- Parsing JSON response into Finding objects
+- Graceful error handling (timeout, invalid JSON, CLI errors)
+- 5 new unit tests
+
+Reference: specs/commit-quality-review/IMPLEMENTATION_SPEC.xml (CLAUDE CLI INTEGRATION section)
+
+## Step 2: Run swarm-attack Pipeline
+
+```bash
+# Initialize
+swarm-attack init dispatcher-claude-cli
+
+# Run spec generation
+swarm-attack run dispatcher-claude-cli
+
+# Check status
+swarm-attack status dispatcher-claude-cli
+
+# Approve spec when ready
+swarm-attack approve dispatcher-claude-cli
+
+# Create issues
+swarm-attack issues dispatcher-claude-cli
+
+# Greenlight
+swarm-attack greenlight dispatcher-claude-cli
+
+# Run implementation
+swarm-attack run dispatcher-claude-cli
+```
+
+## Bug Logging Protocol
+
+When ANYTHING unexpected happens:
+
+```markdown
+### BUG-XXX: [timestamp]
+**Component:** [which part of swarm-attack]
+**Severity:** LOW|MEDIUM|HIGH|CRITICAL
+**Description:** [what happened]
+**Expected:** [what should have happened]
+**Actual:** [what actually happened]
+**Workaround:** [how you continued]
+---
+```
+
+Append to: `.swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md`
+
+## DO NOT
+
+- Do NOT fix swarm-attack source code
+- Do NOT stop when you encounter bugs
+- Do NOT skip logging any issues
+- Do NOT implement directly (let swarm-attack do it)
+
+## DO
+
+- DO log every bug with timestamp
+- DO continue despite bugs (use workarounds)
+- DO let swarm-attack handle implementation
+- DO verify the output matches expected implementation
+- DO commit the bug log when done
+
+## Verify Implementation
+
+After pipeline completes:
+```bash
+# Run tests
+PYTHONPATH=. pytest tests/unit/test_agent_dispatch.py -v
+
+# Manual test
+swarm-attack review-commits --output json
+```
+
+## Finalize
+
+```bash
+# Summarize bug log
+echo "## Summary" >> .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+echo "Total bugs: [count]" >> .swarm/bugs/2025-12-31_dispatcher-implementation-bugs.md
+
+# Commit
+git add .swarm/bugs/
+git commit -m "docs: bug log from dispatcher-claude-cli implementation"
+git push origin master
+```
+
+## Reference Files
+
+- Spec: specs/commit-quality-review/IMPLEMENTATION_SPEC.xml
+- Pattern: swarm_attack/agents/base.py
+- Target: swarm_attack/commit_review/dispatcher.py
+- Models: swarm_attack/commit_review/models.py
+  ]]></implementation_prompt>
+</continuation_prompt>
