@@ -849,6 +849,24 @@ else:
 
 Multi-agent commit review system with expert panel analysis. Reviews recent commits through specialized engineering directors.
 
+### Implementation Status
+
+**Current State:** Partial implementation - helper methods complete, agent dispatch placeholder.
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Models (`models.py`) | ✅ Complete | Finding, Severity, CommitInfo, etc. |
+| Discovery (`discovery.py`) | ✅ Complete | Git log parsing |
+| Categorizer (`categorizer.py`) | ✅ Complete | Commit classification |
+| Prompts (`prompts.py`) | ✅ Complete | 5 expert prompts |
+| Dispatcher helpers | ✅ Complete | `_parse_findings()`, `_call_claude_cli()` |
+| Dispatcher `_run_agent()` | ⏳ Placeholder | Returns empty list; needs asyncio.to_thread wiring |
+| Synthesis (`synthesis.py`) | ✅ Complete | Score calculation, verdict |
+| Report (`report.py`) | ✅ Complete | XML/JSON/Markdown output |
+| CLI (`review_commits.py`) | ✅ Complete | Command registered |
+
+**Next Steps:** Wire `_run_agent()` to call `_call_claude_cli()` via `asyncio.to_thread()` and parse response with `_parse_findings()`.
+
 ### Expert Panel
 
 | Expert | Title | Focus Area | Category Mapping |
