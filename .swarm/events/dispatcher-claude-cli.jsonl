@@ -1,3 +1,6 @@
 {"ts": "2026-01-01T01:34:40.819579Z", "event": "issue_started", "issue": 1, "session": "sess_20260101_013440_818978"}
 {"ts": "2026-01-01T01:37:12.264001Z", "event": "issue_done", "issue": 1, "commit": "9585c4421b5eedeb4c80c87e237195bb121cfb2e", "cost_usd": 0.6103646}
 {"ts": "2026-01-01T01:37:24.019776Z", "event": "issue_started", "issue": 2, "session": "sess_20260101_013724_019077"}
+{"ts": "2026-01-01T01:39:26.104585Z", "event": "issue_done", "issue": 2, "commit": "71c5787e85f0cdea8da0a10a33b707357e869871", "cost_usd": 0.49321935000000006}
+{"ts": "2026-01-01T01:39:37.708780Z", "event": "issue_started", "issue": 3, "session": "sess_20260101_013937_708122"}
+{"ts": "2026-01-01T01:41:29.746264Z", "event": "retry_started", "issue": 3, "attempt": 1}

@@ -1,6 +1,6 @@
 {
   "feature_id": "dispatcher-claude-cli",
-  "last_updated": "2025-12-31T17:36:46.202776",
+  "last_updated": "2025-12-31T17:39:03.617893",
   "issues": [
     {
       "issue_number": 1,
@@ -8,6 +8,13 @@
       "status": "passing",
       "test_count": 26,
       "last_verified": "2025-12-31T17:36:46.202776"
+    },
+    {
+      "issue_number": 2,
+      "title": "",
+      "status": "passing",
+      "test_count": 40,
+      "last_verified": "2025-12-31T17:39:03.617893"
     }
   ]
 }

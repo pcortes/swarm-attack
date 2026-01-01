@@ -3,7 +3,7 @@
   "feature_id": "dispatcher-claude-cli",
   "issue_number": 2,
   "started_at": "2026-01-01T01:37:24.019095Z",
-  "status": "active",
+  "status": "complete",
   "checkpoints": [
     {
       "agent": "coder",
@@ -20,9 +20,11 @@
       "cost_usd": 0.0
     }
   ],
-  "ended_at": null,
-  "end_status": null,
+  "ended_at": "2026-01-01T01:39:32.576308Z",
+  "end_status": "success",
   "cost_usd": 0.49321935000000006,
   "worktree_path": null,
-  "commits": []
+  "commits": [
+    "71c5787e85f0cdea8da0a10a33b707357e869871"
+  ]
 }

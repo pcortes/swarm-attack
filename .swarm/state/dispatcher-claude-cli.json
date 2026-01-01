@@ -32,7 +32,7 @@
     },
     {
       "issue_number": 2,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Add _call_claude_cli() sync helper method to AgentDispatcher",
       "dependencies": [],
       "estimated_size": "medium",
@@ -60,7 +60,7 @@
     },
     {
       "issue_number": 3,
-      "stage": "BACKLOG",
+      "stage": "SPLIT",
       "title": "Implement _run_agent() with asyncio.to_thread",
       "dependencies": [
         1,
@@ -69,18 +69,21 @@
       "estimated_size": "medium",
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
-      "blocked_reason": null,
+      "blocked_reason": "Split into 2 sub-issues: [6, 7]",
       "outputs": null,
       "completion_summary": null,
       "parent_issue": null,
-      "child_issues": []
+      "child_issues": [
+        6,
+        7
+      ]
     },
     {
       "issue_number": 4,
       "stage": "BACKLOG",
       "title": "Create unit tests for AgentDispatcher._run_agent()",
       "dependencies": [
-        3
+        7
       ],
       "estimated_size": "medium",
       "business_value_score": 0.5,
@@ -106,13 +109,46 @@
       "completion_summary": null,
       "parent_issue": null,
       "child_issues": []
+    },
+    {
+      "issue_number": 6,
+      "stage": "READY",
+      "title": "_run_agent(): Core async orchestration with asyncio.to_thread",
+      "dependencies": [
+        1,
+        2
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 3,
+      "child_issues": []
+    },
+    {
+      "issue_number": 7,
+      "stage": "BACKLOG",
+      "title": "_run_agent(): Error handling with graceful degradation",
+      "dependencies": [
+        6
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": 3,
+      "child_issues": []
     }
   ],
-  "current_session": "sess_20260101_013724_019077",
+  "current_session": null,
   "created_at": "2026-01-01T01:28:38.361024Z",
-  "updated_at": "2026-01-01T01:37:19.127474Z",
-  "cost_total_usd": 0.6103646,
+  "updated_at": "2026-01-01T01:39:32.569733Z",
+  "cost_total_usd": 1.10358395,
   "cost_by_phase": {
-    "IMPLEMENTATION": 0.6103646
+    "IMPLEMENTATION": 1.10358395
   }
 }

@@ -67,6 +67,37 @@
       ],
       "order": 5,
       "automation_type": "automated"
+    },
+    {
+      "title": "_run_agent(): Core async orchestration with asyncio.to_thread",
+      "body": "## Description\n\nImplement the core async structure of `_run_agent()` that runs `_call_claude_cli()` in a thread pool via `asyncio.to_thread()` to avoid blocking the event loop.\n\n## Acceptance Criteria\n\n- [ ] Existing placeholder `_run_agent()` replaced with working implementation\n- [ ] Calls `_call_claude_cli()` via `asyncio.to_thread()` to avoid blocking\n- [ ] Passes result to `_parse_findings()` to extract `Finding` objects\n- [ ] Logs debug message at start: `f\"Running agent for {commit.sha} ({category.value})\"`\n\n## Technical Notes\n\n- File: `swarm_attack/commit_review/dispatcher.py`\n- Existing method signature at line 89 should NOT change\n- Import `asyncio` at top of file (already present)\n- Use `logger = logging.getLogger(__name__)` for logging",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        1,
+        2
+      ],
+      "order": 6,
+      "automation_type": "automated",
+      "parent_issue": 3
+    },
+    {
+      "title": "_run_agent(): Error handling with graceful degradation",
+      "body": "## Description\n\nAdd comprehensive error handling to `_run_agent()` that catches all exceptions and returns empty list for graceful degradation.\n\n## Acceptance Criteria\n\n- [ ] Returns empty list on `subprocess.TimeoutExpired` (logs warning)\n- [ ] Returns empty list on `json.JSONDecodeError` (logs warning)\n- [ ] Returns empty list on any other `Exception` (logs warning)\n- [ ] All error paths log at warning level with descriptive messages including commit SHA\n\n## Technical Notes\n\n- File: `swarm_attack/commit_review/dispatcher.py`\n- Import `subprocess` and `json` at top of file\n- This implements graceful degradation per PRD: all errors return empty list\n- Warning messages should include commit SHA for debugging",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        6
+      ],
+      "order": 7,
+      "automation_type": "automated",
+      "parent_issue": 3
     }
   ]
 }
