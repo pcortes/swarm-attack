@@ -4,7 +4,7 @@
   "tasks": [
     {
       "issue_number": 1,
-      "stage": "READY",
+      "stage": "DONE",
       "title": "Add _parse_findings() helper method to AgentDispatcher",
       "dependencies": [],
       "estimated_size": "small",
@@ -39,8 +39,22 @@
       "business_value_score": 0.5,
       "technical_risk_score": 0.5,
       "blocked_reason": null,
-      "outputs": null,
-      "completion_summary": null,
+      "outputs": {
+        "files_created": [
+          "/Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/tests/generated/dispatcher-claude-cli/test_issue_2.py",
+          "/Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/swarm_attack/commit_review/dispatcher.py"
+        ],
+        "classes_defined": {
+          "/Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/tests/generated/dispatcher-claude-cli/test_issue_2.py": [
+            "TestCallClaudeCli"
+          ],
+          "/Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/swarm_attack/commit_review/dispatcher.py": [
+            "AgentDispatcher"
+          ]
+        },
+        "semantic_summary": null
+      },
+      "completion_summary": "Created 2 file(s): /Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/tests/generated/dispatcher-claude-cli/test_issue_2.py, /Users/philipjcortes/Desktop/swarm-attack/worktrees/dispatcher-cli/swarm_attack/commit_review/dispatcher.py; Defined: TestCallClaudeCli, AgentDispatcher",
       "parent_issue": null,
       "child_issues": []
     },
@@ -94,9 +108,11 @@
       "child_issues": []
     }
   ],
-  "current_session": "sess_20260101_013440_818978",
+  "current_session": "sess_20260101_013724_019077",
   "created_at": "2026-01-01T01:28:38.361024Z",
-  "updated_at": "2026-01-01T01:34:40.795227Z",
-  "cost_total_usd": 0.0,
-  "cost_by_phase": {}
+  "updated_at": "2026-01-01T01:37:19.127474Z",
+  "cost_total_usd": 0.6103646,
+  "cost_by_phase": {
+    "IMPLEMENTATION": 0.6103646
+  }
 }

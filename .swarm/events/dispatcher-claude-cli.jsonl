@@ -1,1 +1,3 @@
 {"ts": "2026-01-01T01:34:40.819579Z", "event": "issue_started", "issue": 1, "session": "sess_20260101_013440_818978"}
+{"ts": "2026-01-01T01:37:12.264001Z", "event": "issue_done", "issue": 1, "commit": "9585c4421b5eedeb4c80c87e237195bb121cfb2e", "cost_usd": 0.6103646}
+{"ts": "2026-01-01T01:37:24.019776Z", "event": "issue_started", "issue": 2, "session": "sess_20260101_013724_019077"}

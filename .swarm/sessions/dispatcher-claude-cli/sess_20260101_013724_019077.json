@@ -1,0 +1,28 @@
+{
+  "session_id": "sess_20260101_013724_019077",
+  "feature_id": "dispatcher-claude-cli",
+  "issue_number": 2,
+  "started_at": "2026-01-01T01:37:24.019095Z",
+  "status": "active",
+  "checkpoints": [
+    {
+      "agent": "coder",
+      "status": "complete",
+      "timestamp": "2026-01-01T01:39:02.926146Z",
+      "commit": null,
+      "cost_usd": 0.49321935000000006
+    },
+    {
+      "agent": "verifier",
+      "status": "complete",
+      "timestamp": "2026-01-01T01:39:03.365612Z",
+      "commit": null,
+      "cost_usd": 0.0
+    }
+  ],
+  "ended_at": null,
+  "end_status": null,
+  "cost_usd": 0.49321935000000006,
+  "worktree_path": null,
+  "commits": []
+}

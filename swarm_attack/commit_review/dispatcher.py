@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import subprocess
 from typing import Optional
 
 from swarm_attack.commit_review.models import (
@@ -140,6 +141,36 @@ class AgentDispatcher:
 
         # Placeholder - mocked in tests, implement with Claude CLI for production
         return []
+
+    def _call_claude_cli(self, prompt: str) -> dict:
+        """Call Claude CLI synchronously.
+
+        This method invokes the Claude CLI via subprocess and returns
+        the parsed JSON response. It should be called from a thread
+        (via asyncio.to_thread) to avoid blocking the async event loop.
+
+        Args:
+            prompt: The review prompt to send to Claude
+
+        Returns:
+            Parsed JSON response dict from Claude CLI
+
+        Raises:
+            RuntimeError: On non-zero exit code with stderr message
+            subprocess.TimeoutExpired: If CLI times out (propagated to caller)
+            json.JSONDecodeError: If stdout is not valid JSON (propagated to caller)
+        """
+        result = subprocess.run(
+            ["claude", "--print", "--output-format", "json", "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"Claude CLI failed: {result.stderr}")
+
+        return json.loads(result.stdout)
 
     def _get_expert_for_category(self, category: CommitCategory) -> str:
         """Get the expert name for a commit category.
