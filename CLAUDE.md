@@ -266,7 +266,7 @@ Created → Reproducing → Analyzing → Planned → Approved → Fixing → Fi
 3. **Analyzing** - LLM analyzing root cause with debate
 4. **Planned** - Fix plan generated and debated
 5. **Approved** - Human approved the fix plan
-6. **Fixing** - Applying fix via Implementation Agent
+6. **Fixing** - Applying fix via BugFixerAgent (intelligent Claude CLI-based editing)
 7. **Fixed** - Bug resolved, tests passing
 
 ## Implementation Agent (TDD Workflow)
@@ -333,9 +333,11 @@ This ensures the Implementation Agent knows the exact interface requirements bef
 | `swarm_attack/agents/*.py` | Individual agent implementations |
 | `swarm_attack/agents/coder.py` | Implementation Agent (TDD) |
 | `swarm_attack/agents/complexity_gate.py` | Complexity Gate Agent |
+| `swarm_attack/agents/bug_fixer.py` | BugFixerAgent for applying approved fixes |
 | `swarm_attack/debate.py` | Spec debate logic |
 | `swarm_attack/models/*.py` | Data models and state |
 | `.claude/skills/coder/SKILL.md` | Implementation Agent prompt |
+| `.claude/skills/bug-fixer/SKILL.md` | BugFixerAgent prompt |
 | `swarm_attack/skills/complexity-gate/SKILL.md` | Complexity Gate prompt |
 | `swarm_attack/chief_of_staff/campaign_planner.py` | Campaign backward planning |
 | `swarm_attack/chief_of_staff/campaign_executor.py` | Daily goal execution |
@@ -421,6 +423,7 @@ swarm-attack bug unblock bug-id
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
+| **BugFixerAgent** | Applies approved fix plans via Claude CLI |
 
 ## Debate Retry Handler (v0.3.1)
 
@@ -456,6 +459,57 @@ The handler is automatically used by:
 |------|---------|
 | `swarm_attack/debate_retry.py` | DebateRetryHandler implementation |
 | `tests/unit/test_debate_retry.py` | Comprehensive unit tests (20 tests) |
+
+## Bug Fixer Agent (v0.4.0)
+
+Intelligent LLM-based agent that applies fix plans to the codebase using Claude CLI for smart code editing.
+
+### Why BugFixerAgent?
+
+The previous implementation used brittle string replacement (`content.replace(current_code, proposed_code)`) which failed when:
+- Whitespace didn't match exactly
+- Proposed code had formatting issues (missing blank lines)
+- Current code didn't exist in file exactly as expected
+
+BugFixerAgent fixes this by using Claude CLI to intelligently apply changes.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Read First** | Reads files before editing to understand context |
+| **Edit Tool** | Uses Edit tool instead of blind string replacement |
+| **Formatting** | Ensures proper blank lines and indentation |
+| **Syntax Validation** | Validates Python syntax after each change |
+| **Graceful Adaptation** | Handles files that have drifted from expected state |
+
+### Workflow
+
+1. **Load Skill Prompt** - Load `.claude/skills/bug-fixer/SKILL.md`
+2. **Format Fix Plan** - Convert FixPlan to markdown with all changes
+3. **Build Prompt** - Inject fix plan into skill template
+4. **Call Claude CLI** - Execute with `--print --output-format json`
+5. **Parse Result** - Extract success, files_changed, syntax_verified
+6. **Return AgentResult** - Success with files changed or failure with error
+
+### Integration with Bug Orchestrator
+
+```python
+# In bug_orchestrator.fix():
+fixer = BugFixerAgent(self.config, logger=self._logger)
+fixer_result = fixer.run({
+    "fix_plan": state.fix_plan,
+    "bug_id": bug_id,
+})
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/agents/bug_fixer.py` | BugFixerAgent implementation |
+| `.claude/skills/bug-fixer/SKILL.md` | Skill prompt with detailed instructions |
+| `tests/unit/test_bug_fixer.py` | Comprehensive unit tests (21 tests) |
 
 ## Chief of Staff (Autonomous Development Partner)
 
