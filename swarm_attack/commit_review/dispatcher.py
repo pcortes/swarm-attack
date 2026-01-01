@@ -95,7 +95,7 @@ class AgentDispatcher:
         """Run a single review agent.
 
         This is the method that should be mocked in tests.
-        In production, this would call the Claude API.
+        In production, this calls Claude CLI (not the API directly).
 
         Args:
             commit: The commit to review
@@ -104,17 +104,28 @@ class AgentDispatcher:
 
         Returns:
             List of findings from this agent
-        """
-        # In production, this would:
-        # 1. Call Claude API with the prompt
-        # 2. Parse the response into Finding objects
-        # 3. Return the findings
 
-        # For now, return empty list - will be mocked in tests
-        # and implemented with Claude API in production
+        Implementation Notes:
+            This should call Claude CLI via subprocess:
+            ```
+            claude --print --output-format json -p "{prompt}"
+            ```
+
+            Parse the JSON response to extract Finding objects.
+            See swarm_attack/agents/base.py for Claude CLI invocation patterns.
+        """
+        # TODO: Implement Claude CLI call
+        # Pattern from swarm_attack/agents/base.py:
+        #   result = subprocess.run(
+        #       ["claude", "--print", "--output-format", "json", "-p", prompt],
+        #       capture_output=True, text=True, timeout=300
+        #   )
+        #   response = json.loads(result.stdout)
+        #   return self._parse_findings(response, commit.sha)
+
         logger.debug(f"Running agent for {commit.sha} ({category.value})")
 
-        # Placeholder - would be replaced with actual Claude call
+        # Placeholder - mocked in tests, implement with Claude CLI for production
         return []
 
 

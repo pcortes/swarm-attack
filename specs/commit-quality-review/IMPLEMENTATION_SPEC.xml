@@ -1,0 +1,685 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPEC: Commit Quality Review Skill Implementation
+
+  Purpose: Implement the commit-quality-review skill in swarm-attack as a
+  multi-agent quality gate that reviews recent commits before merge.
+
+  This is a full implementation spec with TDD plan and expert team definition.
+
+  Created: 2025-12-31
+  Target: swarm-attack
+-->
+<implementation_spec>
+  <metadata>
+    <name>commit-quality-review</name>
+    <version>1.0.0</version>
+    <created>2025-12-31</created>
+    <target_repo>swarm-attack</target_repo>
+    <worktree>worktrees/commit-quality-skill</worktree>
+    <branch>feature/commit-quality-review</branch>
+    <integration_points>
+      <point>COO midday check-in</point>
+      <point>COO daily digest</point>
+      <point>CI/CD pre-merge gate</point>
+      <point>Manual /review-commits CLI</point>
+    </integration_points>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- TEAM STRUCTURE: Expert Panel Definition                       -->
+  <!-- ============================================================ -->
+  <team_structure>
+    <panel name="Directors of Engineering Review Panel">
+      <description>
+        A 5-person expert panel of world-class engineering directors who have
+        led quality initiatives at top tech companies. They bring deep expertise
+        in code review, test coverage, technical debt, and production reliability.
+      </description>
+
+      <expert id="production_reliability">
+        <name>Dr. Elena Vasquez</name>
+        <title>Director of Site Reliability</title>
+        <background>
+          Former SRE Director at Google. PhD in distributed systems.
+          Led the team that reduced Google Cloud's incident rate by 60%.
+          Expert in production bug patterns and incident response.
+        </background>
+        <focus>
+          - Production bug verification (was there actually a bug?)
+          - Incident correlation (does fix match incident reports?)
+          - Reliability impact assessment
+          - Error handling completeness
+        </focus>
+        <skeptical_of>
+          Fixes for "bugs" that have no production evidence.
+          Speculative fixes without Sentry errors or customer reports.
+        </skeptical_of>
+      </expert>
+
+      <expert id="test_coverage">
+        <name>Marcus Chen</name>
+        <title>Director of Quality Engineering</title>
+        <background>
+          Former Test Architecture Lead at Microsoft. Built Azure's testing
+          infrastructure. Authored "Test-Driven Architecture" (O'Reilly).
+          Expert in coverage analysis and regression prevention.
+        </background>
+        <focus>
+          - Test coverage before/after commits
+          - Test-to-production API alignment
+          - Mock accuracy verification
+          - Regression risk assessment
+        </focus>
+        <skeptical_of>
+          Tests that mock incorrectly (wrong method names, wrong return types).
+          "Test improvements" that actually reduce coverage.
+          Deleted tests without clear justification.
+        </skeptical_of>
+      </expert>
+
+      <expert id="code_quality">
+        <name>Dr. Aisha Patel</name>
+        <title>Director of Engineering Excellence</title>
+        <background>
+          Former Principal Engineer at Stripe. Created Stripe's code review
+          guidelines. PhD in software engineering from MIT.
+          Expert in code quality metrics and technical debt.
+        </background>
+        <focus>
+          - Implementation completeness
+          - Dead code introduction
+          - Technical debt assessment
+          - Pattern consistency
+        </focus>
+        <skeptical_of>
+          "Complete" implementations that are actually partial.
+          TODO/FIXME comments in "finished" code.
+          Commits that claim to fix X but leave Y broken.
+        </skeptical_of>
+      </expert>
+
+      <expert id="documentation">
+        <name>James O'Brien</name>
+        <title>Director of Developer Experience</title>
+        <background>
+          Former VP of Developer Relations at Twilio. Built Twilio's
+          documentation system that became industry standard.
+          Expert in distinguishing valuable docs from noise.
+        </background>
+        <focus>
+          - Documentation value assessment
+          - Spec-to-implementation traceability
+          - Session exhaust vs. lasting documentation
+          - Cross-reference verification
+        </focus>
+        <skeptical_of>
+          Documentation that contains transient session data.
+          "Comprehensive" docs that will never be referenced.
+          Analysis files that duplicate existing docs.
+        </skeptical_of>
+      </expert>
+
+      <expert id="architecture">
+        <name>Dr. Sarah Kim</name>
+        <title>Chief Architect</title>
+        <background>
+          Former Distinguished Engineer at AWS. Designed S3's consistency
+          model. 25 years in distributed systems architecture.
+          Expert in API contracts and system boundaries.
+        </background>
+        <focus>
+          - API contract verification
+          - Interface completeness
+          - Dependency impact analysis
+          - Architectural consistency
+        </focus>
+        <skeptical_of>
+          Changes that break implicit contracts.
+          "Refactoring" that changes behavior.
+          New code that ignores existing patterns.
+        </skeptical_of>
+      </expert>
+    </panel>
+
+    <review_protocol>
+      <step order="1">Each expert reviews commits in their domain</step>
+      <step order="2">Experts present findings with evidence (file:line)</step>
+      <step order="3">Panel debates conflicting findings</step>
+      <step order="4">Consensus reached on each commit (LEAVE/FIX/REVERT)</step>
+      <step order="5">TDD fix plans generated for actionable items</step>
+    </review_protocol>
+  </team_structure>
+
+  <!-- ============================================================ -->
+  <!-- WORKTREE SETUP                                                -->
+  <!-- ============================================================ -->
+  <worktree_setup>
+    <first_verify>
+      <description>Before ANY implementation, verify your working directory</description>
+      <commands><![CDATA[
+# Create worktree
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/commit-quality-skill -b feature/commit-quality-review
+
+# Enter worktree
+cd worktrees/commit-quality-skill
+
+# Verify
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/commit-quality-skill
+git branch   # Must show: * feature/commit-quality-review
+
+# Verify tests pass before ANY changes
+PYTHONPATH=. pytest tests/ -v --tb=short
+      ]]></commands>
+      <stop_condition>STOP if any verification fails</stop_condition>
+    </first_verify>
+  </worktree_setup>
+
+  <!-- ============================================================ -->
+  <!-- TDD PROTOCOL                                                  -->
+  <!-- ============================================================ -->
+  <tdd_protocol>
+    <phase name="RED" order="1">
+      <description>Write failing tests BEFORE any implementation</description>
+      <test_files>
+        <file path="tests/unit/test_commit_discovery.py">
+          <tests>
+            <test name="test_discover_commits_last_24h">
+              <assertion>Returns commits from last 24 hours with metadata</assertion>
+              <interface>discover_commits(repo_path, since="24 hours ago") -> list[CommitInfo]</interface>
+            </test>
+            <test name="test_discover_commits_by_branch">
+              <assertion>Filters commits by branch name</assertion>
+            </test>
+            <test name="test_discover_commits_empty_result">
+              <assertion>Returns empty list when no commits in range</assertion>
+            </test>
+            <test name="test_commit_info_includes_diff_stats">
+              <assertion>CommitInfo includes files_changed, insertions, deletions</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/unit/test_commit_categorizer.py">
+          <tests>
+            <test name="test_categorize_bug_fix">
+              <assertion>Commits with "fix" in message categorized as BUG_FIX</assertion>
+            </test>
+            <test name="test_categorize_refactor">
+              <assertion>Commits with "refactor" categorized as REFACTOR</assertion>
+            </test>
+            <test name="test_categorize_test_change">
+              <assertion>Commits touching only test files categorized as TEST_CHANGE</assertion>
+            </test>
+            <test name="test_categorize_documentation">
+              <assertion>Commits touching only .md files categorized as DOCUMENTATION</assertion>
+            </test>
+            <test name="test_categorize_feature">
+              <assertion>Commits with "feat" or "add" categorized as FEATURE</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/unit/test_agent_dispatch.py">
+          <tests>
+            <test name="test_dispatch_parallel_agents">
+              <assertion>Dispatches multiple agents concurrently for different categories</assertion>
+            </test>
+            <test name="test_agent_receives_correct_prompt">
+              <assertion>Each agent receives category-specific prompt template</assertion>
+            </test>
+            <test name="test_agent_results_collected">
+              <assertion>All agent results collected before synthesis</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/unit/test_finding_synthesis.py">
+          <tests>
+            <test name="test_synthesize_findings">
+              <assertion>Combines findings from all agents into unified report</assertion>
+            </test>
+            <test name="test_calculate_score">
+              <assertion>Weighted score calculated from criteria</assertion>
+            </test>
+            <test name="test_determine_verdict">
+              <assertion>LEAVE/FIX/REVERT verdict assigned per commit</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/unit/test_tdd_plan_generator.py">
+          <tests>
+            <test name="test_generate_red_phase">
+              <assertion>Generates failing test descriptions for issues</assertion>
+            </test>
+            <test name="test_generate_green_phase">
+              <assertion>Generates minimal fix steps</assertion>
+            </test>
+            <test name="test_generate_refactor_phase">
+              <assertion>Generates cleanup suggestions</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/unit/test_report_generator.py">
+          <tests>
+            <test name="test_generate_xml_report">
+              <assertion>Output is valid XML with required sections</assertion>
+            </test>
+            <test name="test_generate_markdown_report">
+              <assertion>Output is valid markdown with required sections</assertion>
+            </test>
+            <test name="test_report_includes_evidence">
+              <assertion>Each finding includes file:line evidence</assertion>
+            </test>
+          </tests>
+        </file>
+
+        <file path="tests/integration/test_commit_review_e2e.py">
+          <tests>
+            <test name="test_full_review_pipeline">
+              <assertion>End-to-end review from discovery to report</assertion>
+            </test>
+            <test name="test_cli_invocation">
+              <assertion>CLI /review-commits works correctly</assertion>
+            </test>
+          </tests>
+        </file>
+      </test_files>
+
+      <verification>
+        <command>PYTHONPATH=. pytest tests/unit/test_commit_*.py tests/unit/test_finding*.py tests/unit/test_agent*.py tests/unit/test_tdd*.py tests/unit/test_report*.py -v</command>
+        <expected_result>All tests FAIL (implementations don't exist yet)</expected_result>
+      </verification>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>Implement minimum code to make tests pass</description>
+      <implementation_order>
+        <step order="1">
+          <file>swarm_attack/commit_review/models.py</file>
+          <implements>CommitInfo, CommitCategory, Finding, Verdict dataclasses</implements>
+        </step>
+        <step order="2">
+          <file>swarm_attack/commit_review/discovery.py</file>
+          <implements>discover_commits() function using git log</implements>
+        </step>
+        <step order="3">
+          <file>swarm_attack/commit_review/categorizer.py</file>
+          <implements>categorize_commit() function with category rules</implements>
+        </step>
+        <step order="4">
+          <file>swarm_attack/commit_review/prompts.py</file>
+          <implements>Agent prompt templates for each category</implements>
+        </step>
+        <step order="5">
+          <file>swarm_attack/commit_review/dispatcher.py</file>
+          <implements>Parallel agent dispatch using asyncio</implements>
+        </step>
+        <step order="6">
+          <file>swarm_attack/commit_review/synthesis.py</file>
+          <implements>Finding synthesis, scoring, verdict assignment</implements>
+        </step>
+        <step order="7">
+          <file>swarm_attack/commit_review/tdd_generator.py</file>
+          <implements>TDD fix plan generation for actionable issues</implements>
+        </step>
+        <step order="8">
+          <file>swarm_attack/commit_review/report.py</file>
+          <implements>XML and Markdown report generation</implements>
+        </step>
+        <step order="9">
+          <file>swarm_attack/commit_review/__init__.py</file>
+          <implements>Module exports</implements>
+        </step>
+        <step order="10">
+          <file>swarm_attack/cli/review_commits.py</file>
+          <implements>CLI command handler</implements>
+        </step>
+        <step order="11">
+          <file>.claude/skills/commit-quality-review/SKILL.md</file>
+          <implements>Skill definition for Claude Code</implements>
+        </step>
+      </implementation_order>
+
+      <verification>
+        <command>PYTHONPATH=. pytest tests/unit/test_commit_*.py tests/unit/test_finding*.py tests/unit/test_agent*.py tests/unit/test_tdd*.py tests/unit/test_report*.py tests/integration/test_commit_review*.py -v</command>
+        <expected_result>All tests PASS</expected_result>
+      </verification>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>Improve code quality without changing behavior</description>
+      <improvements>
+        <improvement>Extract common patterns into base classes</improvement>
+        <improvement>Add caching for git operations</improvement>
+        <improvement>Add type hints throughout</improvement>
+        <improvement>Add docstrings to public interfaces</improvement>
+      </improvements>
+
+      <verification>
+        <command>PYTHONPATH=. pytest tests/ -v --tb=short</command>
+        <expected_result>ALL tests still pass (no regressions)</expected_result>
+      </verification>
+    </phase>
+  </tdd_protocol>
+
+  <!-- ============================================================ -->
+  <!-- FILE STRUCTURE                                                -->
+  <!-- ============================================================ -->
+  <file_structure>
+    <directory path="swarm_attack/commit_review/">
+      <file name="__init__.py">Module exports</file>
+      <file name="models.py">CommitInfo, CommitCategory, Finding, Verdict, ReviewReport</file>
+      <file name="discovery.py">discover_commits() - git log wrapper</file>
+      <file name="categorizer.py">categorize_commit() - category assignment</file>
+      <file name="prompts.py">Agent prompt templates per category</file>
+      <file name="dispatcher.py">Parallel agent dispatch orchestration</file>
+      <file name="synthesis.py">Finding aggregation, scoring, verdicts</file>
+      <file name="tdd_generator.py">TDD fix plan generation</file>
+      <file name="report.py">XML/Markdown report generation</file>
+    </directory>
+
+    <directory path="swarm_attack/cli/">
+      <file name="review_commits.py">CLI command: /review-commits</file>
+    </directory>
+
+    <directory path=".claude/skills/commit-quality-review/">
+      <file name="SKILL.md">Skill definition for Claude Code invocation</file>
+    </directory>
+
+    <directory path="tests/unit/">
+      <file name="test_commit_discovery.py">Discovery tests</file>
+      <file name="test_commit_categorizer.py">Categorizer tests</file>
+      <file name="test_agent_dispatch.py">Dispatcher tests</file>
+      <file name="test_finding_synthesis.py">Synthesis tests</file>
+      <file name="test_tdd_plan_generator.py">TDD generator tests</file>
+      <file name="test_report_generator.py">Report tests</file>
+    </directory>
+
+    <directory path="tests/integration/">
+      <file name="test_commit_review_e2e.py">End-to-end tests</file>
+    </directory>
+  </file_structure>
+
+  <!-- ============================================================ -->
+  <!-- CLI INTERFACE                                                 -->
+  <!-- ============================================================ -->
+  <cli_interface>
+    <command>/review-commits</command>
+    <alternatives>
+      <alt>/director-review</alt>
+      <alt>/quality-gate</alt>
+    </alternatives>
+    <options>
+      <option flag="--since" default="24 hours ago" type="string">
+        Time range for commits (git date format)
+      </option>
+      <option flag="--branch" default="current" type="string">
+        Branch to review
+      </option>
+      <option flag="--output" default="markdown" type="choice">
+        Output format: xml, json, markdown
+      </option>
+      <option flag="--strict" default="false" type="bool">
+        Fail on any medium+ severity issue
+      </option>
+      <option flag="--save" default="" type="path">
+        Save report to file path
+      </option>
+    </options>
+    <examples>
+      <example>swarm-attack review-commits</example>
+      <example>swarm-attack review-commits --since="1 week ago"</example>
+      <example>swarm-attack review-commits --branch=feature/xyz --strict</example>
+      <example>swarm-attack review-commits --output xml --save report.xml</example>
+    </examples>
+  </cli_interface>
+
+  <!-- ============================================================ -->
+  <!-- CLAUDE CLI INTEGRATION                                        -->
+  <!-- ============================================================ -->
+  <claude_cli_integration>
+    <description>
+      IMPORTANT: Agents must call Claude CLI (not the API directly).
+      This ensures consistency with swarm-attack's existing agent patterns.
+    </description>
+
+    <invocation_pattern>
+      <code><![CDATA[
+# In dispatcher.py _run_agent() method:
+import subprocess
+import json
+
+result = subprocess.run(
+    ["claude", "--print", "--output-format", "json", "-p", prompt],
+    capture_output=True,
+    text=True,
+    timeout=300,
+    cwd=repo_path,
+)
+
+if result.returncode != 0:
+    raise RuntimeError(f"Claude CLI failed: {result.stderr}")
+
+response = json.loads(result.stdout)
+return self._parse_findings(response, commit.sha)
+      ]]></code>
+    </invocation_pattern>
+
+    <reference_implementation>
+      <file>swarm_attack/agents/base.py</file>
+      <description>See BaseAgent._run_claude() for the canonical pattern</description>
+    </reference_implementation>
+
+    <expected_response_format>
+      <description>Claude CLI should return JSON with findings array</description>
+      <schema><![CDATA[
+{
+  "findings": [
+    {
+      "severity": "medium",
+      "category": "production_reliability",
+      "description": "Bug fix without production evidence",
+      "evidence": "fix.py:45",
+      "expert": "Dr. Elena Vasquez"
+    }
+  ]
+}
+      ]]></schema>
+    </expected_response_format>
+
+    <prompt_structure>
+      <description>Prompts are defined in prompts.py per expert category</description>
+      <includes>
+        <include>Commit metadata (sha, author, message)</include>
+        <include>Changed files list</include>
+        <include>Diff content</include>
+        <include>Expert-specific review criteria</include>
+        <include>Expected JSON output format</include>
+      </includes>
+    </prompt_structure>
+  </claude_cli_integration>
+
+  <!-- ============================================================ -->
+  <!-- COO INTEGRATION                                               -->
+  <!-- ============================================================ -->
+  <coo_integration>
+    <description>
+      Integration with COO for midday check-ins and daily digests.
+      The commit-quality-review runs as part of the review pipeline.
+    </description>
+
+    <midday_checkin>
+      <trigger>Runs during each midday check-in (11am, 1pm, 5pm)</trigger>
+      <scope>Reviews commits since last checkpoint</scope>
+      <output>Included in midday-HH.md report under "Commit Quality" section</output>
+      <implementation>
+        <file>coo/src/midday_state.py</file>
+        <method>Add call to swarm-attack review-commits --since={last_checkpoint}</method>
+      </implementation>
+    </midday_checkin>
+
+    <daily_digest>
+      <trigger>Runs as part of nightly consolidated report</trigger>
+      <scope>Reviews all commits from the past 24 hours</scope>
+      <output>Included in daily-logs/YYYY-MM-DD.md under each project section</output>
+      <implementation>
+        <file>coo/src/consolidated_digest.py</file>
+        <method>Add commit_quality_review() call per project</method>
+      </implementation>
+    </daily_digest>
+
+    <skill_registration>
+      <file>projects/swarm-attack/.claude/skills/commit-quality-review/SKILL.md</file>
+      <invocation>/review-commits</invocation>
+    </skill_registration>
+  </coo_integration>
+
+  <!-- ============================================================ -->
+  <!-- ACCEPTANCE CRITERIA                                           -->
+  <!-- ============================================================ -->
+  <acceptance_criteria>
+    <criterion id="AC1">
+      All TDD tests pass (unit + integration)
+    </criterion>
+    <criterion id="AC2">
+      CLI command /review-commits works with all options
+    </criterion>
+    <criterion id="AC3">
+      Skill invocable via Claude Code as /review-commits
+    </criterion>
+    <criterion id="AC4">
+      Reports generated in XML, JSON, and Markdown formats
+    </criterion>
+    <criterion id="AC5">
+      Parallel agent dispatch confirmed (not sequential)
+    </criterion>
+    <criterion id="AC6">
+      COO midday check-in includes commit quality section
+    </criterion>
+    <criterion id="AC7">
+      COO daily digest includes commit quality section
+    </criterion>
+    <criterion id="AC8">
+      TDD fix plans generated for actionable issues
+    </criterion>
+  </acceptance_criteria>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# IMPLEMENTATION PROMPT: Commit Quality Review Skill
+
+## FIRST: Verify Your Working Directory
+
+**Before reading further, run these commands:**
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/commit-quality-skill
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/commit-quality-skill
+git branch   # Must show: * feature/commit-quality-review
+```
+
+**STOP if you're not in the correct worktree.**
+
+---
+
+## Team Structure
+
+You are implementing with guidance from the **Directors of Engineering Review Panel**:
+
+1. **Dr. Elena Vasquez** (Production Reliability) - Skeptical of fixes without production evidence
+2. **Marcus Chen** (Test Coverage) - Skeptical of test mocks that don't match production APIs
+3. **Dr. Aisha Patel** (Code Quality) - Skeptical of "complete" implementations that are partial
+4. **James O'Brien** (Documentation) - Skeptical of docs that are session exhaust, not lasting reference
+5. **Dr. Sarah Kim** (Architecture) - Skeptical of changes that break implicit contracts
+
+Each expert's skepticism informs the prompts for their corresponding agent.
+
+---
+
+## Implementation Rules
+
+1. **Must be TDD** - Write failing tests FIRST. Do not write implementation until tests fail.
+2. **No hardcoded paths** - Use configuration for repo paths
+3. **Parallel dispatch** - Agents must run concurrently, not sequentially
+4. **Evidence required** - Every finding must include file:line references
+
+---
+
+## Phase 1: RED (Write Failing Tests)
+
+Create these test files with failing tests:
+
+1. `tests/unit/test_commit_discovery.py`
+2. `tests/unit/test_commit_categorizer.py`
+3. `tests/unit/test_agent_dispatch.py`
+4. `tests/unit/test_finding_synthesis.py`
+5. `tests/unit/test_tdd_plan_generator.py`
+6. `tests/unit/test_report_generator.py`
+7. `tests/integration/test_commit_review_e2e.py`
+
+Run tests and verify they FAIL:
+```bash
+PYTHONPATH=. pytest tests/unit/test_commit_*.py -v
+# Expected: All tests FAIL (no implementation yet)
+```
+
+---
+
+## Phase 2: GREEN (Implement to Pass)
+
+Implement in this order:
+1. `swarm_attack/commit_review/models.py` - Data models
+2. `swarm_attack/commit_review/discovery.py` - Git log parsing
+3. `swarm_attack/commit_review/categorizer.py` - Commit categorization
+4. `swarm_attack/commit_review/prompts.py` - Agent prompts
+5. `swarm_attack/commit_review/dispatcher.py` - Parallel dispatch
+6. `swarm_attack/commit_review/synthesis.py` - Finding synthesis
+7. `swarm_attack/commit_review/tdd_generator.py` - TDD plan generation
+8. `swarm_attack/commit_review/report.py` - Report generation
+9. `swarm_attack/cli/review_commits.py` - CLI command
+10. `.claude/skills/commit-quality-review/SKILL.md` - Skill definition
+
+Run tests and verify they PASS:
+```bash
+PYTHONPATH=. pytest tests/ -v --tb=short
+# Expected: All tests PASS
+```
+
+---
+
+## Phase 3: REFACTOR
+
+Clean up without changing behavior:
+- Add type hints
+- Extract common patterns
+- Add caching for git operations
+- Verify all tests still pass
+
+---
+
+## Acceptance Criteria
+
+- [ ] All TDD tests pass
+- [ ] CLI /review-commits works
+- [ ] Skill invocable as /review-commits
+- [ ] Reports in XML, JSON, Markdown formats
+- [ ] Parallel agent dispatch confirmed
+- [ ] COO integration tested
+
+---
+
+## DO NOT
+
+- Implement before tests fail
+- Use sequential agent dispatch
+- Skip the worktree verification
+- Hardcode repository paths
+- Generate findings without file:line evidence
+  ]]></implementation_prompt>
+</implementation_spec>
