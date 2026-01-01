@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Continue Bug Bash Session
+
+  APPROACH: Supervisor Mode - Use swarm-attack bug bash to fix internal bugs
+
+  Created: 2025-12-31
+  Status: Session interrupted - 1 bug fixed, 5 remaining
+  Priority: HIGH - Complete bug fixes to unblock dispatcher implementation
+-->
+<continuation_prompt>
+  <metadata>
+    <task>Continue fixing swarm-attack internal bugs via bug bash pipeline</task>
+    <repo>/Users/philipjcortes/Desktop/swarm-attack</repo>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs</worktree>
+    <branch>fix/swarm-internal-bugs</branch>
+    <target_branch>master</target_branch>
+    <created>2025-12-31</created>
+    <priority>HIGH</priority>
+    <mode>SUPERVISOR</mode>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- PREVIOUS SESSION SUMMARY                                      -->
+  <!-- ============================================================ -->
+  <previous_session_summary>
+    <what_was_done>
+      <item status="fixed">BUG-006/007: Session initialization parsing error - CRITICAL bug fixed</item>
+      <item status="analyzed">BUG-004: Issues not persisted - Fix plan ready but failed to apply due to coder syntax error</item>
+      <item status="discovered">META-BUG-001: --auto flag doesn't skip confirmation (workaround: pipe 'y')</item>
+      <item status="discovered">META-BUG-002: bug fix coder can produce syntax errors</item>
+    </what_was_done>
+
+    <commits>
+      <commit hash="4b62aa0">fix(session): correct pytest failure parsing regex</commit>
+    </commits>
+
+    <analysis_cost>$3.49 total ($1.60 for BUG-006/007, $1.89 for BUG-004)</analysis_cost>
+  </previous_session_summary>
+
+  <!-- ============================================================ -->
+  <!-- ENVIRONMENT SETUP                                             -->
+  <!-- ============================================================ -->
+  <setup>
+    <commands><![CDATA[
+# Switch to the worktree (already created)
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+git branch   # Must show: * fix/swarm-internal-bugs
+
+# Check status
+git status --short
+git log --oneline -3
+
+# Read the session log
+cat .swarm/bugs/2025-12-31_bug-bash-session.md
+    ]]></commands>
+  </setup>
+
+  <!-- ============================================================ -->
+  <!-- REMAINING BUGS TO FIX                                         -->
+  <!-- ============================================================ -->
+  <bugs_remaining>
+    <bug id="BUG-004" priority="1" status="FIX_PLAN_READY">
+      <component>swarm_attack/cli/feature.py (issues command)</component>
+      <description>Issues created but not saved to state when validation fails</description>
+      <root_cause>
+        The `issues` command creates `issues.json` but never populates `state.tasks`.
+        Tasks are only loaded from `issues.json` in the `greenlight` command (lines 1140-1180).
+        When validation fails, state.tasks stays empty despite "Created 5 issues" message.
+      </root_cause>
+      <fix_plan_location>.swarm/bugs/issues-not-persisted/fix-plan.md</fix_plan_location>
+      <action>
+        Apply fix manually per fix-plan.md:
+        1. Add _load_tasks_from_issues() helper function after line 37 (before app = typer.Typer)
+        2. Replace inline task loading in greenlight() with helper call
+        3. Add helper call in issues() after IssueCreatorAgent succeeds
+        IMPORTANT: Ensure proper newlines between functions to avoid syntax errors
+      </action>
+    </bug>
+
+    <bug id="BUG-001" priority="2" status="NOT_STARTED">
+      <component>swarm-attack run (SpecCritic agent)</component>
+      <description>Codex rate limit reached during critic review</description>
+      <note>debate_retry.py already exists with exponential backoff - may just need integration</note>
+      <files_to_check>
+        <file>swarm_attack/debate_retry.py</file>
+        <file>swarm_attack/orchestrator.py</file>
+        <file>swarm_attack/agents/spec_critic.py</file>
+      </files_to_check>
+    </bug>
+
+    <bug id="BUG-003" priority="3" status="NOT_STARTED">
+      <component>swarm-attack issues (ComplexityGate validation)</component>
+      <description>Codex authentication error during issue validation</description>
+    </bug>
+
+    <bug id="BUG-005" priority="3" status="NOT_STARTED">
+      <component>swarm-attack run (Coder agent)</component>
+      <description>Vague "Error: None" on implementation failure</description>
+    </bug>
+
+    <bug id="BUG-002" priority="4" status="NOT_STARTED">
+      <component>swarm-attack approve (State Machine)</component>
+      <description>Feature stuck in "Review Needed" phase after critic rate limit</description>
+    </bug>
+  </bugs_remaining>
+
+  <!-- ============================================================ -->
+  <!-- BUG BASH COMMANDS                                             -->
+  <!-- ============================================================ -->
+  <bug_bash_commands>
+    <command name="init">
+      <syntax>swarm-attack bug init "description" --id BUG-ID --test tests/path.py -e "error"</syntax>
+    </command>
+    <command name="analyze">
+      <syntax>swarm-attack bug analyze BUG-ID</syntax>
+      <note>Runs BugResearcher + RootCauseAnalyzer + FixPlanner debate</note>
+    </command>
+    <command name="approve">
+      <syntax>echo "y" | swarm-attack bug approve BUG-ID</syntax>
+      <note>Use pipe because --auto flag is broken (META-BUG-001)</note>
+    </command>
+    <command name="fix">
+      <syntax>swarm-attack bug fix BUG-ID</syntax>
+      <note>May have syntax errors (META-BUG-002) - verify changes and fix if needed</note>
+    </command>
+    <command name="list">
+      <syntax>swarm-attack bug list</syntax>
+    </command>
+    <command name="status">
+      <syntax>swarm-attack bug status BUG-ID</syntax>
+    </command>
+  </bug_bash_commands>
+
+  <!-- ============================================================ -->
+  <!-- KEY LEARNINGS FROM PREVIOUS SESSION                           -->
+  <!-- ============================================================ -->
+  <learnings>
+    <learning id="1">
+      <title>Bug bash coder can produce syntax errors</title>
+      <description>The bug fix coder may insert code without proper newlines, causing syntax errors</description>
+      <action>After `bug fix`, always verify changes with `git diff` and test with `python -c "import module"`</action>
+    </learning>
+
+    <learning id="2">
+      <title>--auto flag doesn't work</title>
+      <description>The --auto flag on `bug approve` still prompts for confirmation</description>
+      <action>Use `echo "y" | swarm-attack bug approve BUG-ID` instead</action>
+    </learning>
+
+    <learning id="3">
+      <title>Pytest failure regex was wrong</title>
+      <description>Pytest output format is `FAILED [ 75%]` with space inside brackets</description>
+      <fix>Regex changed to require `::` separator: `r"FAILED\s+([\w/._-]+::[\w:]+)"`</fix>
+    </learning>
+
+    <learning id="4">
+      <title>Bug bash analysis costs ~$1.5-2 per bug</title>
+      <description>Full analysis (BugResearcher + RootCauseAnalyzer + FixPlanner + debate) costs about $1.5-2</description>
+    </learning>
+  </learnings>
+
+  <!-- ============================================================ -->
+  <!-- SUPERVISOR WORKFLOW                                           -->
+  <!-- ============================================================ -->
+  <workflow>
+    <step order="1">
+      <action>Apply BUG-004 fix manually</action>
+      <rationale>Bug bash failed to apply fix correctly. Apply manually per fix-plan.md</rationale>
+      <commands><![CDATA[
+# Read the fix plan
+cat .swarm/bugs/issues-not-persisted/fix-plan.md
+
+# Apply changes manually to swarm_attack/cli/feature.py:
+# 1. Add _load_tasks_from_issues() helper after imports, before app = typer.Typer
+# 2. Replace inline task loading in greenlight() with helper call
+# 3. Add helper call in issues() after IssueCreatorAgent succeeds
+
+# Verify no syntax errors
+python -c "from swarm_attack.cli.feature import app; print('OK')"
+
+# Run tests
+PYTHONPATH=. pytest tests/cli/test_feature_issues.py -v --tb=short
+      ]]></commands>
+    </step>
+
+    <step order="2">
+      <action>Commit BUG-004 fix</action>
+      <commands><![CDATA[
+git add swarm_attack/cli/feature.py
+git commit -m "$(cat <<'EOF'
+fix(cli): populate state.tasks in issues command before validation
+
+BUG-004: Issues created but not saved to state when validation fails.
+Tasks were only loaded in greenlight(), not in issues().
+
+Fix: Extract task loading into _load_tasks_from_issues() helper and
+call it from both commands. Now state.tasks is populated even if
+validation fails.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+      ]]></commands>
+    </step>
+
+    <step order="3">
+      <action>Fix remaining bugs using bug bash</action>
+      <commands><![CDATA[
+# For each remaining bug (BUG-001, BUG-003, BUG-005, BUG-002):
+# 1. Initialize
+swarm-attack bug init "description" --id bug-id --test tests/path.py -e "error"
+
+# 2. Analyze
+swarm-attack bug analyze bug-id
+
+# 3. Approve (use pipe workaround)
+echo "y" | swarm-attack bug approve bug-id
+
+# 4. Apply fix
+swarm-attack bug fix bug-id
+
+# 5. Verify fix (check for syntax errors!)
+git diff
+python -c "from swarm_attack.module import Class; print('OK')"
+PYTHONPATH=. pytest tests/relevant/ -v
+
+# 6. Fix any syntax errors manually if needed
+# 7. Commit
+      ]]></commands>
+    </step>
+
+    <step order="4">
+      <action>Update session log and finalize</action>
+      <commands><![CDATA[
+# Update session log
+cat > .swarm/bugs/2025-12-31_bug-bash-session.md << 'EOF'
+# Bug Bash Session Log - FINAL
+...update with results...
+EOF
+
+# Commit all bug investigation artifacts
+git add .swarm/bugs/
+git commit -m "docs: update bug bash session log with final results"
+
+# Push and merge
+git push origin fix/swarm-internal-bugs
+cd /Users/philipjcortes/Desktop/swarm-attack
+git fetch origin fix/swarm-internal-bugs
+git merge origin/fix/swarm-internal-bugs --no-edit
+git push origin master
+
+# Cleanup worktree
+git worktree remove /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-swarm-bugs
+      ]]></commands>
+    </step>
+  </workflow>
+
+  <!-- ============================================================ -->
+  <!-- SUCCESS CRITERIA                                              -->
+  <!-- ============================================================ -->
+  <success_criteria>
+    <criterion>All 6 bugs are fixed (BUG-001 through BUG-007, where 006/007 are same)</criterion>
+    <criterion>All fixes are committed to master branch</criterion>
+    <criterion>Session log is complete with all findings</criterion>
+    <criterion>Worktree is cleaned up</criterion>
+    <criterion>dispatcher-claude-cli implementation can resume</criterion>
+  </success_criteria>
+
+  <!-- ============================================================ -->
+  <!-- KEY FILES REFERENCE                                           -->
+  <!-- ============================================================ -->
+  <key_files>
+    <file purpose="Session log">
+      .swarm/bugs/2025-12-31_bug-bash-session.md
+    </file>
+    <file purpose="BUG-004 fix plan (READY TO APPLY)">
+      .swarm/bugs/issues-not-persisted/fix-plan.md
+    </file>
+    <file purpose="BUG-006/007 fix (ALREADY APPLIED)">
+      swarm_attack/session_initializer.py
+      swarm_attack/session_finalizer.py
+    </file>
+    <file purpose="BUG-004 target file">
+      swarm_attack/cli/feature.py
+    </file>
+    <file purpose="Debate retry (may help BUG-001)">
+      swarm_attack/debate_retry.py
+    </file>
+  </key_files>
+</continuation_prompt>
