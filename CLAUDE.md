@@ -181,6 +181,36 @@ swarm-attack bug fix bug-id           # Apply fix
 | `review-commits --output xml\|json\|markdown` | Set output format |
 | `review-commits --save PATH` | Save report to file |
 
+### Research Commands (Open Source Librarian)
+
+| Command | Description |
+|---------|-------------|
+| `research "query"` | Research external libraries with evidence-backed responses |
+| `research "query" --depth quick` | Quick lookup (less thorough) |
+| `research "query" --depth thorough` | Deep comprehensive research |
+| `research "query" --library NAME` | Focus on specific library |
+| `research "query" --type TYPE` | Override request type (conceptual, implementation, context, comprehensive) |
+
+**Example:**
+```bash
+# Basic research
+swarm-attack research "How do I use pydantic validators?"
+
+# Focused search
+swarm-attack research "retry logic" --library tenacity --depth quick
+
+# Implementation details
+swarm-attack research "connection pooling" --library httpx --type implementation
+```
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `.claude/skills/open-source-librarian/SKILL.md` | Agent skill prompt |
+| `swarm_attack/agents/librarian.py` | Agent implementation |
+| `swarm_attack/cli/research.py` | CLI command handler |
+| `docs/LIBRARIAN.md` | Full documentation |
+
 ## Project Structure
 
 ```

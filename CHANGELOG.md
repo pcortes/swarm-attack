@@ -2,6 +2,34 @@
 
 All notable changes to Swarm Attack are documented here.
 
+## [0.4.0] - 2026-01-01
+
+### Added
+
+- **Open Source Librarian Agent** - Specialized research agent for external library documentation
+  - Evidence-backed responses with verified GitHub permalinks
+  - Request type classification (conceptual, implementation, context, comprehensive)
+  - Never fabricates - admits uncertainty when evidence insufficient
+  - Uses commit SHAs for stable permalinks
+
+- **New CLI Command: `swarm-attack research`**
+  - `--depth` option (quick, medium, thorough)
+  - `--library` option to focus on specific library
+  - `--type` option to override request classification
+  - Rich console output with citations and confidence scores
+
+### Files Added
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/agents/librarian.py` | LibrarianAgent implementation |
+| `swarm_attack/cli/research.py` | CLI command handler |
+| `.claude/skills/open-source-librarian/SKILL.md` | Agent skill prompt |
+| `docs/LIBRARIAN.md` | Full documentation |
+| `tests/unit/librarian/test_librarian_agent.py` | Unit tests (14 tests) |
+
+---
+
 ## [0.3.1] - 2025-12-31
 
 ### Bug Fixes

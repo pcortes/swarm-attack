@@ -103,6 +103,11 @@ from swarm_attack.cli.qa import qa_app
 
 app.add_typer(qa_app, name="qa")
 
+# Import and register research commands (Open Source Librarian)
+from swarm_attack.cli.research import app as research_app
+
+app.add_typer(research_app, name="research")
+
 
 # =========================================================================
 # Entry Point

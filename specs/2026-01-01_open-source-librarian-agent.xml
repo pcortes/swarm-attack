@@ -1,0 +1,618 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<expert_team_analysis>
+  <metadata>
+    <date>2026-01-01</date>
+    <project>swarm-attack</project>
+    <objective>Leverage open-source-librarian pattern with Opus 4.5 best practices</objective>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian</working_directory>
+    <branch>feature/open-source-librarian</branch>
+  </metadata>
+
+  <first_verify_working_directory>
+    <instructions>
+      Before reading further, run these commands:
+
+      ```bash
+      cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+      pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+      git branch   # Must show: * feature/open-source-librarian
+      ```
+
+      STOP if you are not in the correct worktree.
+    </instructions>
+  </first_verify_working_directory>
+
+  <team_structure>
+    <expert id="1">
+      <name>Dr. Marcus Webb</name>
+      <title>Director of Multi-Agent Architecture</title>
+      <expertise>Agent orchestration, context management, token economics</expertise>
+      <focus>How the librarian pattern fits swarm-attack's thick-agent model</focus>
+    </expert>
+    <expert id="2">
+      <name>Dr. Elena Rodriguez</name>
+      <title>Director of Information Retrieval</title>
+      <expertise>Code search, RAG systems, citation accuracy</expertise>
+      <focus>Evidence-based responses with GitHub permalinks</focus>
+    </expert>
+    <expert id="3">
+      <name>James Chen</name>
+      <title>Director of Developer Experience</title>
+      <expertise>Tool integration, MCP servers, CLI workflows</expertise>
+      <focus>Integrating context7, grep.app, gh CLI into unified workflow</focus>
+    </expert>
+    <expert id="4">
+      <name>Dr. Aisha Patel</name>
+      <title>Director of Cost Optimization</title>
+      <expertise>Token budgets, model selection, caching strategies</expertise>
+      <focus>Haiku for search, Sonnet for synthesis, Opus for orchestration</focus>
+    </expert>
+    <expert id="5">
+      <name>Dr. Sarah Kim</name>
+      <title>Chief Architect</title>
+      <expertise>System design, API contracts, integration patterns</expertise>
+      <focus>How librarian agent interfaces with existing swarm-attack agents</focus>
+    </expert>
+  </team_structure>
+
+  <analysis>
+    <section id="1">
+      <title>Pattern Classification</title>
+      <expert_ref>Dr. Marcus Webb</expert_ref>
+      <finding>
+        The open-source-librarian is a SPECIALIZED RESEARCH AGENT that:
+        - Classifies requests into 4 types (Conceptual, Implementation, Context, Comprehensive)
+        - Uses parallel tool execution (3-6+ calls minimum per request type)
+        - Produces evidence-backed responses with GitHub permalinks
+        - Never fabricates - admits uncertainty when evidence insufficient
+      </finding>
+      <recommendation>
+        This pattern complements swarm-attack's existing agents. The librarian provides
+        EXTERNAL KNOWLEDGE while existing agents (SpecAuthor, Coder, etc.) operate on
+        INTERNAL CODEBASE. Integration point: Universal Context Builder.
+      </recommendation>
+    </section>
+
+    <section id="2">
+      <title>Tool Integration Map</title>
+      <expert_ref>James Chen</expert_ref>
+      <finding>
+        The librarian requires 7 tool categories not currently in swarm-attack:
+        <tool_gap_analysis>
+          <tool name="context7" status="NEW">Official docs via MCP - resolve-library-id + query-docs</tool>
+          <tool name="websearch_exa" status="NEW">Exa search for recent articles/discussions</tool>
+          <tool name="grep_app" status="NEW">grep.app for fast GitHub code search</tool>
+          <tool name="gh_cli" status="EXISTS">Already available but needs deeper integration</tool>
+          <tool name="webfetch" status="EXISTS">Available in Claude Code</tool>
+          <tool name="git_blame" status="PARTIAL">git_helpers.py has some, needs expansion</tool>
+          <tool name="LSP" status="EXISTS">Available but underutilized</tool>
+        </tool_gap_analysis>
+      </finding>
+      <recommendation>
+        Install MCP servers:
+        - @anthropic/context7 for official library documentation
+        - @anthropic/exa for web search
+        - grep.app for code search (or use gh CLI as fallback)
+      </recommendation>
+    </section>
+
+    <section id="3">
+      <title>Model Selection Strategy</title>
+      <expert_ref>Dr. Aisha Patel</expert_ref>
+      <finding>
+        Per Opus 4.5 best practices, the librarian should use TIERED MODELS:
+        <model_allocation>
+          <task model="haiku-4.5">Initial request classification (TYPE A/B/C/D)</task>
+          <task model="haiku-4.5">Parallel tool execution (grep_app, context7)</task>
+          <task model="sonnet-4.5">Evidence synthesis and response generation</task>
+          <task model="opus-4.5">Complex comprehensive requests (TYPE D only)</task>
+        </model_allocation>
+      </finding>
+      <cost_projection>
+        <scenario name="Simple conceptual (TYPE A)">
+          3 parallel Haiku calls (~$0.003) + 1 Sonnet synthesis (~$0.02) = ~$0.023
+        </scenario>
+        <scenario name="Implementation reference (TYPE B)">
+          4 parallel Haiku calls (~$0.004) + repo clone + 1 Sonnet synthesis = ~$0.03
+        </scenario>
+        <scenario name="Comprehensive research (TYPE D)">
+          6+ parallel Haiku calls + Opus synthesis = ~$0.15-0.25
+        </scenario>
+      </cost_projection>
+      <recommendation>
+        Set model in skill definition: `model: sonnet` for default, with dynamic
+        escalation to Opus only for TYPE D comprehensive requests.
+      </recommendation>
+    </section>
+
+    <section id="4">
+      <title>Integration Architecture</title>
+      <expert_ref>Dr. Sarah Kim</expert_ref>
+      <finding>
+        The librarian agent should integrate at THREE points in swarm-attack:
+        <integration_point id="1">
+          <name>SpecAuthor Enhancement</name>
+          <use_case>When writing specs, query librarian for API patterns, best practices</use_case>
+          <trigger>SpecAuthor encounters unknown library/framework</trigger>
+          <flow>SpecAuthor -> Librarian -> Evidence-backed spec sections</flow>
+        </integration_point>
+        <integration_point id="2">
+          <name>Coder Implementation Support</name>
+          <use_case>When coder encounters unfamiliar API, get implementation examples</use_case>
+          <trigger>Coder blocked on library usage</trigger>
+          <flow>Coder -> Librarian -> GitHub permalinks + code examples</flow>
+        </integration_point>
+        <integration_point id="3">
+          <name>Chief of Staff Research</name>
+          <use_case>During standup/planning, research external dependencies</use_case>
+          <trigger>cos standup detects external library updates</trigger>
+          <flow>ChiefOfStaff -> Librarian -> Dependency update assessment</flow>
+        </integration_point>
+      </finding>
+      <api_contract>
+        <input>
+          query: str  # Natural language question
+          request_type: Optional[Literal["conceptual", "implementation", "context", "comprehensive"]]
+          libraries: Optional[list[str]]  # Specific libraries to focus on
+          depth: Literal["quick", "medium", "thorough"]
+        </input>
+        <output>
+          answer: str  # Markdown formatted response
+          citations: list[Citation]  # GitHub permalinks with context
+          confidence: float  # 0.0-1.0
+          tools_used: list[str]  # For observability
+        </output>
+      </api_contract>
+    </section>
+
+    <section id="5">
+      <title>Evidence Quality Protocol</title>
+      <expert_ref>Dr. Elena Rodriguez</expert_ref>
+      <finding>
+        The librarian's value is VERIFIABLE TRUTH via permalinks. Key requirements:
+        <requirement id="1">Every code claim must have GitHub permalink</requirement>
+        <requirement id="2">Permalinks must use commit SHA (not branch/tag)</requirement>
+        <requirement id="3">Line numbers must be accurate (re-verify after edits)</requirement>
+        <requirement id="4">When uncertain, state "I could not verify this" explicitly</requirement>
+      </finding>
+      <permalink_format>
+        https://github.com/{owner}/{repo}/blob/{sha}/{path}#L{start}-L{end}
+      </permalink_format>
+      <verification_workflow>
+        1. Clone repo with --depth 1 to temp directory
+        2. Get HEAD SHA: git rev-parse HEAD
+        3. Search for code pattern with grep/ast-grep
+        4. Read file and verify line numbers
+        5. Construct permalink with verified SHA and lines
+        6. Include code snippet in response for redundancy
+      </verification_workflow>
+    </section>
+  </analysis>
+
+  <implementation_plan>
+    <phase id="0" name="Worktree Setup">
+      <title>Initialize Working Environment</title>
+      <prerequisite>MUST COMPLETE BEFORE ANY OTHER PHASE</prerequisite>
+      <tasks>
+        <task id="0.1">
+          <description>Verify worktree exists and is on correct branch</description>
+          <commands>
+            cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+            pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+            git branch   # Must show: * feature/open-source-librarian
+            git status   # Should be clean
+          </commands>
+          <acceptance_criteria>
+            - Working directory is correct worktree path
+            - Branch is feature/open-source-librarian
+            - No uncommitted changes from prior work
+          </acceptance_criteria>
+        </task>
+        <task id="0.2">
+          <description>Create directory structure for new agent</description>
+          <commands>
+            mkdir -p .claude/skills/open-source-librarian
+            mkdir -p swarm_attack/agents
+            mkdir -p tests/unit
+            mkdir -p tests/integration
+            mkdir -p specs
+          </commands>
+          <acceptance_criteria>
+            - All directories exist
+            - No conflicts with existing files
+          </acceptance_criteria>
+        </task>
+        <task id="0.3">
+          <description>Verify test infrastructure works</description>
+          <commands>
+            PYTHONPATH=. pytest tests/unit/ -v --tb=short -x --collect-only | head -20
+          </commands>
+          <acceptance_criteria>
+            - pytest can discover existing tests
+            - No import errors
+          </acceptance_criteria>
+        </task>
+      </tasks>
+      <gate>DO NOT PROCEED until all 0.x tasks pass</gate>
+    </phase>
+
+    <phase id="1" name="Foundation">
+      <title>Create Librarian Agent Skeleton</title>
+      <tasks>
+        <task id="1.1">
+          <description>Create skill definition at .claude/skills/open-source-librarian/SKILL.md</description>
+          <content_summary>
+            - Request type classification logic
+            - Tool configuration (context7, exa, grep_app, gh)
+            - Model selection: sonnet default
+            - Parallel execution requirements by type
+          </content_summary>
+          <acceptance_criteria>
+            - Skill loads via existing skill_loader.py
+            - Prompt includes all 4 request types
+            - Tools list matches available MCP servers
+          </acceptance_criteria>
+        </task>
+        <task id="1.2">
+          <description>Create LibrarianAgent class in swarm_attack/agents/librarian.py</description>
+          <interface_contract>
+            class LibrarianAgent(BaseAgent):
+                def classify_request(self, query: str) -> RequestType
+                def run(self, context: dict) -> AgentResult
+          </interface_contract>
+          <acceptance_criteria>
+            - Inherits from BaseAgent
+            - Uses CLIRunner for Claude CLI subprocess
+            - Returns structured AgentResult with citations
+          </acceptance_criteria>
+        </task>
+      </tasks>
+      <tdd_protocol>
+        <red>Write test_librarian.py with test_classify_request_conceptual, test_classify_request_implementation, etc.</red>
+        <green>Implement classification logic using pattern matching on query</green>
+        <refactor>Extract patterns to constants for maintainability</refactor>
+      </tdd_protocol>
+    </phase>
+
+    <phase id="2" name="Tool Integration">
+      <title>Configure MCP Servers</title>
+      <tasks>
+        <task id="2.1">
+          <description>Install and configure context7 MCP server</description>
+          <commands>
+            npm install -g @anthropic/mcp-server-context7
+            # Add to .claude/settings.json mcpServers section
+          </commands>
+          <verification>
+            context7_resolve-library-id("react-query") returns valid ID
+          </verification>
+        </task>
+        <task id="2.2">
+          <description>Install and configure Exa MCP server</description>
+          <commands>
+            npm install -g @anthropic/mcp-server-exa
+            # Configure EXA_API_KEY in environment
+          </commands>
+          <verification>
+            websearch_exa("tanstack query 2026") returns results
+          </verification>
+        </task>
+        <task id="2.3">
+          <description>Verify gh CLI integration</description>
+          <verification>
+            gh repo clone tanstack/query /tmp/test-repo -- --depth 1
+            gh search code "useQuery" --repo tanstack/query
+          </verification>
+        </task>
+      </tasks>
+    </phase>
+
+    <phase id="3" name="Parallel Execution">
+      <title>Implement Multi-Tool Orchestration</title>
+      <tasks>
+        <task id="3.1">
+          <description>Create tool dispatcher with asyncio.gather</description>
+          <pattern>
+            async def dispatch_tools(request_type: RequestType, query: str):
+                if request_type == RequestType.CONCEPTUAL:
+                    tasks = [
+                        context7_query(query),
+                        exa_search(query),
+                        grep_app_search(query),
+                    ]
+                    return await asyncio.gather(*tasks)
+          </pattern>
+          <acceptance_criteria>
+            - Minimum 3 parallel calls for TYPE A
+            - Minimum 4 parallel calls for TYPE B
+            - Minimum 6 parallel calls for TYPE D
+            - All calls complete within 30s timeout
+          </acceptance_criteria>
+        </task>
+        <task id="3.2">
+          <description>Implement result synthesis with citation extraction</description>
+          <acceptance_criteria>
+            - Extract GitHub URLs from all tool responses
+            - Validate permalink format (owner/repo/blob/sha/path#lines)
+            - Merge duplicate citations
+            - Rank by relevance
+          </acceptance_criteria>
+        </task>
+      </tasks>
+    </phase>
+
+    <phase id="4" name="Agent Integration">
+      <title>Wire to Existing Agents</title>
+      <tasks>
+        <task id="4.1">
+          <description>Add librarian context injection to SpecAuthor</description>
+          <integration>
+            # In spec_author.py, when detecting external library references:
+            if self._detects_library_reference(prd):
+                librarian = LibrarianAgent(config)
+                research = librarian.run({"query": f"Best practices for {library}"})
+                context["library_research"] = research.citations
+          </integration>
+        </task>
+        <task id="4.2">
+          <description>Add librarian fallback to Coder</description>
+          <integration>
+            # In coder.py, when implementation blocked:
+            if self._is_blocked_on_library():
+                librarian = LibrarianAgent(config)
+                examples = librarian.run({
+                    "query": f"How to implement {pattern} with {library}",
+                    "request_type": "implementation"
+                })
+                self._inject_examples(examples.citations)
+          </integration>
+        </task>
+        <task id="4.3">
+          <description>Add CLI command for standalone usage</description>
+          <command>swarm-attack research "How does React Query handle stale time?"</command>
+          <acceptance_criteria>
+            - Outputs markdown with citations
+            - Respects --depth quick|medium|thorough
+            - Supports --library filter
+          </acceptance_criteria>
+        </task>
+      </tasks>
+    </phase>
+
+    <phase id="5" name="Quality Gates">
+      <title>Verification and Testing</title>
+      <tasks>
+        <task id="5.1">
+          <description>Create integration tests</description>
+          <tests>
+            - test_librarian_conceptual_react_query
+            - test_librarian_implementation_zod_email
+            - test_librarian_context_nextjs_routing
+            - test_librarian_comprehensive_tanstack
+          </tests>
+          <acceptance_criteria>
+            - Each test verifies citation count >= expected minimum
+            - Each test verifies permalinks are valid (returns 200)
+            - Each test verifies answer relevance (keyword presence)
+          </acceptance_criteria>
+        </task>
+        <task id="5.2">
+          <description>Add to commit quality review</description>
+          <enhancement>
+            When reviewing commits that add external dependencies,
+            trigger librarian to verify usage patterns match best practices.
+          </enhancement>
+        </task>
+      </tasks>
+    </phase>
+
+    <phase id="6" name="Documentation">
+      <title>Update All Documentation</title>
+      <prerequisite>ALL prior phases must be complete and tests passing</prerequisite>
+      <tasks>
+        <task id="6.1">
+          <description>Update CLAUDE.md with librarian agent section</description>
+          <file>/Users/philipjcortes/Desktop/swarm-attack/CLAUDE.md</file>
+          <content_to_add>
+            ## Open Source Librarian Agent
+
+            ### Overview
+            Specialized research agent for external library documentation with evidence-backed responses.
+
+            ### CLI Commands
+            | Command | Description |
+            |---------|-------------|
+            | `research "query"` | Query librarian for library information |
+            | `research "query" --depth thorough` | Deep comprehensive research |
+            | `research "query" --library react-query` | Focus on specific library |
+
+            ### Request Types
+            | Type | Trigger | Tools Used |
+            |------|---------|------------|
+            | CONCEPTUAL | "How do I...", "Best practice for..." | context7 + exa + grep_app |
+            | IMPLEMENTATION | "Show me source of...", "How does X implement..." | gh clone + read + blame |
+            | CONTEXT | "Why was this changed?", "History of..." | gh issues/prs + git log |
+            | COMPREHENSIVE | Complex/ambiguous requests | ALL tools in parallel |
+
+            ### Key Files
+            | File | Purpose |
+            |------|---------|
+            | `.claude/skills/open-source-librarian/SKILL.md` | Skill prompt |
+            | `swarm_attack/agents/librarian.py` | Agent implementation |
+            | `swarm_attack/cli/research.py` | CLI command handler |
+          </content_to_add>
+          <acceptance_criteria>
+            - Section added to Agent Overview table
+            - CLI commands documented
+            - Key files listed
+          </acceptance_criteria>
+        </task>
+        <task id="6.2">
+          <description>Update README.md with feature highlight</description>
+          <file>/Users/philipjcortes/Desktop/swarm-attack/README.md</file>
+          <content_to_add>
+            ### Open Source Librarian
+            Research external libraries with evidence-backed responses and GitHub permalinks.
+            ```bash
+            swarm-attack research "How does React Query handle caching?"
+            ```
+          </content_to_add>
+          <acceptance_criteria>
+            - Quick start example added
+            - Feature listed in capabilities section
+          </acceptance_criteria>
+        </task>
+        <task id="6.3">
+          <description>Create dedicated docs/LIBRARIAN.md</description>
+          <file>/Users/philipjcortes/Desktop/swarm-attack/docs/LIBRARIAN.md</file>
+          <content_sections>
+            - Overview and purpose
+            - Request type classification
+            - Tool integration details
+            - Model selection strategy
+            - Citation format and verification
+            - Integration with other agents
+            - Cost projections
+            - Troubleshooting
+          </content_sections>
+          <acceptance_criteria>
+            - Comprehensive standalone documentation
+            - All 4 request types explained with examples
+            - Cost estimates included
+          </acceptance_criteria>
+        </task>
+        <task id="6.4">
+          <description>Update COO archive with spec</description>
+          <action>
+            Copy this spec to COO archive:
+            /Users/philipjcortes/Desktop/coo/projects/swarm-attack/specs/2026-01-01_open-source-librarian-agent.md
+          </action>
+          <acceptance_criteria>
+            - Spec archived in COO
+            - COO INDEX.md updated
+          </acceptance_criteria>
+        </task>
+        <task id="6.5">
+          <description>Generate CHANGELOG entry</description>
+          <file>/Users/philipjcortes/Desktop/swarm-attack/CHANGELOG.md</file>
+          <content_to_add>
+            ## [0.4.0] - 2026-01-01
+
+            ### Added
+            - Open Source Librarian agent for evidence-backed library research
+            - `swarm-attack research` CLI command
+            - Integration with SpecAuthor and Coder agents
+            - Support for context7, Exa, and grep.app MCP servers
+            - GitHub permalink generation with SHA verification
+          </content_to_add>
+          <acceptance_criteria>
+            - Version bumped appropriately
+            - All new features listed
+            - Breaking changes noted (if any)
+          </acceptance_criteria>
+        </task>
+      </tasks>
+      <gate>Documentation review by team before merge</gate>
+    </phase>
+  </implementation_plan>
+
+  <opus_4_5_best_practices_applied>
+    <practice id="1">
+      <name>Tiered Model Selection</name>
+      <application>
+        Haiku for classification + parallel search (cheap, fast)
+        Sonnet for synthesis (balanced)
+        Opus only for TYPE D comprehensive (expensive, highest quality)
+      </application>
+    </practice>
+    <practice id="2">
+      <name>Parallel Tool Execution</name>
+      <application>
+        All request types execute 3+ tools in parallel via asyncio.gather.
+        No sequential waiting except for dependencies (clone -> search).
+      </application>
+    </practice>
+    <practice id="3">
+      <name>Context Management</name>
+      <application>
+        Each librarian invocation is isolated (no context bleed).
+        Citations returned as structured data for orchestrator to cache.
+        UniversalContextBuilder injects library research into agent prompts.
+      </application>
+    </practice>
+    <practice id="4">
+      <name>Specialized Agent</name>
+      <application>
+        Single responsibility: research external libraries with evidence.
+        Does NOT write code, does NOT modify files, does NOT implement.
+        Clear boundary with Coder/SpecAuthor agents.
+      </application>
+    </practice>
+    <practice id="5">
+      <name>Prompt Engineering for Opus 4.5</name>
+      <application>
+        - Avoid "CRITICAL/MUST" language -> use "Use this tool when..."
+        - Explicit exploration instructions before synthesis
+        - Date awareness (current year in searches)
+        - Request type classification before action
+      </application>
+    </practice>
+  </opus_4_5_best_practices_applied>
+
+  <risk_assessment>
+    <risk id="1" severity="MEDIUM">
+      <name>MCP Server Availability</name>
+      <description>context7 and exa require external services</description>
+      <mitigation>Implement fallback to gh CLI + webfetch when MCP unavailable</mitigation>
+    </risk>
+    <risk id="2" severity="LOW">
+      <name>Stale Permalinks</name>
+      <description>Using HEAD SHA means links may become stale</description>
+      <mitigation>Include code snippet in response for redundancy; consider pinning to release tags</mitigation>
+    </risk>
+    <risk id="3" severity="MEDIUM">
+      <name>Cost Overrun on TYPE D</name>
+      <description>Comprehensive requests with Opus can be expensive</description>
+      <mitigation>Require explicit --depth thorough flag; default to Sonnet</mitigation>
+    </risk>
+  </risk_assessment>
+
+  <success_metrics>
+    <metric id="1">
+      <name>Citation Accuracy</name>
+      <target>100% of GitHub permalinks return HTTP 200</target>
+      <measurement>Integration test with requests.head()</measurement>
+    </metric>
+    <metric id="2">
+      <name>Response Latency</name>
+      <target>Less than 15s for TYPE A/B, less than 30s for TYPE C/D</target>
+      <measurement>CLI timing via --timing flag</measurement>
+    </metric>
+    <metric id="3">
+      <name>Developer Satisfaction</name>
+      <target>Reduces "how do I use X library" questions by 80%</target>
+      <measurement>Track librarian usage vs external search in feedback</measurement>
+    </metric>
+  </success_metrics>
+
+  <tdd_protocol>
+    <phase name="RED">
+      Write failing tests FIRST for each component:
+      - test_classify_request_* for classification
+      - test_dispatch_tools_* for parallel execution
+      - test_citation_extraction_* for permalink generation
+      - test_integration_* for end-to-end flows
+    </phase>
+    <phase name="GREEN">
+      Implement minimal code to pass each test.
+      No premature optimization.
+      No additional features beyond test requirements.
+    </phase>
+    <phase name="REFACTOR">
+      Extract common patterns after tests pass.
+      Improve naming and organization.
+      Add type hints where missing.
+      Run full test suite to verify no regressions.
+    </phase>
+  </tdd_protocol>
+</expert_team_analysis>

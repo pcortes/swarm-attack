@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<continuation_prompt>
+  <metadata>
+    <date>2026-01-01</date>
+    <project>swarm-attack</project>
+    <feature>open-source-librarian</feature>
+    <previous_session>COO Agent Implementation Session</previous_session>
+  </metadata>
+
+  <first_verify_working_directory>
+    <instructions>
+      Before reading further, run these commands:
+
+      ```bash
+      cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+      pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian
+      git branch   # Must show: * feature/open-source-librarian
+      ```
+
+      STOP if you are not in the correct worktree.
+    </instructions>
+  </first_verify_working_directory>
+
+  <implementation_status>
+    <completed>
+      <item>Phase 0: Worktree and directory structure created</item>
+      <item>Phase 1: LibrarianAgent skeleton implemented at swarm_attack/agents/librarian.py</item>
+      <item>Agent exported from swarm_attack/agents/__init__.py</item>
+      <item>SKILL.md created at .claude/skills/open-source-librarian/SKILL.md</item>
+      <item>Documentation created at docs/LIBRARIAN.md</item>
+      <item>Test directory created at tests/unit/librarian/</item>
+      <item>Bug tracking file at specs/2026-01-01_open-source-librarian-bugs.md</item>
+    </completed>
+
+    <in_progress>
+      <item>CLI research.py - agent a5c36e9 was working on this</item>
+      <item>Exa API integration - needs to use env vars like moderndoc</item>
+    </in_progress>
+
+    <pending>
+      <item>Write TDD tests at tests/unit/librarian/test_librarian_agent.py</item>
+      <item>Implement parallel tool dispatch (Phase 3)</item>
+      <item>Wire to SpecAuthor and Coder agents (Phase 4)</item>
+      <item>Run test suite and fix issues (Phase 5)</item>
+      <item>Update CLAUDE.md, README.md, CHANGELOG.md (Phase 6)</item>
+      <item>Bug bash and QA testing</item>
+    </pending>
+  </implementation_status>
+
+  <key_files>
+    <file purpose="agent implementation">swarm_attack/agents/librarian.py</file>
+    <file purpose="skill prompt">.claude/skills/open-source-librarian/SKILL.md</file>
+    <file purpose="agent exports">swarm_attack/agents/__init__.py</file>
+    <file purpose="cli command">swarm_attack/cli/research.py (may need creation)</file>
+    <file purpose="tests">tests/unit/librarian/test_librarian_agent.py (needs creation)</file>
+    <file purpose="docs">docs/LIBRARIAN.md</file>
+    <file purpose="bug tracking">specs/2026-01-01_open-source-librarian-bugs.md</file>
+    <file purpose="original spec">specs/2026-01-01_open-source-librarian-agent.xml</file>
+  </key_files>
+
+  <exa_integration_notes>
+    <critical>
+      The user has requested:
+      1. Reuse existing Exa integration pattern from /Users/philipjcortes/Desktop/moderndoc
+      2. DO NOT hardcode API keys
+      3. Use environment variables loaded from Google Secrets Manager (same pattern as moderndoc)
+
+      Research the moderndoc codebase to find:
+      - How EXA_API_KEY is loaded
+      - The Exa client setup pattern
+      - Google Secrets Manager configuration
+    </critical>
+  </exa_integration_notes>
+
+  <tasks_for_continuation>
+    <task priority="1" id="verify">
+      <title>Verify Current Implementation</title>
+      <steps>
+        <step>cd to worktree: cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/open-source-librarian</step>
+        <step>Check files exist: ls swarm_attack/agents/librarian.py</step>
+        <step>Run syntax check: python -m py_compile swarm_attack/agents/librarian.py</step>
+        <step>Try importing: PYTHONPATH=. python -c "from swarm_attack.agents import LibrarianAgent; print('OK')"</step>
+      </steps>
+    </task>
+
+    <task priority="2" id="cli">
+      <title>Complete CLI Integration</title>
+      <steps>
+        <step>Create swarm_attack/cli/research.py if not exists</step>
+        <step>Add research_app to swarm_attack/cli/app.py</step>
+        <step>Test: swarm-attack research --help</step>
+      </steps>
+    </task>
+
+    <task priority="3" id="tests">
+      <title>Create TDD Tests</title>
+      <steps>
+        <step>Create tests/unit/librarian/test_librarian_agent.py</step>
+        <step>Test classify_request for all 4 request types</step>
+        <step>Test run() with mocked LLM</step>
+        <step>Test Citation and LibrarianResult dataclasses</step>
+        <step>Run: PYTHONPATH=. pytest tests/unit/librarian/ -v</step>
+      </steps>
+    </task>
+
+    <task priority="4" id="exa">
+      <title>Add Exa Integration</title>
+      <steps>
+        <step>Explore /Users/philipjcortes/Desktop/moderndoc for Exa pattern</step>
+        <step>Add environment variable loading for EXA_API_KEY</step>
+        <step>Integrate with Google Secrets Manager like moderndoc</step>
+        <step>Do NOT hardcode any API keys</step>
+      </steps>
+    </task>
+
+    <task priority="5" id="bugbash">
+      <title>Bug Bash and QA</title>
+      <steps>
+        <step>Run full test suite: PYTHONPATH=. pytest tests/ -v</step>
+        <step>Test agent manually with sample queries</step>
+        <step>Record bugs in specs/2026-01-01_open-source-librarian-bugs.md</step>
+        <step>Fix all P0/P1 bugs before merge</step>
+      </steps>
+    </task>
+  </tasks_for_continuation>
+
+  <tdd_protocol>
+    <phase name="RED">
+      Write failing tests first:
+      - test_classify_request_conceptual
+      - test_classify_request_implementation
+      - test_classify_request_context
+      - test_classify_request_comprehensive
+      - test_run_requires_query
+      - test_run_returns_agent_result
+      - test_citation_to_dict
+    </phase>
+    <phase name="GREEN">
+      Implement minimal code to pass tests.
+      Tests should pass with: PYTHONPATH=. pytest tests/unit/librarian/ -v
+    </phase>
+    <phase name="REFACTOR">
+      Clean up code, improve naming, add type hints.
+      Ensure all tests still pass.
+    </phase>
+  </tdd_protocol>
+
+  <acceptance_criteria>
+    <criterion>Agent imports successfully: from swarm_attack.agents import LibrarianAgent</criterion>
+    <criterion>CLI works: swarm-attack research "How do I..." returns response</criterion>
+    <criterion>All 4 request types classify correctly</criterion>
+    <criterion>Output includes citations with GitHub permalinks</criterion>
+    <criterion>Uses commit SHA, not branch names in permalinks</criterion>
+    <criterion>Admits uncertainty when evidence insufficient</criterion>
+    <criterion>Never fabricates citations</criterion>
+    <criterion>All unit tests pass</criterion>
+    <criterion>Integration with SpecAuthor and Coder works</criterion>
+    <criterion>Exa API uses environment variables (not hardcoded)</criterion>
+  </acceptance_criteria>
+
+  <git_commands>
+    <command description="Check status">git status</command>
+    <command description="Stage all changes">git add -A</command>
+    <command description="Commit">git commit -m "feat: Implement Open Source Librarian agent"</command>
+    <command description="Push branch">git push -u origin feature/open-source-librarian</command>
+  </git_commands>
+</continuation_prompt>

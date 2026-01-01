@@ -15,9 +15,16 @@ This package contains the AI agents that perform automated tasks:
 - RecoveryAgent: Analyzes failures and generates recovery plans
 - BugCriticAgent: Reviews root cause analysis and fix plans (uses Codex)
 - BugModeratorAgent: Applies critic feedback to improve analysis/plans
+- LibrarianAgent: Research external libraries with evidence-backed responses
 """
 
 from swarm_attack.agents.base import AgentResult, BaseAgent
+from swarm_attack.agents.librarian import (
+    Citation,
+    LibrarianAgent,
+    LibrarianResult,
+    RequestType,
+)
 from swarm_attack.agents.bug_critic import BugCriticAgent
 from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.coder import CoderAgent
@@ -37,6 +44,7 @@ __all__ = [
     "BaseAgent",
     "BugCriticAgent",
     "BugModeratorAgent",
+    "Citation",
     "CoderAgent",
     "ComplexityEstimate",
     "ComplexityGateAgent",
@@ -44,8 +52,11 @@ __all__ = [
     "GateResult",
     "IssueCreatorAgent",
     "IssueValidatorAgent",
+    "LibrarianAgent",
+    "LibrarianResult",
     "PrioritizationAgent",
     "RecoveryAgent",
+    "RequestType",
     "SpecAuthorAgent",
     "SpecCriticAgent",
     "SpecModeratorAgent",
