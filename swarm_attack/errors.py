@@ -177,19 +177,21 @@ class ErrorClassifier:
         r"service\s+unavailable",
     ]
 
-    # Codex error patterns
+    # Codex error patterns - ONLY match in stderr, use specific CLI error formats
+    # Avoid generic matches like "authentication" which match content discussions
     CODEX_AUTH_PATTERNS = [
         r"not\s+logged\s+in",
         r"login\s+required",
         r"invalid\s+session",
         r"session\s+expired",
-        r"unauthorized",
-        r"authentication",
         r"please\s+run\s+`codex\s+login`",
+        r"AuthenticationError:",  # API error format with colon
+        r"401\s+Unauthorized",    # Specific HTTP error format
+        r"Token\s+exchange\s+error",  # Token exchange failures
     ]
 
     CODEX_RATE_LIMIT_PATTERNS = [
-        r"rate.?limit",
+        r"rate.?limit\s+exceeded",  # More specific - "exceeded" required
         r"rate_limit_exceeded",
         r"too\s+many\s+requests",
         r"429",
@@ -253,24 +255,32 @@ class ErrorClassifier:
 
         Args:
             stderr: Standard error output from CLI
-            stdout: Standard output from CLI
+            stdout: Standard output from CLI (ignored for error classification
+                    to avoid false positives from content mentioning auth)
             returncode: Process return code
 
         Returns:
             LLMErrorType classification
         """
-        combined = f"{stderr} {stdout}".lower()
+        # Success returncode means no error, regardless of output content
+        if returncode == 0:
+            return LLMErrorType.UNKNOWN
 
-        # Check auth errors first
-        if cls._matches_any(combined, cls.CODEX_AUTH_PATTERNS):
+        # ONLY check stderr for auth/rate-limit patterns
+        # stdout contains user content (PRDs, specs, code) which may mention
+        # "authentication" or "unauthorized" in context, causing false positives
+        stderr_lower = stderr.lower()
+
+        # Check auth errors first (only in stderr)
+        if cls._matches_any(stderr_lower, cls.CODEX_AUTH_PATTERNS):
             return LLMErrorType.AUTH_REQUIRED
 
-        # Check rate limiting
-        if cls._matches_any(combined, cls.CODEX_RATE_LIMIT_PATTERNS):
+        # Check rate limiting (only in stderr)
+        if cls._matches_any(stderr_lower, cls.CODEX_RATE_LIMIT_PATTERNS):
             return LLMErrorType.RATE_LIMIT
 
-        # Check server overload
-        if cls._matches_any(combined, cls.CODEX_OVERLOAD_PATTERNS):
+        # Check server overload (only in stderr)
+        if cls._matches_any(stderr_lower, cls.CODEX_OVERLOAD_PATTERNS):
             return LLMErrorType.SERVER_OVERLOADED
 
         # Non-zero exit without specific pattern

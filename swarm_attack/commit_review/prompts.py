@@ -136,12 +136,12 @@ Return findings as a JSON array. If no issues found, return an empty array [].
 
 ```json
 [
-  {
+  {{
     "severity": "LOW|MEDIUM|HIGH|CRITICAL",
     "category": "production_reliability",
     "description": "Clear explanation of the issue",
     "evidence": "file.py:42 - specific code reference"
-  }
+  }}
 ]
 ```
 """
@@ -171,12 +171,12 @@ Return findings as a JSON array. If no issues found, return an empty array [].
 
 ```json
 [
-  {
+  {{
     "severity": "LOW|MEDIUM|HIGH|CRITICAL",
     "category": "code_quality",
     "description": "Clear explanation of the issue",
     "evidence": "file.py:42 - specific code reference"
-  }
+  }}
 ]
 ```
 """
@@ -206,12 +206,12 @@ Return findings as a JSON array. If no issues found, return an empty array [].
 
 ```json
 [
-  {
+  {{
     "severity": "LOW|MEDIUM|HIGH|CRITICAL",
     "category": "architecture",
     "description": "Clear explanation of the issue",
     "evidence": "file.py:42 - specific code reference"
-  }
+  }}
 ]
 ```
 """
@@ -241,12 +241,12 @@ Return findings as a JSON array. If no issues found, return an empty array [].
 
 ```json
 [
-  {
+  {{
     "severity": "LOW|MEDIUM|HIGH|CRITICAL",
     "category": "test_coverage",
     "description": "Clear explanation of the issue",
     "evidence": "file.py:42 - specific code reference"
-  }
+  }}
 ]
 ```
 """
@@ -276,12 +276,12 @@ Return findings as a JSON array. If no issues found, return an empty array [].
 
 ```json
 [
-  {
+  {{
     "severity": "LOW|MEDIUM|HIGH|CRITICAL",
     "category": "documentation",
     "description": "Clear explanation of the issue",
     "evidence": "file.md:42 - specific reference"
-  }
+  }}
 ]
 ```
 """

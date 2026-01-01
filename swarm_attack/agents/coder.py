@@ -118,7 +118,7 @@ class CoderAgent(BaseAgent):
     STDLIB_MODULES = frozenset([
         # Python standard library
         '__future__', 'abc', 'asyncio', 'collections', 'copy', 'dataclasses', 'datetime',
-        'enum', 'functools', 'inspect', 'io', 'itertools', 'json', 'logging', 'math',
+        'enum', 'functools', 'importlib', 'inspect', 'io', 'itertools', 'json', 'logging', 'math',
         'os', 'pathlib', 'pickle', 'random', 're', 'shutil', 'string', 'sys',
         'tempfile', 'time', 'traceback', 'typing', 'unittest', 'uuid', 'warnings',
         'contextlib', 'threading', 'multiprocessing', 'subprocess', 'socket',
@@ -1131,7 +1131,15 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
                         content = read_file(full_path)
                         classes = self._extract_classes_from_content(path, content)
                         if classes:
-                            classes_defined[path] = classes
+                            # Merge with existing classes if path already in classes_defined
+                            # (handles case where same file is in both files and files_modified)
+                            if path in classes_defined:
+                                # Deduplicate: use set to merge, then convert back to list
+                                existing = set(classes_defined[path])
+                                existing.update(classes)
+                                classes_defined[path] = list(existing)
+                            else:
+                                classes_defined[path] = classes
                 except Exception:
                     # Skip files that can't be read (nonexistent, permission errors, etc.)
                     pass
@@ -1156,20 +1164,88 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
 
         if path.endswith(".py"):
             # Parse Python files for class definitions
-            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            # Pattern matches classes at any indentation level (supports nested classes)
+            # Matches: "class Foo", "    class Inner", etc.
+            matches = re.findall(r"^\s*class\s+(\w+)", content, re.MULTILINE)
             classes.extend(matches)
         elif path.endswith(".dart"):
             # Parse Dart files for class definitions
-            matches = re.findall(r"^class\s+(\w+)", content, re.MULTILINE)
+            # Matches: "class Foo", "abstract class Bar"
+            matches = re.findall(r"^\s*(?:abstract\s+)?class\s+(\w+)", content, re.MULTILINE)
             classes.extend(matches)
         elif path.endswith(".ts") or path.endswith(".tsx"):
             # Parse TypeScript files for class/interface definitions
-            class_matches = re.findall(r"^(?:export\s+)?class\s+(\w+)", content, re.MULTILINE)
-            interface_matches = re.findall(r"^(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
+            # Matches: "class Foo", "export class Bar", "abstract class Baz", "export abstract class Qux"
+            class_matches = re.findall(r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)", content, re.MULTILINE)
+            interface_matches = re.findall(r"^\s*(?:export\s+)?interface\s+(\w+)", content, re.MULTILINE)
             classes.extend(class_matches)
             classes.extend(interface_matches)
 
         return classes
+
+    def _parse_modified_files(self, response: str, python_only: bool = True) -> list[str]:
+        """
+        Parse modified file paths from LLM response text.
+
+        Looks for patterns that indicate modified files:
+        - # MODIFIED FILE: path/to/file.py
+        - #MODIFIED FILE: path/to/file.py (no space)
+        - Modified: `path/to/file.py`
+        - Modified: path/to/file.py
+        - Updated: `path/to/file.py`
+        - Updated: path/to/file.py
+
+        Args:
+            response: The LLM response text to parse.
+            python_only: If True (default), only return .py files.
+
+        Returns:
+            List of deduplicated file paths found in the response.
+        """
+        if not response:
+            return []
+
+        modified_files: list[str] = []
+
+        # Pattern 1: # MODIFIED FILE: path (with or without space after #)
+        # Matches: "# MODIFIED FILE: foo.py", "#MODIFIED FILE:  foo.py"
+        pattern1 = r"#\s*MODIFIED\s+FILE:\s*([^\n]+)"
+        for match in re.finditer(pattern1, response, re.IGNORECASE):
+            path = match.group(1).strip()
+            # Remove backticks if present
+            path = path.strip("`")
+            if path:
+                modified_files.append(path)
+
+        # Pattern 2: Modified: path (with optional backticks)
+        # Matches: "Modified: foo.py", "Modified:`foo.py`", "Modified: `foo.py`"
+        pattern2 = r"Modified:\s*`?([^`\n]+)`?"
+        for match in re.finditer(pattern2, response):
+            path = match.group(1).strip()
+            if path:
+                modified_files.append(path)
+
+        # Pattern 3: Updated: path (with optional backticks)
+        # Matches: "Updated: foo.py", "Updated:`foo.py`", "Updated:  foo.py"
+        pattern3 = r"Updated:\s*`?([^`\n]+)`?"
+        for match in re.finditer(pattern3, response):
+            path = match.group(1).strip()
+            if path:
+                modified_files.append(path)
+
+        # Filter to Python files only if requested
+        if python_only:
+            modified_files = [f for f in modified_files if f.endswith(".py")]
+
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        result: list[str] = []
+        for path in modified_files:
+            if path not in seen:
+                seen.add(path)
+                result.append(path)
+
+        return result
 
     def _build_prompt(
         self,
@@ -1827,6 +1903,25 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         for dir_file, content in directory_files.items():
             if dir_file not in files:
                 files[dir_file] = content
+
+        # VALIDATION: Reject empty file outputs (excluding .gitkeep markers)
+        # This prevents marking tasks as "Done" when no actual implementation was generated
+        real_files = {k: v for k, v in files.items() if not k.endswith('.gitkeep')}
+        if not real_files:
+            error = "LLM response contained no parseable file outputs"
+            self._log("coder_no_files_generated", {
+                "error": error,
+                "response_length": len(result.text) if result.text else 0,
+                "files_parsed": list(files.keys()),
+            }, level="error")
+            # AC 3.5: Emit IMPL_FAILED on failure
+            self._emit_event(
+                event_type=EventType.IMPL_FAILED,
+                feature_id=feature_id,
+                issue_number=issue_number,
+                payload={"issue_number": issue_number, "error": error, "phase": "validation"},
+            )
+            return AgentResult.failure_result(error, cost_usd=cost)
 
         # CRITICAL: Validate that test imports are satisfied by implementation
         # This catches incomplete implementations before we write files and return success.
