@@ -11,6 +11,12 @@ Previous Session: dispatcher-claude-cli-implementation
 **Workaround:** Pipe 'y' to stdin: `echo "y" | swarm-attack bug approve <id>`
 **Severity:** LOW
 
+### META-BUG-002: bug fix applies changes with syntax errors
+**Component:** swarm-attack bug fix
+**Description:** The coder agent applied changes that resulted in a missing newline before `app = typer.Typer()`, causing syntax error
+**Workaround:** Reverted changes with `git checkout swarm_attack/cli/feature.py`
+**Severity:** MEDIUM
+
 ---
 
 ## Bug Fix Progress
@@ -31,15 +37,29 @@ where there's a space inside the brackets.
 
 **Verification:**
 - All 18 tests in `test_session_initializer.py` pass
-- Fix plan generated 4 test cases for regression testing
+- Committed: 4b62aa0
 
 ### BUG-004: Issues Not Persisted
-**Status:** IN PROGRESS
+**Status:** NEEDS MANUAL FIX
 **Priority:** 2 (HIGH)
+**Bug ID:** issues-not-persisted
+**Cost:** $1.89 (analysis only)
+
+**Root Cause:** The `issues` command creates `issues.json` but never populates `state.tasks`.
+Tasks are only loaded from `issues.json` in the `greenlight` command (lines 1140-1180 in feature.py).
+When validation fails in `issues` command, state.tasks stays empty.
+
+**Fix Plan:** See `.swarm/bugs/issues-not-persisted/fix-plan.md`
+- Extract task loading into `_load_tasks_from_issues()` helper
+- Call helper from both `issues` and `greenlight` commands
+
+**Issue:** Bug bash coder applied fix with syntax error (missing newline). Fix reverted.
+**Action Required:** Apply fix manually per fix-plan.md
 
 ### BUG-001: Rate Limit Handling
 **Status:** NOT STARTED
 **Priority:** 3 (MEDIUM)
+**Note:** debate_retry.py already exists - may just need integration with critic agent
 
 ### BUG-003: Auth Error Handling
 **Status:** NOT STARTED
@@ -59,5 +79,7 @@ where there's a space inside the brackets.
 
 Total bugs from prior session: 7 (6 unique, BUG-006/007 are same root cause)
 Bugs fixed: 1 (BUG-006/007)
+Bugs analyzed: 2 (BUG-004 fix plan ready but failed to apply)
 Bugs remaining: 5
-New meta-bugs: 1 (META-BUG-001)
+New meta-bugs: 2
+Total analysis cost: $3.49
