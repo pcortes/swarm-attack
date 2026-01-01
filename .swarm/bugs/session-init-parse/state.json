@@ -1,0 +1,251 @@
+{
+  "bug_id": "session-init-parse",
+  "phase": "fixed",
+  "created_at": "2026-01-01T02:03:18.126775Z",
+  "updated_at": "2026-01-01T02:16:17.697997Z",
+  "report": {
+    "description": "Session initialization fails with garbled parsing error - regex r'FAILED\\s+([^\\s]+)' captures '[' because pytest output has FAILED [ 75%] with space inside brackets",
+    "test_path": "tests/unit/test_session_initializer.py",
+    "github_issue": null,
+    "error_message": "Verification failed: ['[', '[', '[', '[', '[']",
+    "stack_trace": null,
+    "steps_to_reproduce": []
+  },
+  "reproduction": {
+    "confirmed": true,
+    "reproduction_steps": [
+      "Analyzed the regex pattern r'FAILED\\s+([^\\s]+)' in session_initializer.py:288 and session_finalizer.py:219",
+      "Simulated pytest output with progress indicators (e.g., 'FAILED [ 75%]')",
+      "Ran Python code to verify the regex captures '[' from progress indicator brackets"
+    ],
+    "test_output": "$ python3 -c \"\nimport re\noutput = '''\ntests/test_foo.py::test_bar PASSED [ 50%]\ntests/test_foo.py::test_baz FAILED [ 75%]\ntests/test_foo.py::test_qux PASSED [100%]\n\n=================================== FAILURES ===================================\ntests/test_foo.py::test_baz - AssertionError\n'''\n\nfor match in re.finditer(r'FAILED\\s+([^\\s]+)', output):\n    print(f'Captured: {repr(match.group(1))}')\n\"\nCaptured: '['",
+    "error_message": "Regex r'FAILED\\s+([^\\s]+)' incorrectly captures '[' from pytest progress indicator '[ 75%]' instead of test path",
+    "stack_trace": null,
+    "affected_files": [
+      "swarm_attack/session_initializer.py",
+      "swarm_attack/session_finalizer.py"
+    ],
+    "related_code_snippets": {
+      "swarm_attack/session_initializer.py:282-291": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names\n        for match in re.finditer(r\"FAILED\\s+([^\\s]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+      "swarm_attack/session_finalizer.py:213-222": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names\n        for match in re.finditer(r\"FAILED\\s+([^\\s]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+      "swarm_attack/agents/verifier.py:155-156": "        # FAILED tests/path/file.py::TestClass::test_name - Error message\n        summary_pattern = r'FAILED\\s+([\\w/._-]+)::(\\w+)::(\\w+)\\s+-\\s+(.+)'"
+    },
+    "confidence": "high",
+    "notes": "The bug is in the _parse_failures method in both session_initializer.py and session_finalizer.py. The regex r'FAILED\\s+([^\\s]+)' matches any non-whitespace after FAILED, including the '[' from pytest progress indicators like '[ 75%]'. The verifier.py uses a better pattern that requires '::' separators (e.g., r'FAILED\\s+([\\w/._-]+)::(\\w+)::(\\w+)\\s+-\\s+(.+)'). The fix should use a pattern that requires the path::test format, such as r'FAILED\\s+([\\w/._-]+::[\\w:]+)' or similar. Note: The existing unit tests pass because they don't test with progress indicator output.",
+    "attempts": 1,
+    "environment": {
+      "python_version": "3.13.3",
+      "os": "Darwin 24.6.0 arm64",
+      "pytest_version": "8.3.5"
+    }
+  },
+  "root_cause": {
+    "summary": "Regex r'FAILED\\s+([^\\s]+)' captures '[' from pytest progress indicator instead of test path",
+    "execution_trace": [
+      "1. SessionInitializer._run_verification_tests() runs pytest on feature tests",
+      "2. pytest produces output with progress indicators: 'tests/test_foo.py::test_baz FAILED [ 75%]'",
+      "3. _parse_failures() is called with the pytest output string",
+      "4. Regex r'FAILED\\s+([^\\s]+)' matches 'FAILED ' and captures the first non-whitespace after it",
+      "5. The regex captures '[' from '[ 75%]' because '[' is the first non-whitespace character after 'FAILED '",
+      "6. Multiple test failures each add '[' to the failures list, resulting in ['[', '[', '[', '[', '[']",
+      "7. InitResult.blocked() is called with reason='Verification failed: [\"[\", \"[\", \"[\", \"[\", \"[\"]'"
+    ],
+    "root_cause_file": "swarm_attack/session_initializer.py",
+    "root_cause_line": 288,
+    "root_cause_code": "for match in re.finditer(r\"FAILED\\s+([^\\s]+)\", output):\n    failures.append(match.group(1))",
+    "root_cause_explanation": "The regex pattern r'FAILED\\s+([^\\s]+)' is designed to capture any non-whitespace characters after 'FAILED '. However, pytest output format includes both inline progress indicators (e.g., 'FAILED [ 75%]' on the same line as the test result) and separate failure summary lines (e.g., 'FAILED tests/path.py::test_name - Error'). The regex incorrectly matches the '[' character from progress indicators like '[ 75%]' because it captures the first non-whitespace token after 'FAILED' without validating that it looks like a test path. The verifier.py agent uses a more robust pattern r'FAILED\\s+([\\w/._-]+)::' that requires the '::' separator which is part of pytest's test path format (file.py::TestClass::test_name). The fix should use a pattern that requires test path characteristics (path separator, ::, or test file extension) rather than just any non-whitespace.",
+    "why_not_caught": "1. The existing unit tests in tests/unit/test_session_initializer.py mock _run_verification_tests() entirely, so they never actually test _parse_failures() with real pytest output. 2. There are no unit tests that directly test _parse_failures() with various pytest output formats. 3. The test fixtures use Mock(passed=True/False) which bypasses the actual parsing logic. 4. The same bug exists in session_finalizer.py:219 (identical code, line 219), so both files have untested parsing logic. 5. The verifier.py agent has a more robust regex but this pattern wasn't reused in the session initializer/finalizer modules.",
+    "confidence": "high",
+    "alternative_hypotheses": [
+      "Considered whether the issue was with pytest version differences in output format - ruled out because the progress indicator format '[ XX%]' is standard across pytest versions",
+      "Considered whether there might be edge cases with test names containing brackets - ruled out because the root cause is clearly the progress indicator matching before any test path matching"
+    ]
+  },
+  "fix_plan": {
+    "summary": "Fix regex to require '::' separator for pytest test paths instead of matching any non-whitespace",
+    "changes": [
+      {
+        "file_path": "swarm_attack/session_initializer.py",
+        "change_type": "modify",
+        "current_code": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names\n        for match in re.finditer(r\"FAILED\\s+([^\\s]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+        "proposed_code": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names with :: separator (pytest format: file.py::test_name)\n        # Pattern requires :: to avoid matching progress indicators like '[ 75%]'\n        for match in re.finditer(r\"FAILED\\s+([\\w/._-]+::[\\w:]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+        "explanation": "Changed regex from r'FAILED\\s+([^\\s]+)' to r'FAILED\\s+([\\w/._-]+::[\\w:]+)'. The new pattern requires the '::' separator that pytest uses between file path and test name (e.g., 'tests/foo.py::test_bar'). This prevents matching progress indicators like '[ 75%]' which don't contain '::'."
+      },
+      {
+        "file_path": "swarm_attack/session_finalizer.py",
+        "change_type": "modify",
+        "current_code": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names\n        for match in re.finditer(r\"FAILED\\s+([^\\s]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+        "proposed_code": "    def _parse_failures(self, output: str) -> list[str]:\n        \"\"\"Parse failure messages from pytest output.\"\"\"\n        import re\n\n        failures = []\n        # Look for FAILED test names with :: separator (pytest format: file.py::test_name)\n        # Pattern requires :: to avoid matching progress indicators like '[ 75%]'\n        for match in re.finditer(r\"FAILED\\s+([\\w/._-]+::[\\w:]+)\", output):\n            failures.append(match.group(1))\n\n        return failures[:5]  # Limit to first 5 failures",
+        "explanation": "Identical fix as session_initializer.py. Changed regex from r'FAILED\\s+([^\\s]+)' to r'FAILED\\s+([\\w/._-]+::[\\w:]+)' to require the '::' separator."
+      }
+    ],
+    "test_cases": [
+      {
+        "name": "test_parse_failures_ignores_progress_indicator",
+        "description": "Regression test: _parse_failures should not capture '[' from pytest progress indicators",
+        "test_code": "def test_parse_failures_ignores_progress_indicator():\n    \"\"\"Regression test for bug: regex captured '[' from '[ 75%]' progress indicator.\"\"\"\n    from swarm_attack.session_initializer import SessionInitializer\n    from unittest.mock import Mock\n    \n    # Create a minimal initializer for testing\n    config = Mock()\n    config.repo_root = '/tmp'\n    initializer = SessionInitializer(config, Mock(), Mock())\n    \n    # Pytest output with progress indicators (the problematic format)\n    pytest_output = '''tests/test_foo.py::test_one FAILED [ 25%]\ntests/test_foo.py::test_two PASSED [ 50%]\ntests/test_bar.py::test_three FAILED [ 75%]\ntests/test_bar.py::test_four PASSED [100%]\n'''\n    \n    failures = initializer._parse_failures(pytest_output)\n    \n    # Should capture the full test paths, not '['\n    assert '[' not in failures, f\"Should not capture '[' from progress indicator, got: {failures}\"\n    assert len(failures) == 2\n    assert 'tests/test_foo.py::test_one' in failures\n    assert 'tests/test_bar.py::test_three' in failures",
+        "category": "regression"
+      },
+      {
+        "name": "test_parse_failures_with_summary_format",
+        "description": "Test parsing of pytest short test summary format with error messages",
+        "test_code": "def test_parse_failures_with_summary_format():\n    \"\"\"Test parsing pytest summary format: FAILED path::test - Error.\"\"\"\n    from swarm_attack.session_initializer import SessionInitializer\n    from unittest.mock import Mock\n    \n    config = Mock()\n    config.repo_root = '/tmp'\n    initializer = SessionInitializer(config, Mock(), Mock())\n    \n    # Pytest short test summary format\n    pytest_output = '''=== short test summary info ===\nFAILED tests/unit/test_user.py::test_create_user - NameError: name 'datetime' is not defined\nFAILED tests/unit/test_auth.py::TestLogin::test_login - AssertionError: expected True\n'''\n    \n    failures = initializer._parse_failures(pytest_output)\n    \n    assert len(failures) == 2\n    # Should capture up to and including the test identifier\n    assert 'tests/unit/test_user.py::test_create_user' in failures\n    assert 'tests/unit/test_auth.py::TestLogin::test_login' in failures",
+        "category": "edge_case"
+      },
+      {
+        "name": "test_parse_failures_session_finalizer",
+        "description": "Verify session_finalizer has the same fix applied",
+        "test_code": "def test_parse_failures_session_finalizer():\n    \"\"\"Verify session_finalizer._parse_failures also handles progress indicators.\"\"\"\n    from swarm_attack.session_finalizer import SessionFinalizer\n    from unittest.mock import Mock\n    \n    config = Mock()\n    config.repo_root = '/tmp'\n    finalizer = SessionFinalizer(config, Mock(), Mock(), Mock())\n    \n    # Pytest output with progress indicators\n    pytest_output = '''tests/test_api.py::test_endpoint FAILED [ 33%]\ntests/test_api.py::test_health PASSED [ 66%]\ntests/test_api.py::test_error FAILED [100%]\n'''\n    \n    failures = finalizer._parse_failures(pytest_output)\n    \n    # Should not capture '[' from progress indicators\n    assert '[' not in failures, f\"Should not capture '[', got: {failures}\"\n    assert len(failures) == 2\n    assert 'tests/test_api.py::test_endpoint' in failures\n    assert 'tests/test_api.py::test_error' in failures",
+        "category": "regression"
+      },
+      {
+        "name": "test_parse_failures_empty_output",
+        "description": "Edge case: empty or no failures in output",
+        "test_code": "def test_parse_failures_empty_output():\n    \"\"\"Test _parse_failures with no failures.\"\"\"\n    from swarm_attack.session_initializer import SessionInitializer\n    from unittest.mock import Mock\n    \n    config = Mock()\n    config.repo_root = '/tmp'\n    initializer = SessionInitializer(config, Mock(), Mock())\n    \n    # Test empty output\n    assert initializer._parse_failures('') == []\n    \n    # Test output with only passing tests\n    passing_output = '''tests/test_foo.py::test_one PASSED [ 50%]\ntests/test_foo.py::test_two PASSED [100%]\n===== 2 passed =====\n'''\n    assert initializer._parse_failures(passing_output) == []",
+        "category": "edge_case"
+      }
+    ],
+    "risk_level": "low",
+    "risk_explanation": "The fix is minimal and backward compatible: it restricts what the regex matches rather than expanding it. The new pattern is more precise and will only match valid pytest test identifiers that contain '::'. All existing valid test failure outputs will still be matched. The pattern is consistent with the more robust patterns already used in verifier.py and discovery_agent.py.",
+    "scope": "Two files with identical _parse_failures() methods: session_initializer.py and session_finalizer.py",
+    "side_effects": [
+      "Output that previously matched incorrectly (like progress indicators) will now be correctly ignored",
+      "Valid pytest failure output continues to match since it always contains '::'"
+    ],
+    "rollback_plan": "Revert the regex pattern in both files from r'FAILED\\s+([\\w/._-]+::[\\w:]+)' back to r'FAILED\\s+([^\\s]+)'. This restores the original (buggy) behavior but doesn't break anything new.",
+    "estimated_effort": "Small - identical 1-line regex change in 2 files, 4 test cases"
+  },
+  "implementation": {
+    "success": true,
+    "files_changed": [
+      "swarm_attack/session_initializer.py",
+      "swarm_attack/session_finalizer.py"
+    ],
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "commit_hash": null,
+    "error": null
+  },
+  "costs": [
+    {
+      "agent_name": "bug_researcher",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.6786210000000001,
+      "timestamp": "2026-01-01T02:14:01.598139Z"
+    },
+    {
+      "agent_name": "root_cause_analyzer",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.51795575,
+      "timestamp": "2026-01-01T02:14:42.224184Z"
+    },
+    {
+      "agent_name": "root_cause_debate",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2026-01-01T02:14:43.110800Z"
+    },
+    {
+      "agent_name": "fix_planner",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.39909075,
+      "timestamp": "2026-01-01T02:15:46.660460Z"
+    },
+    {
+      "agent_name": "fix_plan_debate",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost_usd": 0.0,
+      "timestamp": "2026-01-01T02:15:47.072070Z"
+    }
+  ],
+  "transitions": [
+    {
+      "from_phase": "created",
+      "to_phase": "reproducing",
+      "timestamp": "2026-01-01T02:12:52.561031Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproducing",
+      "to_phase": "reproduced",
+      "timestamp": "2026-01-01T02:14:01.598151Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "reproduced",
+      "to_phase": "analyzing",
+      "timestamp": "2026-01-01T02:14:01.601785Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "analyzing",
+      "to_phase": "analyzed",
+      "timestamp": "2026-01-01T02:14:43.110824Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "analyzed",
+      "to_phase": "planning",
+      "timestamp": "2026-01-01T02:14:43.112274Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "planning",
+      "to_phase": "planned",
+      "timestamp": "2026-01-01T02:15:47.072090Z",
+      "trigger": "agent_output",
+      "metadata": {}
+    },
+    {
+      "from_phase": "planned",
+      "to_phase": "approved",
+      "timestamp": "2026-01-01T02:16:12.088739Z",
+      "trigger": "user_command",
+      "metadata": {}
+    },
+    {
+      "from_phase": "approved",
+      "to_phase": "implementing",
+      "timestamp": "2026-01-01T02:16:17.431405Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "implementing",
+      "to_phase": "verifying",
+      "timestamp": "2026-01-01T02:16:17.432802Z",
+      "trigger": "auto",
+      "metadata": {}
+    },
+    {
+      "from_phase": "verifying",
+      "to_phase": "fixed",
+      "timestamp": "2026-01-01T02:16:17.697982Z",
+      "trigger": "auto",
+      "metadata": {}
+    }
+  ],
+  "approval_record": {
+    "approved_by": "philipjcortes",
+    "approved_at": "2026-01-01T02:16:12.088671Z",
+    "fix_plan_hash": "1e2aacc9db921927925f54394237c35a27eeec6be07b9b8eb9ecd87ba5a6938e"
+  },
+  "debate_history": {
+    "root_cause_rounds": [],
+    "fix_plan_rounds": []
+  },
+  "blocked_reason": null,
+  "rejection_reason": null,
+  "notes": [],
+  "version": 1
+}
