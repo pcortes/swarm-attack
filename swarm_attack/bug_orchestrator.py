@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
 from swarm_attack.agents.bug_critic import BugCriticAgent
+from swarm_attack.agents.bug_fixer import BugFixerAgent
 from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.bug_researcher import BugResearcherAgent
 from swarm_attack.agents.fix_planner import FixPlannerAgent
@@ -1137,21 +1138,40 @@ class BugOrchestrator:
         state.transition_to(BugPhase.IMPLEMENTING, "auto")
         self._state_store.save(state)
 
-        # Execute fix (simplified implementation)
-        # In a full implementation, this would use a CoderAgent
+        # Execute fix using BugFixerAgent (intelligent LLM-based fix application)
+        # This replaces the old "simplified" string-replace implementation that was
+        # fragile (required exact string matches) and couldn't handle formatting issues.
         files_changed = []
+        agent_cost = 0.0
         try:
-            for change in state.fix_plan.changes:
-                if change.change_type == "modify" and change.current_code and change.proposed_code:
-                    # Read file
-                    file_path = Path(self.config.repo_root) / change.file_path
-                    if file_path.exists():
-                        content = file_path.read_text()
-                        # Apply change (simple replace)
-                        new_content = content.replace(change.current_code, change.proposed_code)
-                        if content != new_content:
-                            file_path.write_text(new_content)
-                            files_changed.append(change.file_path)
+            fixer = BugFixerAgent(self.config, logger=self._logger)
+            fixer_result = fixer.run({
+                "fix_plan": state.fix_plan,
+                "bug_id": bug_id,
+            })
+
+            agent_cost = fixer_result.cost_usd
+
+            if fixer_result.success:
+                files_changed = fixer_result.output.get("files_changed", [])
+                self._log("bug_fixer_success", {
+                    "bug_id": bug_id,
+                    "files_changed": files_changed,
+                    "syntax_verified": fixer_result.output.get("syntax_verified", False),
+                })
+            else:
+                # Agent failed - fall back to blocked state
+                state.blocked_reason = f"BugFixerAgent failed: {fixer_result.error}"
+                state.transition_to(BugPhase.BLOCKED, "auto")
+                self._state_store.save(state)
+
+                return BugPipelineResult(
+                    success=False,
+                    bug_id=bug_id,
+                    phase=BugPhase.BLOCKED,
+                    cost_usd=agent_cost,
+                    error=state.blocked_reason,
+                )
 
             # Run verification tests
             state.transition_to(BugPhase.VERIFYING, "auto")
@@ -1205,7 +1225,7 @@ class BugOrchestrator:
                     success=True,
                     bug_id=bug_id,
                     phase=BugPhase.FIXED,
-                    cost_usd=0.0,
+                    cost_usd=agent_cost,
                     message=f"Bug fixed! {len(files_changed)} files changed.",
                 )
 
@@ -1226,7 +1246,7 @@ class BugOrchestrator:
                     success=False,
                     bug_id=bug_id,
                     phase=BugPhase.BLOCKED,
-                    cost_usd=0.0,
+                    cost_usd=agent_cost,
                     error=state.blocked_reason,
                 )
 
@@ -1239,7 +1259,7 @@ class BugOrchestrator:
                 success=False,
                 bug_id=bug_id,
                 phase=BugPhase.BLOCKED,
-                cost_usd=0.0,
+                cost_usd=agent_cost,
                 error=state.blocked_reason,
             )
 
