@@ -115,9 +115,8 @@ class TestImports:
     def test_qa_app_is_typer(self):
         """qa app should be a Typer instance."""
         import typer
-        # Skip this test as it requires the full import chain
-        # The command tests below verify Typer functionality
-        pytest.skip("Skipped due to pre-existing missing modules in codebase")
+        from swarm_attack.cli.qa_commands import app
+        assert isinstance(app, typer.Typer), "qa app should be a Typer instance"
 
 
 # =============================================================================
@@ -931,6 +930,6 @@ class TestMainAppIntegration:
 
     def test_qa_command_registered_in_main_app(self, runner):
         """QA commands should be registered in main app."""
-        # Skip due to pre-existing missing modules in codebase
-        # The qa commands are registered in app.py - verified by code inspection
-        pytest.skip("Skipped due to pre-existing missing modules in codebase")
+        from swarm_attack.cli.app import app as main_app
+        registered_groups = [group.name for group in main_app.registered_groups]
+        assert "qa" in registered_groups, "QA group should be registered in main app"
