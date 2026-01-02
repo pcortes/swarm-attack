@@ -1,0 +1,898 @@
+{
+  "corpus_version": "1.0.0",
+  "created": "2026-01-01",
+  "total_samples": 65,
+  "samples": [
+    {
+      "file": "hallucinations/hallucinated_import_001.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [2, 2],
+          "description": "Import of non-existent module swarm_attack.utils.nonexistent_module"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_import_002.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [2, 2],
+          "description": "Import of non-existent module swarm_attack.helpers.magic_utils"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_import_003.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [3, 3],
+          "description": "Import of non-existent module stdlib_extensions.advanced_json"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_import_004.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [2, 2],
+          "description": "Import of non-existent package anthropic_extensions"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_import_005.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [2, 6],
+          "description": "Import of non-existent module swarm_attack.services.github_client"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_method_001.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [17, 17],
+          "description": "Call to non-existent method execute_with_retry on Agent class"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_method_002.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [7, 7],
+          "description": "Call to non-existent method deep_merge on dict"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_method_003.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [8, 8],
+          "description": "Call to non-existent method filter_by on list"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_method_004.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [7, 7],
+          "description": "Call to non-existent method to_snake_case on str"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/hallucinated_method_005.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [9, 9],
+          "description": "Call to non-existent method read_yaml on Path"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/wrong_signature_001.py",
+      "category": "hallucinations",
+      "subcategory": "wrong_signature",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [8, 8],
+          "description": "json.loads called with wrong parameter names (json_string, encoding)"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/wrong_signature_002.py",
+      "category": "hallucinations",
+      "subcategory": "wrong_signature",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [7, 7],
+          "description": "open() called with non-existent parameter 'binary'"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/wrong_signature_003.py",
+      "category": "hallucinations",
+      "subcategory": "wrong_signature",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [8, 8],
+          "description": "subprocess.run called with non-existent parameter 'return_output'"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/wrong_signature_004.py",
+      "category": "hallucinations",
+      "subcategory": "wrong_signature",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [10, 10],
+          "description": "datetime.format() does not exist, should use strftime()"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "hallucinations/wrong_signature_005.py",
+      "category": "hallucinations",
+      "subcategory": "wrong_signature",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [9, 9],
+          "description": "requests.get called with wrong parameters (follow_redirects, timeout_seconds)"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/long_method_001.py",
+      "category": "code_smells",
+      "subcategory": "long_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 67],
+          "description": "Method process_data is 62 lines, exceeds 50 line threshold"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/long_method_002.py",
+      "category": "code_smells",
+      "subcategory": "long_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 59],
+          "description": "Method parse_log_entry is 54 lines, exceeds 50 line threshold"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/long_method_003.py",
+      "category": "code_smells",
+      "subcategory": "long_method",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 62],
+          "description": "Method transform_user_data is 57 lines, exceeds 50 line threshold"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/large_class_001.py",
+      "category": "code_smells",
+      "subcategory": "large_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [7, 220],
+          "description": "Class MegaProcessor exceeds 300 lines"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/large_class_002.py",
+      "category": "code_smells",
+      "subcategory": "large_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [13, 180],
+          "description": "Class DatabaseManager exceeds 300 lines"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/large_class_003.py",
+      "category": "code_smells",
+      "subcategory": "large_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [7, 160],
+          "description": "Class HttpClient exceeds 300 lines"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/deep_nesting_001.py",
+      "category": "code_smells",
+      "subcategory": "deep_nesting",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [6, 18],
+          "description": "Function process_deeply_nested has nesting depth > 4 levels"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/deep_nesting_002.py",
+      "category": "code_smells",
+      "subcategory": "deep_nesting",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [6, 23],
+          "description": "Function find_matching_items has nesting depth > 4 levels"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/deep_nesting_003.py",
+      "category": "code_smells",
+      "subcategory": "deep_nesting",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 23],
+          "description": "Function validate_user_input has nesting depth > 4 levels"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/god_class_001.py",
+      "category": "code_smells",
+      "subcategory": "god_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [8, 100],
+          "description": "Class ApplicationController handles 5+ distinct responsibilities"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/god_class_002.py",
+      "category": "code_smells",
+      "subcategory": "god_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [10, 100],
+          "description": "Class UtilityBag handles 7+ distinct utility domains"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/god_class_003.py",
+      "category": "code_smells",
+      "subcategory": "god_class",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "high",
+          "line_range": [6, 100],
+          "description": "Class EverythingService handles auth, data, notifications, audit"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/copy_paste_001.py",
+      "category": "code_smells",
+      "subcategory": "copy_paste",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [1, 60],
+          "description": "Duplicate validation logic appears in 3 functions"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/copy_paste_002.py",
+      "category": "code_smells",
+      "subcategory": "copy_paste",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [1, 70],
+          "description": "Duplicate error handling pattern appears in 3 functions"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/copy_paste_003.py",
+      "category": "code_smells",
+      "subcategory": "copy_paste",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [1, 50],
+          "description": "Duplicate transformation logic appears in 3 functions"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/primitive_obsession_001.py",
+      "category": "code_smells",
+      "subcategory": "primitive_obsession",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 45],
+          "description": "Function has 18 primitive parameters, should use value objects"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/primitive_obsession_002.py",
+      "category": "code_smells",
+      "subcategory": "primitive_obsession",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 50],
+          "description": "Money represented as cents integers, should use Money value object"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "code_smells/primitive_obsession_003.py",
+      "category": "code_smells",
+      "subcategory": "primitive_obsession",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "code_smell",
+          "severity": "medium",
+          "line_range": [5, 60],
+          "description": "Coordinates as float tuples, should use Coordinate value object"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/swallowed_exception_001.py",
+      "category": "error_handling",
+      "subcategory": "swallowed_exception",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [10, 11],
+          "description": "Exception swallowed with bare pass statement"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/swallowed_exception_002.py",
+      "category": "error_handling",
+      "subcategory": "swallowed_exception",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [11, 12],
+          "description": "RequestException caught but swallowed with pass"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/swallowed_exception_003.py",
+      "category": "error_handling",
+      "subcategory": "swallowed_exception",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [17, 18],
+          "description": "Multiple exceptions swallowed silently"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/swallowed_exception_004.py",
+      "category": "error_handling",
+      "subcategory": "swallowed_exception",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [17, 18],
+          "description": "Exception in loop swallowed with pass"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/bare_except_001.py",
+      "category": "error_handling",
+      "subcategory": "bare_except",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [9, 10],
+          "description": "Bare except catches all exceptions including KeyboardInterrupt"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/bare_except_002.py",
+      "category": "error_handling",
+      "subcategory": "bare_except",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [12, 13],
+          "description": "Bare except in loop catches all exceptions"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/bare_except_003.py",
+      "category": "error_handling",
+      "subcategory": "bare_except",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [11, 14],
+          "description": "Bare except even with logging is problematic"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/bare_except_004.py",
+      "category": "error_handling",
+      "subcategory": "bare_except",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [10, 15],
+          "description": "Nested bare except blocks"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/missing_handling_001.py",
+      "category": "error_handling",
+      "subcategory": "missing_handling",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [7, 10],
+          "description": "File operations without try/except"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/missing_handling_002.py",
+      "category": "error_handling",
+      "subcategory": "missing_handling",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [7, 9],
+          "description": "HTTP request without error handling or timeout"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "error_handling/missing_handling_003.py",
+      "category": "error_handling",
+      "subcategory": "missing_handling",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "error_handling",
+          "severity": "high",
+          "line_range": [7, 13],
+          "description": "Subprocess operations without error handling"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/srp_violation_001.py",
+      "category": "solid_violations",
+      "subcategory": "srp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [9, 60],
+          "description": "UserManager class handles users, persistence, email, and reporting"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/srp_violation_002.py",
+      "category": "solid_violations",
+      "subcategory": "srp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [8, 70],
+          "description": "SalesReport class handles data retrieval and 3 output formats"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/srp_violation_003.py",
+      "category": "solid_violations",
+      "subcategory": "srp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [6, 55],
+          "description": "OrderValidator class handles validation, notification, and logging"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/ocp_violation_001.py",
+      "category": "solid_violations",
+      "subcategory": "ocp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [8, 35],
+          "description": "Switch on payment_type requires modification to add new types"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/ocp_violation_002.py",
+      "category": "solid_violations",
+      "subcategory": "ocp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [34, 55],
+          "description": "isinstance checks require modification to add new shapes"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/ocp_violation_003.py",
+      "category": "solid_violations",
+      "subcategory": "ocp_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [8, 40],
+          "description": "String channel matching requires modification for new channels"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/dip_violation_001.py",
+      "category": "solid_violations",
+      "subcategory": "dip_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [10, 15],
+          "description": "OrderService directly instantiates concrete dependencies"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/dip_violation_002.py",
+      "category": "solid_violations",
+      "subcategory": "dip_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [10, 30],
+          "description": "ReportGenerator creates concrete implementations inline"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "solid_violations/dip_violation_003.py",
+      "category": "solid_violations",
+      "subcategory": "dip_violation",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "solid",
+          "severity": "medium",
+          "line_range": [8, 28],
+          "description": "UserAuthenticator uses static method calls to concrete implementations"
+        }
+      ],
+      "is_false_positive_test": false
+    },
+    {
+      "file": "clean_code/well_structured_001.py",
+      "category": "clean_code",
+      "subcategory": "well_structured",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/well_structured_002.py",
+      "category": "clean_code",
+      "subcategory": "well_structured",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/well_structured_003.py",
+      "category": "clean_code",
+      "subcategory": "well_structured",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/well_structured_004.py",
+      "category": "clean_code",
+      "subcategory": "well_structured",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/well_structured_005.py",
+      "category": "clean_code",
+      "subcategory": "well_structured",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/proper_error_handling_001.py",
+      "category": "clean_code",
+      "subcategory": "proper_error_handling",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/proper_error_handling_002.py",
+      "category": "clean_code",
+      "subcategory": "proper_error_handling",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/proper_error_handling_003.py",
+      "category": "clean_code",
+      "subcategory": "proper_error_handling",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/proper_error_handling_004.py",
+      "category": "clean_code",
+      "subcategory": "proper_error_handling",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/solid_compliant_001.py",
+      "category": "clean_code",
+      "subcategory": "solid_compliant",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/solid_compliant_002.py",
+      "category": "clean_code",
+      "subcategory": "solid_compliant",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    },
+    {
+      "file": "clean_code/solid_compliant_003.py",
+      "category": "clean_code",
+      "subcategory": "solid_compliant",
+      "source": "synthetic",
+      "expected_findings": [],
+      "is_false_positive_test": true
+    }
+  ]
+}

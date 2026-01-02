@@ -134,6 +134,39 @@ Skills are located in:
 - Provides step-by-step human instructions for non-recoverable issues
 - Returns JSON with root cause, recovery plan, and escalation reason if needed
 
+### Code Quality Skills
+
+#### code-quality-analyst
+**Purpose**: Primary analysis agent that identifies code quality issues
+**Allowed Tools**: Read, Glob, Grep
+**Key Behaviors**:
+- Detects code smells: Long Method (>50 lines), Large Class (>300 lines), Deep Nesting (>4 levels)
+- Detects SOLID violations: SRP, OCP, DIP violations
+- Detects LLM issues: Hallucinated imports/APIs, incomplete implementations, missing error handling
+- Returns findings with severity (critical/high/medium/low) and priority (fix_now/fix_later/ignore)
+- Every finding has file:line evidence
+- Recommends: APPROVE, REFACTOR, or ESCALATE
+
+#### refactor-critic
+**Purpose**: Reviews analyst findings and catches false positives
+**Allowed Tools**: Read, Glob, Grep
+**Key Behaviors**:
+- Validates each finding by reading the actual code
+- Scores analysis on: accuracy, severity_calibration, actionability, pragmatism
+- Identifies issue types: false_positive, over_severity, impractical_fix, enterprise_creep
+- Protects shipping velocity by rejecting marginal improvements
+- Returns validated/rejected findings with reasoning
+
+#### refactor-moderator
+**Purpose**: Makes final verdict and generates TDD refactor plans
+**Allowed Tools**: Read, Glob, Grep
+**Key Behaviors**:
+- Reconciles analyst findings with critic feedback
+- Generates TDD plans for approved fixes (RED → GREEN → REFACTOR phases)
+- Creates handoff instructions for coder agent
+- Makes final verdict: APPROVE (proceed to QA), REFACTOR (send back to coder), ESCALATE (needs human)
+- Manages tech debt backlog for fix_later items
+
 ### Bug Investigation Skills
 
 #### bug-researcher
@@ -303,6 +336,35 @@ Agents are Python classes that orchestrate skill execution. They inherit from `B
 **Key Methods**:
 - `run(failure_data)` - Generates recovery plan or escalation
 
+### Code Quality Agents
+
+#### CodeQualityDispatcher
+**Module**: `swarm_attack.code_quality.dispatcher`
+**Orchestrates**: Three-stage debate for code quality review
+**Key Methods**:
+- `run_review(file_paths, retry_context)` - Full three-phase review pipeline
+- `run_analyst_phase(file_paths)` - Stage 1: Analyze code (90s budget)
+- `run_critic_phase(analysis)` - Stage 2: Validate findings (30s budget)
+- `run_moderator_phase(analysis, critique)` - Stage 3: Final verdict (30s budget)
+- `should_escalate(retry_context)` - Check if max retries (3) exceeded
+
+**Pipeline Position**: Sits between CoderAgent and QA (VerifierAgent)
+```
+CoderAgent → CodeQualityDispatcher → VerifierAgent
+                    │
+                    ├─ APPROVE → proceed to QA
+                    ├─ REFACTOR → send back to CoderAgent with TDD plan
+                    └─ ESCALATE → requires human review
+```
+
+**Timing Budgets**:
+- Analyst: 90 seconds
+- Critic: 30 seconds
+- Moderator: 30 seconds
+- Total SLA: ~2 minutes for 10-20 files
+
+**Retry Loop**: Max 3 iterations before escalation
+
 ### Bug Investigation Agents
 
 #### BugResearcherAgent
@@ -365,8 +427,14 @@ Agents are orchestrated by pipeline managers in `/Users/philipjcortes/Desktop/sw
    ```
    PRD → SpecAuthor → SpecCritic/SpecModerator (debate) → Approve
    → IssueCreator → IssueValidator → ComplexityGate → IssueSplitter (if needed)
-   → CoderAgent → VerifierAgent → RecoveryAgent (if failures) → Commit
+   → CoderAgent → CodeQualityDispatcher → VerifierAgent → RecoveryAgent (if failures) → Commit
    ```
+
+   **Code Quality Gate** (between Coder and Verifier):
+   - Runs code-quality-analyst → refactor-critic → refactor-moderator debate
+   - APPROVE: Code passes to VerifierAgent
+   - REFACTOR: Returns to CoderAgent with TDD fix plan (max 3 retries)
+   - ESCALATE: Requires human review
 
 2. **Bug Bash Pipeline** (`bug_bash.py`):
    ```
@@ -402,6 +470,15 @@ swarm_attack/
 │   ├── spec_author.py
 │   ├── coder.py
 │   └── ...
+├── code_quality/        # Code quality analysis module
+│   ├── dispatcher.py    # Three-stage debate orchestrator
+│   ├── analyzer.py      # Main analysis engine
+│   ├── smell_detector.py
+│   ├── solid_checker.py
+│   ├── llm_auditor.py   # Hallucination detection
+│   ├── refactor_suggester.py
+│   ├── tdd_generator.py # Generates TDD plans for fixes
+│   └── models.py        # Finding, AnalysisResult, etc.
 └── orchestrators/       # Pipeline managers
     ├── feature_swarm.py
     └── bug_bash.py
@@ -462,6 +539,32 @@ swarm-attack bug approve bug-123
 
 # Apply fix
 swarm-attack bug fix bug-123
+```
+
+### Running Code Quality Review
+```python
+from swarm_attack.code_quality import CodeQualityDispatcher
+
+# Initialize dispatcher
+dispatcher = CodeQualityDispatcher()
+
+# Run full three-stage review on files
+result = dispatcher.run_review(["swarm_attack/agents/coder.py"])
+
+# Check verdict
+if result.final_verdict.value == "APPROVE":
+    print("Code quality approved - proceed to QA")
+elif result.final_verdict.value == "REFACTOR":
+    print("Needs refactoring:")
+    for finding in result.approved_findings:
+        print(f"  - {finding.finding_id}: {finding.tdd_plan.red.description}")
+else:  # ESCALATE
+    print("Requires human review")
+
+# Run individual phases if needed
+analysis = dispatcher.run_analyst_phase(["path/to/file.py"])
+critique = dispatcher.run_critic_phase(analysis)
+decision = dispatcher.run_moderator_phase(analysis, critique)
 ```
 
 ---
