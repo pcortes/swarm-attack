@@ -1081,6 +1081,71 @@ swarm-attack review-commits --since "{checkpoint_time}" --output json
 - If individual project review fails, others continue (fault isolation)
 - Timeout: 300 seconds per project
 
+## Codex CLI Error Handling (v0.4.1)
+
+Robust error classification and auth handling for Codex CLI invocations.
+
+### Auth Classification Control
+
+The `CodexCliRunner` supports configurable auth error handling via `skip_auth_classification`:
+
+```python
+from swarm_attack.codex_client import CodexCliRunner
+
+# Default: auth errors raise CodexAuthError
+runner = CodexCliRunner(config=config)
+
+# Skip auth classification: auth errors raise InvocationError instead
+runner = CodexCliRunner(config=config, skip_auth_classification=True)
+```
+
+**Use cases:**
+- Set `skip_auth_classification=True` when preflight auth checks are disabled
+- Useful in CI environments or with pre-authenticated sessions
+
+### Error Classification Rules
+
+The error classifier follows strict rules to avoid false positives:
+
+| Rule | Behavior |
+|------|----------|
+| **Success returncode (0)** | Never triggers any error classification |
+| **Check stderr only** | Ignores stdout (which may contain PRDs/specs mentioning "authentication") |
+| **Specific patterns** | Uses anchored patterns like `Token exchange error`, not generic `authentication` |
+
+### Auth Error Patterns (stderr only)
+
+```python
+# Matched patterns:
+"not logged in"
+"login required"
+"invalid session"
+"session expired"
+"please run `codex login`"
+"AuthenticationError:"
+"401 Unauthorized"
+"Token exchange error"
+```
+
+### Rate Limit Patterns (stderr only)
+
+```python
+# Matched patterns:
+"rate limit exceeded"    # More specific than just "rate limit"
+"rate_limit_exceeded"
+"too many requests"
+"429"
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/codex_client.py` | CodexCliRunner with skip_auth_classification |
+| `swarm_attack/errors.py` | ErrorClassifier with pattern matching |
+| `tests/unit/test_codex_error_classification.py` | False positive prevention tests |
+| `tests/unit/test_codex_auth_patterns.py` | Auth pattern tests |
+
 ## Context Flow & Schema Drift Prevention (v0.3.0)
 
 Prevents duplicate class definitions across issues by tracking what each issue creates or modifies.
@@ -1124,10 +1189,71 @@ outputs = coder._extract_outputs(
 # ConfigParser is now in module registry for Issue #2 to see
 ```
 
+### Parsing Modified Files from LLM Response (v0.4.1)
+
+The `_parse_modified_files()` method extracts file paths from LLM response text:
+
+```python
+# Supported markers:
+"# MODIFIED FILE: path/to/file.py"
+"#MODIFIED FILE: path/to/file.py"  # no space
+"Modified: `path/to/file.py`"
+"Modified: path/to/file.py"
+"Updated: `path/to/file.py`"
+"Updated: path/to/file.py"
+```
+
+**Features:**
+- Handles whitespace variations
+- Deduplicates file paths
+- Filters to Python files by default (`python_only=True`)
+
+### Extended Language Support (v0.4.1)
+
+Class extraction now supports additional patterns:
+
+| Language | Patterns Supported |
+|----------|-------------------|
+| **Python** | `class Foo`, nested classes (any indentation) |
+| **TypeScript** | `class`, `export class`, `abstract class`, `export abstract class` |
+| **Dart** | `class`, `abstract class` |
+
+### Empty Output Validation (v0.4.1)
+
+CoderAgent rejects empty file outputs to prevent marking issues as "Done" with no implementation:
+
+```python
+# Validation logic:
+real_files = {k: v for k, v in files.items() if not k.endswith('.gitkeep')}
+if not real_files:
+    # Logs "coder_no_files_generated"
+    # Emits IMPL_FAILED event
+    # Returns failure result
+```
+
+### Stdlib Module Whitelist (v0.4.1)
+
+The following modules are recognized as stdlib (not flagged as external dependencies):
+
+```python
+STDLIB_MODULES = frozenset([
+    '__future__', 'abc', 'asyncio', 'collections', 'copy', 'dataclasses',
+    'datetime', 'enum', 'functools', 'importlib', 'inspect', 'io',
+    'itertools', 'json', 'logging', 'math', 'os', 'pathlib', 'pickle',
+    'random', 're', 'shutil', 'string', 'sys', 'tempfile', 'time',
+    'traceback', 'typing', 'unittest', 'uuid', 'warnings', 'contextlib',
+    'threading', 'multiprocessing', 'subprocess', 'socket', 'struct',
+    'textwrap', 'hashlib', 'base64', 'argparse', 'configparser',
+    # ... and more
+])
+```
+
 ### Key Files
 
 | File | Purpose |
 |------|---------|
 | `swarm_attack/agents/coder.py:_extract_outputs()` | Extracts classes from created + modified files |
+| `swarm_attack/agents/coder.py:_parse_modified_files()` | Parses modified file markers from LLM response |
+| `swarm_attack/agents/coder.py:_extract_classes_from_content()` | Multi-language class extraction |
 | `swarm_attack/state_store.py:get_module_registry()` | Builds registry including modified files |
 | `swarm_attack/context_builder.py` | Formats rich context with source code |
