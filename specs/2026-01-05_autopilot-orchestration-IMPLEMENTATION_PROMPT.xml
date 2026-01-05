@@ -1,0 +1,636 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  IMPLEMENTATION PROMPT: Autopilot Orchestration Best Practices
+
+  Created: 2026-01-05
+  Updated: 2026-01-05 (added parallel subagent execution)
+  Spec: specs/2026-01-05_autopilot-orchestration-best-practices.xml
+  Purpose: Implement bounded autopilot with safety gates for swarm-attack + QA + COO
+
+  EXECUTION MODEL: Parallel subagents (up to 15 concurrent)
+
+  PHASES:
+    1. Safety and Continuity (safety net hooks, continuity ledger, statusline warnings)
+    2. Orchestration and Verification (plan-validate-implement, auto-verify, command logging)
+    3. Observability and Dashboard (statusline HUD, lightweight dashboard)
+    4. Workflow and COO Integration (templates, CI gates, COO sync, model variants)
+-->
+<implementation_prompt>
+  <metadata>
+    <title>Implement Autopilot Orchestration Best Practices</title>
+    <spec_reference>specs/2026-01-05_autopilot-orchestration-best-practices.xml</spec_reference>
+    <update_reference>specs/2026-01-05_autopilot-orchestration-best-practices.update.xml</update_reference>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration</working_directory>
+    <branch>feature/autopilot-orchestration</branch>
+    <created>2026-01-05</created>
+    <execution_model>parallel_subagents</execution_model>
+    <max_concurrent_agents>15</max_concurrent_agents>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- STEP 0: ORCHESTRATOR SETUP (RUN FIRST - BEFORE SUBAGENTS)    -->
+  <!-- ============================================================ -->
+  <orchestrator_setup>
+    <description>
+      The orchestrating LLM MUST run this setup BEFORE spawning any subagents.
+      This creates the worktree that all subagents will work in.
+    </description>
+    <commands><![CDATA[
+# STEP 0.1: Create dedicated worktree for this implementation
+cd /Users/philipjcortes/Desktop/swarm-attack
+git fetch origin
+git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration -b feature/autopilot-orchestration
+
+# STEP 0.2: Navigate to worktree and verify
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+git branch   # Must show: * feature/autopilot-orchestration
+
+# STEP 0.3: Run existing tests to establish baseline
+PYTHONPATH=. pytest tests/ -v --tb=short -q 2>&1 | tail -20
+
+# STEP 0.4: Create directory structure for new modules
+mkdir -p swarm_attack/hooks
+mkdir -p swarm_attack/continuity
+mkdir -p swarm_attack/statusline
+mkdir -p swarm_attack/orchestration
+mkdir -p swarm_attack/logging
+mkdir -p swarm_attack/dashboard
+mkdir -p swarm_attack/coo_integration
+mkdir -p tests/unit/hooks
+mkdir -p tests/unit/continuity
+mkdir -p tests/unit/statusline
+mkdir -p tests/unit/orchestration
+mkdir -p tests/unit/logging
+mkdir -p tests/unit/dashboard
+mkdir -p tests/unit/coo_integration
+mkdir -p tests/integration
+
+# STEP 0.5: Create __init__.py files
+touch swarm_attack/hooks/__init__.py
+touch swarm_attack/continuity/__init__.py
+touch swarm_attack/statusline/__init__.py
+touch swarm_attack/orchestration/__init__.py
+touch swarm_attack/logging/__init__.py
+touch swarm_attack/dashboard/__init__.py
+touch swarm_attack/coo_integration/__init__.py
+touch tests/unit/hooks/__init__.py
+touch tests/unit/continuity/__init__.py
+touch tests/unit/statusline/__init__.py
+touch tests/unit/orchestration/__init__.py
+touch tests/unit/logging/__init__.py
+touch tests/unit/dashboard/__init__.py
+touch tests/unit/coo_integration/__init__.py
+    ]]></commands>
+    <verification>
+      After running setup, verify worktree exists and directories are created.
+      Only then proceed to spawn subagents.
+    </verification>
+  </orchestrator_setup>
+
+  <!-- ============================================================ -->
+  <!-- PARALLEL SUBAGENT EXECUTION MODEL                            -->
+  <!-- ============================================================ -->
+  <subagent_execution>
+    <description>
+      After worktree setup, spawn up to 15 parallel subagents to implement
+      Phase 1 deliverables. Each subagent handles one test file + one impl file.
+      Use TDD: write tests first (RED), then implementation (GREEN).
+    </description>
+
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration</working_directory>
+
+    <phase1_subagents>
+      <!-- Tests first (RED phase) - spawn these 8 in parallel -->
+      <subagent id="1" name="Write tests for SafetyNetHook">
+        <task>Write TDD tests for safety net hook that blocks destructive commands</task>
+        <output_file>tests/unit/hooks/test_safety_net.py</output_file>
+        <dependencies>none</dependencies>
+      </subagent>
+
+      <subagent id="2" name="Write tests for ContinuityLedger">
+        <task>Write TDD tests for continuity ledger that persists goals/decisions</task>
+        <output_file>tests/unit/continuity/test_ledger.py</output_file>
+        <dependencies>none</dependencies>
+      </subagent>
+
+      <subagent id="3" name="Write tests for HandoffManager">
+        <task>Write TDD tests for auto-handoff on session end/compaction</task>
+        <output_file>tests/unit/continuity/test_handoff.py</output_file>
+        <dependencies>none</dependencies>
+      </subagent>
+
+      <subagent id="4" name="Write tests for ContextMonitor">
+        <task>Write TDD tests for statusline context warnings at 70/80/90%</task>
+        <output_file>tests/unit/statusline/test_context_monitor.py</output_file>
+        <dependencies>none</dependencies>
+      </subagent>
+
+      <!-- Implementation (GREEN phase) - spawn after tests exist -->
+      <subagent id="5" name="Implement SafetyNetHook">
+        <task>Implement safety net hook with allow/block lists and override mechanism</task>
+        <output_file>swarm_attack/hooks/safety_net.py</output_file>
+        <dependencies>subagent_1</dependencies>
+      </subagent>
+
+      <subagent id="6" name="Implement ContinuityLedger">
+        <task>Implement ledger that tracks goals, decisions, blockers across sessions</task>
+        <output_file>swarm_attack/continuity/ledger.py</output_file>
+        <dependencies>subagent_2</dependencies>
+      </subagent>
+
+      <subagent id="7" name="Implement HandoffManager">
+        <task>Implement auto-handoff generation on PreCompact hook</task>
+        <output_file>swarm_attack/continuity/handoff.py</output_file>
+        <dependencies>subagent_3</dependencies>
+      </subagent>
+
+      <subagent id="8" name="Implement ContextMonitor">
+        <task>Implement context usage monitor with warning thresholds</task>
+        <output_file>swarm_attack/statusline/context_monitor.py</output_file>
+        <dependencies>subagent_4</dependencies>
+      </subagent>
+
+      <!-- Integration tests - spawn after implementations -->
+      <subagent id="9" name="Write integration tests for Phase 1">
+        <task>Write end-to-end integration tests for safety and continuity</task>
+        <output_file>tests/integration/test_phase1_safety_continuity.py</output_file>
+        <dependencies>subagent_5,subagent_6,subagent_7,subagent_8</dependencies>
+      </subagent>
+
+      <!-- Module exports -->
+      <subagent id="10" name="Update module exports">
+        <task>Update __init__.py files with proper exports</task>
+        <output_file>swarm_attack/hooks/__init__.py,swarm_attack/continuity/__init__.py,swarm_attack/statusline/__init__.py</output_file>
+        <dependencies>subagent_5,subagent_6,subagent_7,subagent_8</dependencies>
+      </subagent>
+    </phase1_subagents>
+
+    <execution_waves>
+      <wave id="1" name="Tests (RED)">
+        <spawn_parallel>subagent_1, subagent_2, subagent_3, subagent_4</spawn_parallel>
+        <description>Spawn 4 agents to write tests in parallel. All tests should FAIL initially.</description>
+      </wave>
+      <wave id="2" name="Implementation (GREEN)">
+        <spawn_parallel>subagent_5, subagent_6, subagent_7, subagent_8</spawn_parallel>
+        <wait_for>wave_1</wait_for>
+        <description>After tests exist, spawn 4 agents to implement. Tests should PASS after.</description>
+      </wave>
+      <wave id="3" name="Integration">
+        <spawn_parallel>subagent_9, subagent_10</spawn_parallel>
+        <wait_for>wave_2</wait_for>
+        <description>Integration tests and module exports.</description>
+      </wave>
+    </execution_waves>
+  </subagent_execution>
+
+  <!-- ============================================================ -->
+  <!-- EXPERT TEAM STRUCTURE                                        -->
+  <!-- ============================================================ -->
+  <team_structure>
+    <expert role="Chief Architect" name="Systems Architect">
+      <focus>Orchestration boundaries, hook lifecycle, schema stability</focus>
+      <responsibility>Ensure modules compose cleanly without latency overhead</responsibility>
+    </expert>
+    <expert role="QA Director" name="QA Lead">
+      <focus>Test coverage, integration testing, manual QA gates</focus>
+      <responsibility>Autopilot must not ship without verified behavior</responsibility>
+    </expert>
+    <expert role="Security Lead" name="Safety Engineer">
+      <focus>Command blocking, dependency validation, secrets hygiene</focus>
+      <responsibility>Hard technical constraints beat soft prompt rules</responsibility>
+    </expert>
+    <expert role="COO" name="Operations Strategist">
+      <focus>Spec archival, priority alignment, budget enforcement</focus>
+      <responsibility>Autonomy must serve portfolio goals and cost caps</responsibility>
+    </expert>
+    <expert role="Platform Engineer" name="Cross-Platform Lead">
+      <focus>Windows/Linux/macOS compatibility</focus>
+      <responsibility>No bash dependencies; graceful degradation on missing tools</responsibility>
+    </expert>
+    <expert role="Product" name="Delivery Manager">
+      <focus>Completion promises, stop conditions, release readiness</focus>
+      <responsibility>Perpetual improvement loops are not acceptable</responsibility>
+    </expert>
+  </team_structure>
+
+  <!-- ============================================================ -->
+  <!-- TDD PROTOCOL (MANDATORY)                                     -->
+  <!-- ============================================================ -->
+  <tdd_protocol>
+    <phase name="RED">Write failing tests for each acceptance criterion BEFORE implementation.</phase>
+    <phase name="GREEN">Implement minimal code to pass tests. No over-engineering.</phase>
+    <phase name="REFACTOR">Refine without changing behavior; keep tests green.</phase>
+    <rule>NEVER write implementation before tests exist and fail.</rule>
+    <rule>Each phase deliverable needs integration tests.</rule>
+  </tdd_protocol>
+
+  <!-- ============================================================ -->
+  <!-- LEGACY SETUP (kept for reference)                            -->
+  <!-- ============================================================ -->
+  <setup><![CDATA[
+# NOTE: Use orchestrator_setup section above instead.
+# This is kept for reference only.
+
+# Create dedicated worktree for this implementation
+cd /Users/philipjcortes/Desktop/swarm-attack
+git fetch origin
+git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration -b feature/autopilot-orchestration
+
+# Navigate to worktree
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+
+# Verify
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+git branch   # Must show: * feature/autopilot-orchestration
+
+# Run existing tests to establish baseline
+PYTHONPATH=. pytest tests/ -v --tb=short -q 2>&1 | tail -20
+  ]]></setup>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 1: SAFETY AND CONTINUITY                               -->
+  <!-- ============================================================ -->
+  <phase id="1" name="Safety and Continuity">
+    <goal>
+      Implement safety net hooks, continuity ledger with auto-handoff,
+      and statusline context warnings. This is P0 - no autonomy without safety.
+    </goal>
+
+    <deliverables>
+      <deliverable id="1.1" name="Safety Net Hook">
+        <file>swarm_attack/hooks/safety_net.py</file>
+        <test_file>tests/unit/hooks/test_safety_net.py</test_file>
+        <description>
+          PreToolUse hook that blocks destructive commands with allow/block lists.
+          Returns actionable error messages with override instructions.
+        </description>
+        <acceptance_criteria>
+          <criterion>Block rm -rf, git push --force, DROP TABLE patterns</criterion>
+          <criterion>Allow explicit override via SAFETY_NET_OVERRIDE=1</criterion>
+          <criterion>Cross-platform: no bash dependency, works on Windows</criterion>
+          <criterion>Configurable via .claude/safety-net.yaml</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="1.2" name="Continuity Ledger">
+        <file>swarm_attack/continuity/ledger.py</file>
+        <test_file>tests/unit/continuity/test_ledger.py</test_file>
+        <description>
+          Tracks active goals, decisions, and context across sessions.
+          Persists to .swarm/continuity/ledger-{session_id}.json
+        </description>
+        <acceptance_criteria>
+          <criterion>Record goals, decisions, blockers, and handoff notes</criterion>
+          <criterion>Inject prior ledger on SessionStart hook</criterion>
+          <criterion>Auto-serialize before context compaction</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="1.3" name="Auto-Handoff System">
+        <file>swarm_attack/continuity/handoff.py</file>
+        <test_file>tests/unit/continuity/test_handoff.py</test_file>
+        <description>
+          Generates handoff summaries on session end or compaction.
+          Injects handoff into next session via hook.
+        </description>
+        <acceptance_criteria>
+          <criterion>Generate handoff on PreCompact hook</criterion>
+          <criterion>Include: completed work, pending goals, blockers, context</criterion>
+          <criterion>Inject handoff automatically on SessionStart</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="1.4" name="Statusline Context Warnings">
+        <file>swarm_attack/statusline/context_monitor.py</file>
+        <test_file>tests/unit/statusline/test_context_monitor.py</test_file>
+        <description>
+          Monitors context usage and warns at 70/80/90% thresholds.
+          Suggests handoff when approaching limits.
+        </description>
+        <acceptance_criteria>
+          <criterion>Warning levels: 70% (INFO), 80% (WARN), 90% (CRITICAL)</criterion>
+          <criterion>Suggest handoff at 85%+ with command hint</criterion>
+          <criterion>Works via Claude Code statusline API (no bash)</criterion>
+        </acceptance_criteria>
+      </deliverable>
+    </deliverables>
+
+    <tdd_red><![CDATA[
+# Phase 1.1: Safety Net Hook Tests
+# tests/unit/hooks/test_safety_net.py
+
+import pytest
+from swarm_attack.hooks.safety_net import SafetyNetHook, BlockedCommandError
+
+class TestSafetyNetBlocking:
+    """Verify destructive commands are blocked."""
+
+    def test_blocks_rm_rf(self):
+        hook = SafetyNetHook()
+        with pytest.raises(BlockedCommandError, match="destructive"):
+            hook.check_command("rm -rf /")
+
+    def test_blocks_force_push(self):
+        hook = SafetyNetHook()
+        with pytest.raises(BlockedCommandError, match="force push"):
+            hook.check_command("git push --force origin main")
+
+    def test_blocks_drop_table(self):
+        hook = SafetyNetHook()
+        with pytest.raises(BlockedCommandError, match="DROP TABLE"):
+            hook.check_command("psql -c 'DROP TABLE users'")
+
+    def test_allows_safe_commands(self):
+        hook = SafetyNetHook()
+        # Should not raise
+        hook.check_command("git status")
+        hook.check_command("pytest tests/")
+        hook.check_command("ls -la")
+
+class TestSafetyNetOverride:
+    """Verify override mechanism works."""
+
+    def test_override_allows_blocked_command(self, monkeypatch):
+        monkeypatch.setenv("SAFETY_NET_OVERRIDE", "1")
+        hook = SafetyNetHook()
+        # Should not raise with override
+        hook.check_command("rm -rf /tmp/test")
+
+class TestSafetyNetConfig:
+    """Verify config loading."""
+
+    def test_loads_custom_patterns(self, tmp_path):
+        config = tmp_path / ".claude" / "safety-net.yaml"
+        config.parent.mkdir(parents=True)
+        config.write_text("block_patterns:\n  - 'custom_danger'")
+
+        hook = SafetyNetHook(config_path=config)
+        with pytest.raises(BlockedCommandError):
+            hook.check_command("custom_danger --execute")
+    ]]></tdd_red>
+
+    <integration_test><![CDATA[
+# tests/integration/test_phase1_safety_continuity.py
+
+import pytest
+from pathlib import Path
+
+class TestSafetyAndContinuityIntegration:
+    """End-to-end tests for Phase 1 deliverables."""
+
+    def test_safety_net_blocks_and_logs(self, tmp_path):
+        """Safety net blocks command and logs the attempt."""
+        from swarm_attack.hooks.safety_net import SafetyNetHook
+
+        hook = SafetyNetHook(log_dir=tmp_path)
+        with pytest.raises(Exception):
+            hook.check_command("rm -rf /")
+
+        # Verify logged
+        log_files = list(tmp_path.glob("*.log"))
+        assert len(log_files) == 1
+        assert "rm -rf" in log_files[0].read_text()
+
+    def test_ledger_survives_session_restart(self, tmp_path):
+        """Ledger persists and restores across sessions."""
+        from swarm_attack.continuity.ledger import ContinuityLedger
+
+        # Session 1: Create ledger
+        ledger1 = ContinuityLedger(storage_dir=tmp_path, session_id="sess-001")
+        ledger1.add_goal("Implement safety net")
+        ledger1.add_decision("Use YAML for config")
+        ledger1.save()
+
+        # Session 2: Restore ledger
+        ledger2 = ContinuityLedger(storage_dir=tmp_path, session_id="sess-002")
+        ledger2.load_prior_session("sess-001")
+
+        assert "Implement safety net" in ledger2.get_prior_goals()
+        assert "Use YAML for config" in ledger2.get_prior_decisions()
+
+    def test_handoff_generated_on_compaction(self, tmp_path):
+        """Auto-handoff creates summary before compaction."""
+        from swarm_attack.continuity.handoff import HandoffManager
+        from swarm_attack.continuity.ledger import ContinuityLedger
+
+        ledger = ContinuityLedger(storage_dir=tmp_path, session_id="sess-001")
+        ledger.add_goal("Complete Phase 1")
+        ledger.mark_complete("Phase 1.1 done")
+        ledger.add_blocker("Need config review")
+
+        manager = HandoffManager(storage_dir=tmp_path)
+        handoff = manager.generate_handoff(ledger)
+
+        assert "Complete Phase 1" in handoff.goals
+        assert "Phase 1.1 done" in handoff.completed
+        assert "Need config review" in handoff.blockers
+    ]]></integration_test>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 2: ORCHESTRATION AND VERIFICATION                      -->
+  <!-- ============================================================ -->
+  <phase id="2" name="Orchestration and Verification">
+    <goal>
+      Implement plan-validate-implement pipeline with auto-verify hooks.
+      Every implementation creates a handoff and verification record.
+    </goal>
+
+    <deliverables>
+      <deliverable id="2.1" name="Plan-Validate-Implement Pipeline">
+        <file>swarm_attack/orchestration/pvi_pipeline.py</file>
+        <test_file>tests/unit/orchestration/test_pvi_pipeline.py</test_file>
+        <description>
+          Three-stage pipeline: Plan (design), Validate (review), Implement (execute).
+          Each stage produces artifacts for the next.
+        </description>
+        <acceptance_criteria>
+          <criterion>Plan stage produces implementation plan with steps</criterion>
+          <criterion>Validate stage runs checks (tests exist, deps resolved)</criterion>
+          <criterion>Implement stage executes with verification gates</criterion>
+          <criterion>Each stage creates handoff for next stage</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="2.2" name="Auto-Verify Hook">
+        <file>swarm_attack/hooks/auto_verify.py</file>
+        <test_file>tests/unit/hooks/test_auto_verify.py</test_file>
+        <description>
+          PostToolUse hook that runs tests, lint, and security scan after changes.
+          Triggers on file writes and git commits.
+        </description>
+        <acceptance_criteria>
+          <criterion>Run pytest on test files after code changes</criterion>
+          <criterion>Run ruff/flake8 on modified Python files</criterion>
+          <criterion>Fail loudly if tests break (no silent failures)</criterion>
+          <criterion>Create verification record in .swarm/verification/</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="2.3" name="Command Logging and Reasoning History">
+        <file>swarm_attack/logging/command_history.py</file>
+        <test_file>tests/unit/logging/test_command_history.py</test_file>
+        <description>
+          Logs commands and reasoning per commit for audit and learning.
+          Stored in .swarm/history/ with commit SHA reference.
+        </description>
+        <acceptance_criteria>
+          <criterion>Log command, timestamp, outcome, and reasoning</criterion>
+          <criterion>Link to git commit SHA when available</criterion>
+          <criterion>Searchable by date, command type, or outcome</criterion>
+          <criterion>Redact secrets from logged commands</criterion>
+        </acceptance_criteria>
+      </deliverable>
+    </deliverables>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 3: OBSERVABILITY AND DASHBOARD                         -->
+  <!-- ============================================================ -->
+  <phase id="3" name="Observability and Dashboard">
+    <goal>
+      Real-time visibility into autopilot status via statusline HUD
+      and lightweight dashboard. Cross-platform, no bash dependency.
+    </goal>
+
+    <deliverables>
+      <deliverable id="3.1" name="Statusline HUD">
+        <file>swarm_attack/statusline/hud.py</file>
+        <test_file>tests/unit/statusline/test_hud.py</test_file>
+        <description>
+          Shows: model, context %, active agent, current task, todo progress.
+          Uses Claude Code native statusline API.
+        </description>
+        <acceptance_criteria>
+          <criterion>Display model name and context percentage</criterion>
+          <criterion>Show active agent and current task</criterion>
+          <criterion>Show todo progress (X/Y completed)</criterion>
+          <criterion>Works on macOS, Linux, Windows without bash</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="3.2" name="Lightweight Dashboard">
+        <file>swarm_attack/dashboard/status_view.py</file>
+        <test_file>tests/unit/dashboard/test_status_view.py</test_file>
+        <description>
+          JSON-based status file that external tools can read.
+          Updates on agent transitions and task completions.
+        </description>
+        <acceptance_criteria>
+          <criterion>Write .swarm/status.json on state changes</criterion>
+          <criterion>Include: agents, tasks, context, last_update timestamp</criterion>
+          <criterion>Support terminal-based viewer (optional)</criterion>
+        </acceptance_criteria>
+      </deliverable>
+    </deliverables>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 4: WORKFLOW AND COO INTEGRATION                        -->
+  <!-- ============================================================ -->
+  <phase id="4" name="Workflow and COO Integration">
+    <goal>
+      Integrate with COO priority board and spec archival.
+      Add issue/PR templates and CI gates for quality control.
+    </goal>
+
+    <deliverables>
+      <deliverable id="4.1" name="Issue and PR Templates">
+        <file>.github/ISSUE_TEMPLATE/bug_report.md</file>
+        <file>.github/ISSUE_TEMPLATE/feature_request.md</file>
+        <file>.github/PULL_REQUEST_TEMPLATE.md</file>
+        <test_file>tests/unit/templates/test_template_validity.py</test_file>
+        <description>
+          Standardized templates for bugs, features, and PRs.
+          Include testing checklist and required fields.
+        </description>
+      </deliverable>
+
+      <deliverable id="4.2" name="COO Priority Board Sync">
+        <file>swarm_attack/coo_integration/priority_sync.py</file>
+        <test_file>tests/unit/coo_integration/test_priority_sync.py</test_file>
+        <description>
+          Sync autopilot tasks with COO priority board.
+          Respect budget caps and strategic priorities.
+        </description>
+        <acceptance_criteria>
+          <criterion>Push completed specs to COO archive</criterion>
+          <criterion>Pull priority rankings from COO board</criterion>
+          <criterion>Enforce budget limits from COO config</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="4.3" name="Spec Archival Hooks">
+        <file>swarm_attack/coo_integration/spec_archival.py</file>
+        <test_file>tests/unit/coo_integration/test_spec_archival.py</test_file>
+        <description>
+          Auto-archive specs and test reports to COO format.
+          Include timestamps and traceability metadata.
+        </description>
+        <acceptance_criteria>
+          <criterion>Archive approved specs to COO/projects/{project}/specs/</criterion>
+          <criterion>Archive test reports to COO/projects/{project}/qa/</criterion>
+          <criterion>Include creation date, author, and approval status</criterion>
+        </acceptance_criteria>
+      </deliverable>
+
+      <deliverable id="4.4" name="Model Variant Config">
+        <file>swarm_attack/config/model_variants.py</file>
+        <test_file>tests/unit/config/test_model_variants.py</test_file>
+        <description>
+          Support multiple model providers with project-scoped isolation.
+          No cross-project task leakage.
+        </description>
+        <acceptance_criteria>
+          <criterion>Configure model per project in config.yaml</criterion>
+          <criterion>Isolate task queues by project</criterion>
+          <criterion>Support Opus 4.5 and alternate providers</criterion>
+        </acceptance_criteria>
+      </deliverable>
+    </deliverables>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- COMPLETION CRITERIA                                          -->
+  <!-- ============================================================ -->
+  <completion_criteria>
+    <criterion>All phase tests pass (unit + integration)</criterion>
+    <criterion>Manual QA report exists in .swarm/qa/test-reports/</criterion>
+    <criterion>Safety net blocks destructive commands in live test</criterion>
+    <criterion>Continuity survives simulated compaction</criterion>
+    <criterion>Statusline works on macOS without bash dependency</criterion>
+    <criterion>COO can read archived specs and test reports</criterion>
+  </completion_criteria>
+
+  <!-- ============================================================ -->
+  <!-- COMMIT PROTOCOL                                              -->
+  <!-- ============================================================ -->
+  <commit_protocol>
+    <rule>One commit per deliverable (e.g., "feat(safety): add safety net hook")</rule>
+    <rule>Include test file in same commit as implementation</rule>
+    <rule>Run full test suite before pushing</rule>
+    <rule>Push to feature branch; PR to master after phase complete</rule>
+  </commit_protocol>
+
+  <!-- ============================================================ -->
+  <!-- START HERE                                                   -->
+  <!-- ============================================================ -->
+  <start_instructions><![CDATA[
+1. Run the setup commands above to create the worktree
+2. Start with Phase 1.1 (Safety Net Hook)
+3. Write the RED tests first (copy from tdd_red section)
+4. Verify tests FAIL (no implementation yet)
+5. Implement minimal code to pass tests
+6. Run: PYTHONPATH=. pytest tests/unit/hooks/test_safety_net.py -v
+7. Commit: git add -A && git commit -m "feat(safety): add safety net hook"
+8. Continue to Phase 1.2, 1.3, 1.4
+9. After Phase 1 complete, run integration tests
+10. Create manual QA report in .swarm/qa/test-reports/
+
+After each phase:
+- Push branch: git push origin feature/autopilot-orchestration
+- Update this file with completion status
+- Notify for review before proceeding to next phase
+  ]]></start_instructions>
+</implementation_prompt>
