@@ -219,10 +219,15 @@ your-project/
 └── .swarm/                 # State tracking
     ├── state/
     │   └── my-feature.json
-    └── bugs/
-        └── bug-id/
-            ├── state.json
-            └── fix-plan.md
+    ├── bugs/
+    │   └── bug-id/
+    │       ├── state.json
+    │       └── fix-plan.md
+    ├── continuity/         # Session state (autopilot)
+    │   └── ledger.json
+    ├── history/            # Command history
+    │   └── command_history.json
+    └── status.json         # Dashboard output
 ```
 
 ## The Debate Pipeline
@@ -357,6 +362,44 @@ swarm-attack bug status bug-id
 | **BugResearcher** | Reproduces bugs and gathers evidence |
 | **RootCauseAnalyzer** | Identifies root cause of bugs |
 | **FixPlanner** | Generates comprehensive fix plans |
+
+## Autopilot Orchestration System
+
+Swarm Attack includes a comprehensive autopilot orchestration layer for safer, more autonomous operation with COO integration. (690 tests across 12 components)
+
+### Core Components
+
+| Phase | Component | Purpose |
+|-------|-----------|---------|
+| **Safety** | SafetyNetHook | Blocks destructive commands (`rm -rf`, `DROP TABLE`) |
+| **Safety** | ContinuityLedger | Session state persistence for goals, decisions, blockers |
+| **Safety** | HandoffManager | Auto-generates session handoffs between agents |
+| **Safety** | ContextMonitor | Monitors context window usage |
+| **Verification** | AutoVerifyHook | Auto-runs `pytest`/`ruff` after code changes |
+| **Verification** | PVIPipeline | Plan-Validate-Implement orchestration pipeline |
+| **Verification** | CommandHistory | Command logging with automatic secret redaction |
+| **UI** | StatuslineHUD | Real-time statusline for Claude Code |
+| **UI** | StatusView | Dashboard output at `.swarm/status.json` |
+| **COO** | ModelVariants | Model configuration (opus/sonnet/haiku per task) |
+| **COO** | PrioritySyncManager | Syncs with COO priority rankings |
+| **COO** | SpecArchiver | Archives specs to COO system |
+
+### Autopilot Command
+
+```bash
+swarm-attack cos autopilot              # Run with defaults ($10 budget, 2h)
+swarm-attack cos autopilot -b 5 -d 1h   # Custom budget/duration
+swarm-attack cos autopilot --list       # List paused sessions
+swarm-attack cos autopilot --resume ID  # Resume paused session
+```
+
+### Status Dashboard
+
+```bash
+cat .swarm/status.json | python -m json.tool  # View current status
+```
+
+See CLAUDE.md for detailed component documentation.
 
 ## Complexity Gate & Auto-Split
 

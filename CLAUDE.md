@@ -1257,3 +1257,303 @@ STDLIB_MODULES = frozenset([
 | `swarm_attack/agents/coder.py:_extract_classes_from_content()` | Multi-language class extraction |
 | `swarm_attack/state_store.py:get_module_registry()` | Builds registry including modified files |
 | `swarm_attack/context_builder.py` | Formats rich context with source code |
+
+## Autopilot Orchestration System (v0.5.0)
+
+Comprehensive autopilot infrastructure with safety guards, session continuity, automated verification, and COO integration. Implemented via 8 parallel subagents following TDD (690 tests).
+
+### Component Overview
+
+| Phase | Component | Tests | Purpose |
+|-------|-----------|-------|---------|
+| 1 | SafetyNetHook | 87 | Blocks destructive commands |
+| 1 | ContinuityLedger | 57 | Session state persistence |
+| 1 | HandoffManager | 30 | Session handoff between agents |
+| 1 | ContextMonitor | 40 | Context window monitoring |
+| 2 | AutoVerifyHook | 68 | Auto-runs pytest/ruff after changes |
+| 2 | PVIPipeline | 82 | Plan-Verify-Implement pipeline |
+| 2 | CommandHistory | 56 | Command history with secret redaction |
+| 3 | StatuslineHUD | 52 | Real-time statusline HUD |
+| 3 | DashboardStatusView | 53 | Dashboard at .swarm/status.json |
+| 4 | ModelVariants | 55 | Model configuration (opus/sonnet/haiku) |
+| 4 | PrioritySync | 55 | Syncs with COO priorities |
+| 4 | SpecArchival | 38 | Archives specs to COO |
+
+---
+
+## Safety & Continuity System (v0.5.0)
+
+Provides session safety nets, state persistence, and handoff capabilities.
+
+### SafetyNetHook
+
+Blocks dangerous commands before execution.
+
+**Blocked Commands:**
+
+| Pattern | Example |
+|---------|---------|
+| `rm -rf /` variants | Recursive deletion of root/home |
+| `git push --force` | Force pushes to protected branches |
+| `DROP TABLE` / `TRUNCATE` | SQL destructive commands |
+| `chmod/chown -R /` | Recursive permission changes |
+
+**Configuration:** `.claude/safety-net.yaml`
+
+```yaml
+enabled: true
+block_patterns:
+  - 'custom-dangerous-pattern'
+allow_patterns:
+  - 'rm -rf ./node_modules'  # Safe patterns
+```
+
+**Override:** Set `SAFETY_NET_OVERRIDE=1` environment variable (logs warning)
+
+### ContinuityLedger
+
+Tracks session state for handoff and recovery.
+
+**Records:**
+- Goals (pending, in_progress, completed)
+- Decisions (with rationale and alternatives)
+- Blockers (with severity and resolution)
+- Handoff notes (for next session)
+
+**Storage:** `.swarm/continuity/{session_id}.json`
+
+### HandoffManager
+
+Automates session handoff generation and injection.
+
+**Workflow:**
+1. **PreCompact Hook** - Generate handoff before context compaction
+2. **Save** - Persist to `.swarm/handoffs/handoff-{session_id}.json`
+3. **SessionStart Hook** - Inject prior session context
+
+### ContextMonitor
+
+Monitors context window usage with warning levels.
+
+| Level | Percentage | Action |
+|-------|------------|--------|
+| OK | < 70% | Normal operation |
+| WARN | 80% | Consider handoff soon |
+| CRITICAL | 90% | Immediate handoff recommended |
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/hooks/safety_net.py` | SafetyNetHook, DestructiveCommandError |
+| `swarm_attack/continuity/ledger.py` | ContinuityLedger |
+| `swarm_attack/continuity/handoff.py` | HandoffManager, Handoff |
+| `swarm_attack/statusline/context_monitor.py` | ContextMonitor, ContextLevel |
+
+---
+
+## Verification & History System (v0.5.0)
+
+Provides automated verification and command history with secret redaction.
+
+### AutoVerifyHook
+
+PostToolUse hook that automatically runs tests and linting after file changes.
+
+**Triggers:**
+- Python file writes (`.py` files)
+- Git commits
+
+**Verification Steps:**
+1. Run pytest on related test files
+2. Run ruff/flake8 on modified files
+3. Save record to `.swarm/verification/`
+4. Raise `VerificationError` if tests fail
+
+### PVIPipeline (Plan-Verify-Implement)
+
+Three-stage pipeline for structured implementation.
+
+```
+Plan → Validate → Implement
+  ↓       ↓          ↓
+Steps  Checks    Gates + Files
+```
+
+| Stage | Output | Handoff To |
+|-------|--------|------------|
+| **Plan** | PlanResult (steps with complexity) | Validate |
+| **Validate** | ValidationResult (blocking checks) | Implement |
+| **Implement** | ImplementationResult (gates, files) | - |
+
+### CommandHistory
+
+Persistent command history with secret redaction.
+
+**Redacted Patterns:**
+- `sk-*` API keys
+- `AKIA*` AWS keys
+- `ghp_*`, `gho_*` GitHub tokens
+- JWT tokens (eyJ...)
+- Bearer tokens
+
+**Storage:** `.swarm/history/command_history.json`
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/hooks/auto_verify.py` | AutoVerifyHook, VerificationResult |
+| `swarm_attack/orchestration/pvi_pipeline.py` | PVIPipeline, PlanStage, ValidateStage |
+| `swarm_attack/logging/command_history.py` | CommandHistory, redact_secrets |
+
+---
+
+## UI/Dashboard System (v0.5.0)
+
+Real-time status display and dashboard for autopilot orchestration.
+
+### StatuslineHUD
+
+Heads-Up Display for Claude Code statusline.
+
+**Display Format:**
+```
+Opus 4.5 | 45% | Coder | Implementing API endpoint... | 3/7
+```
+
+| Component | Example |
+|-----------|---------|
+| Model | Opus 4.5, Sonnet 4, Haiku 3.5 |
+| Context | 45% |
+| Agent | Coder, Verifier, idle |
+| Task | Truncated to 40 chars |
+| Progress | 3/7 (completed/total) |
+
+### DashboardStatusView
+
+Writes `.swarm/status.json` on state changes.
+
+**JSON Structure:**
+```json
+{
+  "agents": [{"name": "coder", "status": "active", "current_task": "..."}],
+  "tasks": [{"id": "task-1", "title": "...", "status": "done"}],
+  "context": {"model": "claude-opus-4-5-20251101", "context_percentage": 45.0},
+  "last_update": "2025-12-25T10:30:00Z"
+}
+```
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/statusline/hud.py` | HUD, HUDConfig, HUDStatus |
+| `swarm_attack/dashboard/status_view.py` | StatusView, AgentEntry, TaskEntry |
+
+---
+
+## COO Integration System (v0.5.0)
+
+Integration with COO (Chief Operating Officer) for priorities, budgets, and archival.
+
+### ModelVariants Configuration
+
+Configure models per project with task queue isolation.
+
+**config.yaml:**
+```yaml
+model_variants:
+  default_model:
+    model_id: claude-opus-4-5-20251101
+    provider: anthropic
+
+  projects:
+    desktop-miami:
+      model:
+        model_id: claude-sonnet-4-20250514
+        max_tokens: 8192
+      task_queue:
+        max_concurrent_tasks: 2
+```
+
+**Providers:** anthropic, openai, azure, bedrock, vertex, custom
+
+### PrioritySync
+
+Synchronizes with COO priority board and enforces budget limits.
+
+**Configuration:**
+```yaml
+coo:
+  coo_path: /Users/philipjcortes/coo
+  project_name: swarm-attack
+  daily_budget_limit: 100.0
+  monthly_budget_limit: 2500.0
+  sync_enabled: true
+```
+
+### SpecArchival
+
+Archives approved specs to COO with metadata.
+
+**Archived Path Format:**
+```
+COO/projects/{project}/specs/{YYYY-MM-DD}_{filename}.md
+```
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/config/model_variants.py` | ModelConfig, ModelVariantsConfig |
+| `swarm_attack/coo_integration/priority_sync.py` | PrioritySyncManager, COOConfig |
+| `swarm_attack/coo_integration/spec_archival.py` | SpecArchiver, ArchivalMetadata |
+
+---
+
+## Autopilot CLI Command (v0.5.0)
+
+Run autopilot to execute today's goals with budget/time limits.
+
+### Usage
+
+```bash
+# Run with defaults ($10 budget, 2h duration)
+swarm-attack cos autopilot
+
+# Custom budget and duration
+swarm-attack cos autopilot -b 5.0 -d 1h
+
+# Stop at first approval checkpoint
+swarm-attack cos autopilot --until approval
+
+# Resume a paused session
+swarm-attack cos autopilot --resume <session-id>
+
+# List paused sessions
+swarm-attack cos autopilot --list
+
+# Dry run (show what would execute)
+swarm-attack cos autopilot --dry-run
+```
+
+### Options
+
+| Option | Short | Default | Description |
+|--------|-------|---------|-------------|
+| `--budget` | `-b` | 10.0 | Budget limit in USD |
+| `--duration` | `-d` | "2h" | Duration limit (e.g., 2h, 90m) |
+| `--until` | `-u` | None | Stop at matching checkpoint |
+| `--resume` | `-r` | None | Resume paused session by ID |
+| `--dry-run` | - | False | Show without executing |
+| `--list` | `-l` | False | List paused sessions |
+| `--cancel` | - | None | Cancel session by ID |
+
+### Session States
+
+| State | Meaning |
+|-------|---------|
+| COMPLETED | All goals finished |
+| PAUSED | Waiting at checkpoint |
+| FAILED | Goal execution failed |
