@@ -21,7 +21,7 @@ git branch   # Must show: * feature/adaptive-qa-agent
 
 ## COO Integration
 
-This project is managed by the COO (Chief Operating Officer) agent at `/Users/philipjcortes/Desktop/coo`. All specs and prompts should follow COO archival conventions.
+This project is managed by the COO (Chief Operating Officer) agent at `/Users/philipjcortes/coo`. All specs and prompts should follow COO archival conventions.
 
 ### Implementation Rules
 
