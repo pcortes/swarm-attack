@@ -134,6 +134,7 @@ class SemanticTestHook:
         feature_id: str,
         issue_number: int,
         commit_message: Optional[str] = None,
+        context: Optional[dict] = None,
     ) -> SemanticHookResult:
         """
         Run semantic testing on staged changes.
@@ -142,6 +143,8 @@ class SemanticTestHook:
             feature_id: Feature identifier.
             issue_number: Issue number.
             commit_message: Optional commit message for context.
+            context: Optional context dict with 'changes', 'expected_behavior',
+                     and optional 'scope'. When provided, bypasses git diff.
 
         Returns:
             SemanticHookResult with testing outcomes.
@@ -152,30 +155,50 @@ class SemanticTestHook:
         })
 
         try:
-            # Get staged diff
-            diff_result = self._get_staged_diff()
-            if diff_result is None:
-                return SemanticHookResult(
-                    error="Failed to get staged changes",
-                    should_block=False,  # Fail open
-                )
+            # If context is provided, use it directly instead of git diff
+            if context is not None:
+                changes = context.get("changes", "")
+                expected_behavior = context.get("expected_behavior", f"Issue #{issue_number} implementation for {feature_id}")
+                scope = context.get("scope", SemanticScope.CHANGES_ONLY.value)
 
-            if not diff_result.strip():
-                self._log("semantic_hook_skip", {"reason": "no_staged_changes"})
-                return SemanticHookResult(
-                    skipped=True,
-                    warning="No staged changes to test",
-                )
+                if not changes.strip():
+                    self._log("semantic_hook_skip", {"reason": "no_changes_in_context"})
+                    return SemanticHookResult(
+                        skipped=True,
+                        warning="No changes provided in context",
+                    )
 
-            # Build context for semantic testing
-            context = {
-                "changes": diff_result,
-                "expected_behavior": f"Issue #{issue_number} implementation for {feature_id}",
-                "test_scope": SemanticScope.CHANGES_ONLY.value,
-            }
+                # Build semantic context from provided context
+                semantic_context = {
+                    "changes": changes,
+                    "expected_behavior": expected_behavior,
+                    "test_scope": scope,
+                }
+            else:
+                # Get staged diff (original behavior)
+                diff_result = self._get_staged_diff()
+                if diff_result is None:
+                    return SemanticHookResult(
+                        error="Failed to get staged changes",
+                        should_block=False,  # Fail open
+                    )
+
+                if not diff_result.strip():
+                    self._log("semantic_hook_skip", {"reason": "no_staged_changes"})
+                    return SemanticHookResult(
+                        skipped=True,
+                        warning="No staged changes to test",
+                    )
+
+                # Build context for semantic testing
+                semantic_context = {
+                    "changes": diff_result,
+                    "expected_behavior": f"Issue #{issue_number} implementation for {feature_id}",
+                    "test_scope": SemanticScope.CHANGES_ONLY.value,
+                }
 
             # Run semantic test
-            agent_result = self.semantic_tester.run(context)
+            agent_result = self.semantic_tester.run(semantic_context)
 
             # Parse result
             output = agent_result.output or {}
