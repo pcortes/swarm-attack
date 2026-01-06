@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from swarm_attack.llm_clients import ClaudeCliRunner
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
+    from swarm_attack.memory.store import MemoryStore
 
 
 class VerifierAgent(BaseAgent):
@@ -48,10 +49,12 @@ class VerifierAgent(BaseAgent):
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
+        memory_store: Optional["MemoryStore"] = None,
     ) -> None:
         """Initialize the Verifier agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._test_timeout = config.tests.timeout_seconds
+        self._memory_store = memory_store
 
     def _get_default_test_path(self, feature_id: str, issue_number: int) -> Path:
         """Get the default path for generated tests."""
@@ -593,6 +596,32 @@ class VerifierAgent(BaseAgent):
                     "issue_number": issue_number,
                     "conflicts": len(schema_conflicts),
                 }, level="error")
+
+                # Record schema drift to memory for cross-session learning
+                if schema_conflicts and self._memory_store is not None:
+                    from uuid import uuid4
+                    from swarm_attack.memory.store import MemoryEntry
+                    from datetime import datetime
+
+                    for conflict in schema_conflicts:
+                        entry = MemoryEntry(
+                            id=str(uuid4()),
+                            category="schema_drift",
+                            feature_id=feature_id,
+                            issue_number=issue_number,
+                            content={
+                                "class_name": conflict["class_name"],
+                                "existing_file": conflict["existing_file"],
+                                "new_file": conflict["new_file"],
+                                "existing_issue": conflict["existing_issue"],
+                            },
+                            outcome="blocked",
+                            created_at=datetime.now().isoformat(),
+                            tags=["schema_drift", conflict["class_name"]],
+                        )
+                        self._memory_store.add(entry)
+
+                    self._memory_store.save()
 
                 return AgentResult(
                     success=False,

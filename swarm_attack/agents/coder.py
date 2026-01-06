@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.self_healing.coder_integration import CoderSelfHealingIntegration
     from swarm_attack.state_store import StateStore
+    from swarm_attack.memory.store import MemoryStore
 
 
 def extract_code_from_response(response: str) -> str:
@@ -145,15 +146,83 @@ class CoderAgent(BaseAgent):
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
+        memory_store: Optional["MemoryStore"] = None,
     ) -> None:
         """Initialize the Coder agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
+        self._memory = memory_store
 
         # Autopilot integration - all optional for backward compatibility
         self._autopilot_config: Optional[AutopilotFeaturesConfig] = None
         self._self_healing: Optional[CoderSelfHealingIntegration] = None
         self._learning: Optional[CoderIntegration] = None
+
+    def _extract_potential_classes(self, issue_body: str) -> list[str]:
+        """
+        Extract potential class names from issue body.
+
+        Parses both Interface Contract and Acceptance Criteria sections
+        to find class names in backticks.
+
+        Args:
+            issue_body: The issue body text.
+
+        Returns:
+            List of class names found (empty list if none).
+        """
+        if not issue_body:
+            return []
+
+        classes = []
+
+        # Pattern to match backtick-enclosed identifiers that look like class names
+        # Class names start with uppercase letter and contain only alphanumeric and underscore
+        # Also handles method calls like `ResultParser.parse()` - extracts just the class name
+        pattern = r'`([A-Z][A-Za-z0-9_]*)(?:\.[a-z_][a-zA-Z0-9_]*\([^)]*\))?`'
+
+        matches = re.findall(pattern, issue_body)
+        for match in matches:
+            if match not in classes:
+                classes.append(match)
+
+        return classes
+
+    def _get_schema_warnings(self, class_names: list[str]) -> list[dict[str, Any]]:
+        """
+        Query memory store for schema drift warnings about potential class collisions.
+
+        Args:
+            class_names: List of class names to check for drift history.
+
+        Returns:
+            List of warning dictionaries with keys:
+            - class_name: The class name
+            - existing_file: Path to existing file
+            - existing_issue: Issue number where class was created
+        """
+        warnings: list[dict[str, Any]] = []
+
+        if not self._memory:
+            return warnings
+
+        for class_name in class_names:
+            # Query memory for schema_drift entries matching this class
+            entries = self._memory.query(
+                category="schema_drift",
+                tags=[class_name],
+                limit=10,
+            )
+
+            for entry in entries:
+                warning = {
+                    "class_name": class_name,
+                    "existing_file": entry.content.get("existing_file", ""),
+                    "existing_issue": entry.content.get("existing_issue"),
+                }
+                warnings.append(warning)
+
+        return warnings
 
     def _is_autopilot_enabled(self, feature: str) -> bool:
         """Check if an autopilot feature is enabled.
@@ -923,6 +992,41 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         lines.append("**IMPORTANT:** Import and integrate with these existing implementations.")
         lines.append("Do NOT recreate classes that already exist.")
         lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_schema_warnings(self, warnings: list[dict[str, Any]]) -> str:
+        """
+        Format schema drift warnings for inclusion in prompts.
+
+        Args:
+            warnings: List of warning dicts from _get_schema_warnings().
+
+        Returns:
+            Formatted markdown string suitable for prompt injection.
+            Returns empty string if no warnings.
+        """
+        if not warnings:
+            return ""
+
+        lines = [
+            "## Schema Drift Warnings",
+            "",
+            "**WARNING: The following classes already exist in the codebase.**",
+            "**Import them instead of recreating them:**",
+            "",
+        ]
+
+        for warning in warnings:
+            class_name = warning.get("class_name", "Unknown")
+            existing_file = warning.get("existing_file", "unknown location")
+            existing_issue = warning.get("existing_issue", "?")
+
+            lines.append(f"### {class_name}")
+            lines.append(f"**Location:** `{existing_file}`")
+            lines.append(f"**Created in:** Issue #{existing_issue}")
+            lines.append(f"**Action:** Import from `{existing_file}` instead of recreating")
+            lines.append("")
 
         return "\n".join(lines)
 

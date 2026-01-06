@@ -47,6 +47,7 @@ from swarm_attack.events.bus import EventBus, get_event_bus
 from swarm_attack.events.types import EventType, SwarmEvent
 from swarm_attack.github.issue_context import IssueContextManager
 from swarm_attack.github_sync import GitHubSync
+from swarm_attack.memory.store import MemoryStore
 from swarm_attack.models import FeaturePhase, TaskStage
 from swarm_attack.planning.dependency_graph import DependencyGraph
 from swarm_attack.progress_logger import ProgressLogger
@@ -197,6 +198,8 @@ class Orchestrator:
         prioritization: Optional[PrioritizationAgent] = None,
         coder: Optional[CoderAgent] = None,
         verifier: Optional[VerifierAgent] = None,
+        # Memory store for cross-session learning
+        memory_store: Optional[MemoryStore] = None,
         # Progress callback for CLI output
         progress_callback: Optional[Any] = None,
     ) -> None:
@@ -213,12 +216,16 @@ class Orchestrator:
             prioritization: Optional PrioritizationAgent (created if not provided).
             coder: Optional CoderAgent - Implementation Agent with full TDD workflow.
             verifier: Optional VerifierAgent (created if not provided).
+            memory_store: Optional MemoryStore for cross-session learning (created if not provided).
             progress_callback: Optional callback function(event: str, data: dict) for progress.
         """
         self.config = config
         self.logger = logger
         self._state_store = state_store
         self._progress_callback = progress_callback
+
+        # Memory store for cross-session learning (create default if not provided)
+        self._memory_store = memory_store or MemoryStore.load()
 
         # Spec debate agents
         self._author = author or SpecAuthorAgent(config, logger)
@@ -228,10 +235,11 @@ class Orchestrator:
         # Issue session agents (auto-created if not provided)
         # Note: Thick-agent architecture - CoderAgent handles full TDD workflow
         # (test writing + implementation + verification iteration)
+        # Memory store is passed to enable cross-session schema drift learning
         self._session_manager: Optional[SessionManager] = None
         self._prioritization = prioritization or PrioritizationAgent(config, logger)
-        self._coder = coder or CoderAgent(config, logger)
-        self._verifier = verifier or VerifierAgent(config, logger)
+        self._coder = coder or CoderAgent(config, logger, memory_store=self._memory_store)
+        self._verifier = verifier or VerifierAgent(config, logger, memory_store=self._memory_store)
         self._github_client: Optional[GitHubClient] = None
 
         # Gate agent for pre-coder validation (lazy initialized)
@@ -354,6 +362,11 @@ class Orchestrator:
     def state_store(self) -> Optional[StateStore]:
         """Get the state store."""
         return self._state_store
+
+    @property
+    def memory_store(self) -> MemoryStore:
+        """Get the memory store for cross-session learning."""
+        return self._memory_store
 
     def _log(
         self, event_type: str, data: Optional[dict] = None, level: str = "info"
