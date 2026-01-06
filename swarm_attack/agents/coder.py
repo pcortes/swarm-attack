@@ -27,8 +27,11 @@ from swarm_attack.utils.fs import ensure_dir, file_exists, read_file, safe_write
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
+    from swarm_attack.config.autopilot_features import AutopilotFeaturesConfig
+    from swarm_attack.learning.coder_integration import CoderIntegration
     from swarm_attack.llm_clients import ClaudeCliRunner
     from swarm_attack.logger import SwarmLogger
+    from swarm_attack.self_healing.coder_integration import CoderSelfHealingIntegration
     from swarm_attack.state_store import StateStore
 
 
@@ -146,6 +149,57 @@ class CoderAgent(BaseAgent):
         """Initialize the Coder agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
+
+        # Autopilot integration - all optional for backward compatibility
+        self._autopilot_config: Optional[AutopilotFeaturesConfig] = None
+        self._self_healing: Optional[CoderSelfHealingIntegration] = None
+        self._learning: Optional[CoderIntegration] = None
+
+    def _is_autopilot_enabled(self, feature: str) -> bool:
+        """Check if an autopilot feature is enabled.
+
+        Args:
+            feature: Feature name to check (e.g., "self_healing", "learning").
+
+        Returns:
+            True if autopilot is enabled and the specific feature is enabled.
+        """
+        if self._autopilot_config is None:
+            return False
+        try:
+            return self._autopilot_config.is_enabled(feature)
+        except ValueError:
+            return False
+
+    def _call_self_healing_hook(self, hook_name: str, *args: Any, **kwargs: Any) -> Any:
+        """Call a self-healing hook if enabled.
+
+        Args:
+            hook_name: Name of the hook method to call.
+            *args: Positional arguments for the hook.
+            **kwargs: Keyword arguments for the hook.
+
+        Returns:
+            Hook return value, or None if self-healing is disabled.
+        """
+        if not self._is_autopilot_enabled("self_healing"):
+            return None
+        if self._self_healing is None:
+            return None
+
+        hook_method = getattr(self._self_healing, hook_name, None)
+        if hook_method is None:
+            return None
+
+        try:
+            return hook_method(*args, **kwargs)
+        except Exception as e:
+            # Don't let hook errors break the main execution
+            self._log("coder_hook_error", {
+                "hook": hook_name,
+                "error": str(e),
+            }, level="warning")
+            return None
 
     def _is_protected_path(self, file_path: str, feature_id: str = "") -> bool:
         """
@@ -1802,6 +1856,20 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
 
         self.checkpoint("context_loaded")
 
+        # AUTOPILOT HOOK: Pre-execution hook after context is loaded
+        # This initializes execution state tracking for self-healing
+        self._execution_state = self._call_self_healing_hook(
+            "pre_execution_hook",
+            {
+                "session_id": f"{feature_id}-{issue_number}",
+                "token_usage": 0,
+                "token_limit": 100000,  # Default context window
+                "feature_id": feature_id,
+                "issue_number": issue_number,
+                "retry_number": retry_number,
+            },
+        )
+
         # Load skill prompt
         try:
             self._load_skill_prompt()
@@ -1871,6 +1939,15 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         except ClaudeTimeoutError as e:
             error = f"Claude timed out: {e}"
             self._log("coder_error", {"error": error}, level="error")
+
+            # AUTOPILOT HOOK: On-error hook for timeout
+            if self._execution_state is not None:
+                self._call_self_healing_hook(
+                    "on_error_hook",
+                    self._execution_state,
+                    {"type": "timeout", "message": str(e)},
+                )
+
             # AC 3.5: Emit IMPL_FAILED on failure
             # Payload schema: {"issue_number", "error", "retry_count", "phase"}
             self._emit_event(
@@ -1883,6 +1960,15 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
         except ClaudeInvocationError as e:
             error = f"Claude invocation failed: {e}"
             self._log("coder_error", {"error": error}, level="error")
+
+            # AUTOPILOT HOOK: On-error hook for invocation error
+            if self._execution_state is not None:
+                self._call_self_healing_hook(
+                    "on_error_hook",
+                    self._execution_state,
+                    {"type": "invocation_error", "message": str(e)},
+                )
+
             # AC 3.5: Emit IMPL_FAILED on failure
             # Payload schema: {"issue_number", "error", "retry_count", "phase"}
             self._emit_event(
@@ -1894,6 +1980,16 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
             return AgentResult.failure_result(error)
 
         self.checkpoint("llm_complete", cost_usd=cost)
+
+        # AUTOPILOT HOOK: Post-action hook after LLM execution
+        # This records the action and checks health
+        if self._execution_state is not None:
+            self._call_self_healing_hook(
+                "post_action_hook",
+                self._execution_state,
+                {"type": "llm_call", "cost_usd": cost},
+                token_delta=int(cost * 1000),  # Rough estimate
+            )
 
         # Parse file outputs from response
         files = self._parse_file_outputs(result.text)
@@ -2092,6 +2188,24 @@ Start your response IMMEDIATELY with `# FILE:` followed by the first file path.
                 "files_modified": files_modified,
             },
         )
+
+        # AUTOPILOT HOOK: Post-execution hook before return
+        # This generates execution summary for learning and monitoring
+        if self._execution_state is not None:
+            self._call_self_healing_hook(
+                "post_execution_hook",
+                self._execution_state,
+                True,  # success
+                {
+                    "files_created": files_created,
+                    "files_modified": files_modified,
+                    "cost_usd": cost,
+                },
+            )
+
+        # AUTOPILOT HOOK: Learning integration wrapper
+        # If learning is enabled and wrap_coder_run is being used, this is already wrapped
+        # Otherwise, just proceed with the normal return
 
         return AgentResult.success_result(
             output={

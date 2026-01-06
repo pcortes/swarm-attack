@@ -654,9 +654,9 @@ class CoderIntegration:
             pass
 
         # Call pre-execution hooks
-        for hook in self._pre_hooks:
+        for pre_hook in self._pre_hooks:
             try:
-                hook(context, strategy)
+                pre_hook(context, strategy)
             except Exception:
                 pass
 
@@ -664,9 +664,9 @@ class CoderIntegration:
         result = coder_fn(context)
 
         # Call post-execution hooks
-        for hook in self._post_hooks:
+        for post_hook in self._post_hooks:
             try:
-                hook(context, result, episode)
+                post_hook(context, result, episode)
             except Exception:
                 pass
 

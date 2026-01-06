@@ -554,11 +554,11 @@ class QualityGateRunner:
             GateResult from the gate.
         """
         if gate_type == GateType.ADVERSARIAL:
-            result = self._adversarial_generator.generate(code)
-            return self._adversarial_generator.to_gate_result(result, self.threshold)
+            adversarial_result = self._adversarial_generator.generate(code)
+            return self._adversarial_generator.to_gate_result(adversarial_result, self.threshold)
         elif gate_type == GateType.MUTATION:
-            result = self._mutation_gate.evaluate(code, tests)
-            return self._mutation_gate.to_gate_result(result, self.threshold)
+            mutation_result = self._mutation_gate.evaluate(code, tests)
+            return self._mutation_gate.to_gate_result(mutation_result, self.threshold)
         else:
             raise ValueError(f"Unknown gate type: {gate_type}")
 
