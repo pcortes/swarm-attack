@@ -323,12 +323,14 @@ Remember: Print the JSON directly. Do not write to files. Do not wrap in markdow
         prompt = self._build_prompt(feature_id, spec_content)
 
         try:
-            # Don't allow any tools - spec content is already in prompt
-            # and we want Claude to output JSON directly
+            # Get allowed tools for IssueCreatorAgent
+            from swarm_attack.agents.tool_sets import get_tools_for_agent
+            allowed_tools = get_tools_for_agent("IssueCreatorAgent")
+
             # Use max_turns=1 to ensure single-turn response
             result = self.llm.run(
                 prompt,
-                allowed_tools=[],
+                allowed_tools=allowed_tools,
                 max_turns=1,
             )
             cost = result.total_cost_usd

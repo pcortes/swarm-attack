@@ -156,8 +156,20 @@ class BaseAgent(ABC):
     Subclasses must implement the run() method to define agent behavior.
     """
 
+    # Default tools available to all agents (codebase exploration)
+    DEFAULT_TOOLS: list[str] = ["Read", "Glob", "Grep"]
+
     # Agent name used in logs and checkpoints (override in subclasses)
     name: str = "base_agent"
+
+    @classmethod
+    def get_tools(cls) -> list[str]:
+        """Get the default tools for this agent type.
+
+        Returns:
+            List of tool names available to this agent.
+        """
+        return cls.DEFAULT_TOOLS.copy()
 
     def __init__(
         self,
@@ -504,10 +516,11 @@ class BaseAgent(ABC):
         )
 
         # Get swarm_dir from config if available
+        # Note: Check for actual string/Path values, not Mock objects from tests
         swarm_dir = None
-        if hasattr(self.config, "swarm_dir"):
+        if hasattr(self.config, "swarm_dir") and isinstance(getattr(self.config, "swarm_dir", None), (str, Path)):
             swarm_dir = self.config.swarm_dir
-        elif hasattr(self.config, "repo_root"):
+        elif hasattr(self.config, "repo_root") and isinstance(getattr(self.config, "repo_root", None), (str, Path)):
             swarm_dir = Path(self.config.repo_root) / ".swarm"
 
         bus = get_event_bus(swarm_dir)

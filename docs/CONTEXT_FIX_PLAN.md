@@ -24,13 +24,13 @@ When implementing chief-of-staff-v2, Issue #1 failed because:
 
 ### Root Causes Identified
 
-| Problem | Evidence |
-|---------|----------|
-| **Coder reads static `issues.json`** | `coder.py:1016` - reads from file, not GitHub/state |
-| **Completion summaries not passed** | Saved to state but never injected into coder prompt |
-| **Project instructions ignored** | `ContextBuilder.get_project_instructions()` exists but never called |
-| **Worktree path not propagated** | `SessionState.worktree_path` stored but never used |
-| **Issue creator has no tools** | `allowed_tools=[]` despite skill saying "search existing code" |
+| Problem | Evidence | Status |
+|---------|----------|--------|
+| **Coder reads static `issues.json`** | `coder.py:1016` - reads from file, not GitHub/state | Open |
+| **Completion summaries not passed** | Saved to state but never injected into coder prompt | Open |
+| **Project instructions ignored** | `ContextBuilder.get_project_instructions()` exists but never called | Open |
+| **Worktree path not propagated** | `SessionState.worktree_path` stored but never used | Open |
+| **Issue creator has no tools** | Was `allowed_tools=[]` despite skill saying "search existing code" | **FIXED** - Now uses `get_tools_for_agent("IssueCreatorAgent")` |
 
 ---
 
@@ -177,26 +177,30 @@ full_path = base_path / file_path
 
 ### Phase 2: Enable Agent Capabilities (2-3 hours) - P1
 
-#### 2.1 Enable Tools for Issue Creator
+#### 2.1 Enable Tools for Issue Creator (COMPLETED)
 
 **File:** `swarm_attack/agents/issue_creator.py`
-**Location:** Line 330
+**Status:** **IMPLEMENTED** via `tool_sets.py`
 
 ```python
-# BEFORE (broken):
+# BEFORE (was broken):
 result = self.llm.run(
     prompt,
     allowed_tools=[],
     max_turns=1,
 )
 
-# AFTER (fixed):
+# AFTER (NOW IMPLEMENTED via tool_sets.py):
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
 result = self.llm.run(
     prompt,
-    allowed_tools=["Read", "Glob"],  # Allow codebase exploration
+    allowed_tools=get_tools_for_agent("IssueCreatorAgent"),  # ["Read", "Glob", "Grep"]
     max_turns=5,  # Allow tool use iterations
 )
 ```
+
+The `tool_sets.py` module provides centralized tool management. See `AGENT_TOOL_REQUIREMENTS` mapping for all agent tool configurations.
 
 #### 2.2 Add Codebase Context to Spec Author
 

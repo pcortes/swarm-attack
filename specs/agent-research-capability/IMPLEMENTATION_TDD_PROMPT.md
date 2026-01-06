@@ -27,30 +27,29 @@ This implementation ensures ALL agents can research the codebase before acting, 
 
 <problem_statement>
 
-Several Swarm Attack agents run **completely blind** without codebase access:
+**STATUS: IMPLEMENTED**
+
+Several Swarm Attack agents previously ran **completely blind** without codebase access. This has been fixed via `tool_sets.py`:
 
 ```python
-# issue_creator.py:330 - BLIND!
+# BEFORE (issue_creator.py:330 - was BLIND!)
 result = self.llm.run(
     prompt,
-    allowed_tools=[],  # Cannot see codebase
-    max_turns=1,       # Cannot explore
+    allowed_tools=[],  # Could not see codebase
+    max_turns=1,       # Could not explore
 )
 
-# complexity_gate.py:274 - BLIND!
+# AFTER (NOW IMPLEMENTED)
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
 result = self.llm.run(
     prompt,
-    allowed_tools=[],  # Cannot verify complexity claims
-    max_turns=1,
-    model="haiku",
+    allowed_tools=get_tools_for_agent("IssueCreatorAgent"),  # ["Read", "Glob", "Grep"]
+    max_turns=5,  # Allows exploration
 )
 ```
 
-This causes:
-- Issues created without knowing what modules exist
-- Complexity estimates without seeing actual code
-- Poor integration with existing patterns
-- Agents "answering like an LLM without context"
+The `tool_sets.py` module now provides centralized tool management for all agents.
 
 </problem_statement>
 

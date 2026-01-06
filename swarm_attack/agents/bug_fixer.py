@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from swarm_attack.llm_clients import ClaudeCliRunner
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
+    from swarm_attack.memory.store import MemoryStore
 
 
 @dataclass
@@ -74,10 +75,12 @@ class BugFixerAgent(BaseAgent):
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
+        memory_store: Optional["MemoryStore"] = None,
     ) -> None:
         """Initialize the Bug Fixer agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
+        self._memory_store = memory_store
 
     def _load_skill_prompt(self) -> str:
         """Load and cache the skill prompt."""

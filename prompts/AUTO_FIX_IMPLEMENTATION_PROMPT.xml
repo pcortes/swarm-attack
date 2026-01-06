@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<specialist_prompt>
+  <metadata>
+    <title>Auto-Fix Implementation - Autonomous Bug Detection and Fixing</title>
+    <created>2025-12-31</created>
+    <objective>Implement autonomous bug detection and fixing for swarm-attack</objective>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack-integration</working_directory>
+    <spec_reference>specs/AUTO_FIX_DESIGN_SPEC.md</spec_reference>
+  </metadata>
+
+  <team_structure>
+    <role name="Static Analysis Engineer">
+      <responsibility>Implement StaticBugDetector with pytest/mypy/ruff integration</responsibility>
+      <deliverable>swarm_attack/static_analysis/detector.py (~400 LOC)</deliverable>
+      <test_file>tests/unit/static_analysis/test_detector.py</test_file>
+    </role>
+    <role name="Orchestration Engineer">
+      <responsibility>Implement AutoFixOrchestrator with detection-fix loop</responsibility>
+      <deliverable>swarm_attack/qa/auto_fix.py (~400 LOC)</deliverable>
+      <test_file>tests/unit/qa/test_auto_fix.py</test_file>
+    </role>
+    <role name="CLI Engineer">
+      <responsibility>Implement analyze and auto-fix CLI commands</responsibility>
+      <deliverable>swarm_attack/cli/analyze.py (~200 LOC)</deliverable>
+      <deliverable>Updates to swarm_attack/cli/qa_commands.py</deliverable>
+    </role>
+    <role name="Integration Tester">
+      <responsibility>Verify end-to-end flow with /tmp/buggy-api test project</responsibility>
+      <deliverable>E2E test passing: detect → fix → verify</deliverable>
+    </role>
+  </team_structure>
+
+  <implementation_phases>
+    <phase name="1. Static Analysis Foundation" priority="P0">
+      <title>Implement StaticBugDetector</title>
+      <tdd_steps>
+        <step order="1" name="RED">
+          <description>Write failing tests for StaticBugDetector</description>
+          <tests>
+            <test>test_detect_from_tests_parses_pytest_failures</test>
+            <test>test_detect_from_types_parses_mypy_errors</test>
+            <test>test_detect_from_lint_parses_ruff_violations</test>
+            <test>test_detect_all_aggregates_results</test>
+            <test>test_bug_report_to_bug_bash_entry</test>
+          </tests>
+        </step>
+        <step order="2" name="GREEN">
+          <description>Implement StaticBugDetector class</description>
+          <files>
+            <file>swarm_attack/static_analysis/__init__.py</file>
+            <file>swarm_attack/static_analysis/detector.py</file>
+          </files>
+        </step>
+        <step order="3" name="REFACTOR">
+          <description>Extract models, add JSON parsing</description>
+        </step>
+      </tdd_steps>
+      <interface_contract>
+        <![CDATA[
+class StaticBugDetector:
+    def __init__(self, config: SwarmConfig, timeout: int = 300) -> None
+    def detect_all(include_tests=True, include_types=True, include_lint=True, target_path=None) -> StaticAnalysisResult
+    def detect_from_tests(target_path=None) -> list[StaticBugReport]
+    def detect_from_types(target_path=None) -> list[StaticBugReport]
+    def detect_from_lint(target_path=None) -> list[StaticBugReport]
+
+@dataclass
+class StaticBugReport:
+    source: BugSource  # pytest, mypy, ruff
+    file_path: str
+    line_number: int
+    error_code: str
+    message: str
+    severity: BugSeverity
+    auto_fixable: bool
+    def to_bug_bash_entry() -> dict
+        ]]>
+      </interface_contract>
+    </phase>
+
+    <phase name="2. CLI Commands" priority="P0">
+      <title>Implement analyze CLI</title>
+      <tdd_steps>
+        <step order="1" name="RED">
+          <description>Write CLI integration tests</description>
+        </step>
+        <step order="2" name="GREEN">
+          <description>Implement swarm_attack/cli/analyze.py</description>
+          <commands>
+            <command>swarm-attack analyze all</command>
+            <command>swarm-attack analyze tests</command>
+            <command>swarm-attack analyze types</command>
+            <command>swarm-attack analyze lint</command>
+            <command>swarm-attack analyze all --create-bugs</command>
+          </commands>
+        </step>
+      </tdd_steps>
+      <files>
+        <file action="create">swarm_attack/cli/analyze.py</file>
+        <file action="modify">swarm_attack/cli/app.py - add analyze sub-app</file>
+      </files>
+    </phase>
+
+    <phase name="3. AutoFixOrchestrator" priority="P1">
+      <title>Implement Detection-Fix Loop</title>
+      <tdd_steps>
+        <step order="1" name="RED">
+          <description>Write failing tests for AutoFixOrchestrator</description>
+          <tests>
+            <test>test_clean_on_first_iteration_exits</test>
+            <test>test_dry_run_does_not_fix</test>
+            <test>test_cost_limit_stops_loop</test>
+            <test>test_max_iterations_enforced</test>
+            <test>test_auto_approve_checks_criteria</test>
+            <test>test_high_risk_routes_to_human</test>
+            <test>test_creates_bug_states_from_findings</test>
+          </tests>
+        </step>
+        <step order="2" name="GREEN">
+          <description>Implement AutoFixOrchestrator</description>
+          <file>swarm_attack/qa/auto_fix.py</file>
+        </step>
+      </tdd_steps>
+      <interface_contract>
+        <![CDATA[
+class AutoFixOrchestrator:
+    def __init__(self, config, auto_fix_config=None, logger=None) -> None
+    def run_detection_fix_loop(target, depth, base_url=None, progress_callback=None) -> AutoFixResult
+    def _can_auto_approve(bug_id) -> bool
+    def _create_bug_states_from_findings(findings) -> list[str]
+
+@dataclass
+class AutoFixConfig:
+    enabled: bool = True
+    max_iterations: int = 3
+    severity_threshold: AutoFixSeverity = MODERATE
+    auto_approve: bool = False
+    dry_run: bool = False
+    max_cost_per_iteration_usd: float = 10.0
+    require_low_risk: bool = True
+    min_rca_confidence: float = 0.85
+        ]]>
+      </interface_contract>
+    </phase>
+
+    <phase name="4. QA CLI Extension" priority="P1">
+      <title>Add auto-fix command to QA CLI</title>
+      <file action="modify">swarm_attack/cli/qa_commands.py</file>
+      <command>swarm-attack qa auto-fix TARGET [OPTIONS]</command>
+      <options>
+        <option>--max-iterations N</option>
+        <option>--severity-threshold critical|moderate|minor</option>
+        <option>--depth shallow|standard|deep</option>
+        <option>--dry-run</option>
+        <option>--approve-all</option>
+        <option>--max-cost USD</option>
+      </options>
+    </phase>
+
+    <phase name="5. Configuration" priority="P2">
+      <title>Add config schema for autonomous QA</title>
+      <files>
+        <file action="modify">swarm_attack/qa/qa_config.py - add auto_fix fields</file>
+        <file action="modify">swarm_attack/config.py - add autonomous_qa section</file>
+      </files>
+      <config_schema>
+        <![CDATA[
+autonomous_qa:
+  enabled: true
+  triggers:
+    post_commit: {enabled: true, depth: shallow}
+    scheduled: {enabled: true, cron: "0 */4 * * *"}
+  auto_fix:
+    enabled: false
+    max_severity: moderate
+    min_confidence: 0.85
+    max_files_affected: 3
+  loop_guard:
+    max_fix_attempts: 3
+    max_fixes_per_hour: 10
+        ]]>
+      </config_schema>
+    </phase>
+
+    <phase name="6. E2E Verification" priority="P2">
+      <title>Test with /tmp/buggy-api project</title>
+      <test_scenarios>
+        <scenario name="Static Detection">
+          <command>swarm-attack analyze all</command>
+          <expected>Finds 3+ test failures in /tmp/buggy-api</expected>
+        </scenario>
+        <scenario name="Bug Creation">
+          <command>swarm-attack analyze all --create-bugs</command>
+          <expected>Creates bug bash entries in .swarm/bugs/</expected>
+        </scenario>
+        <scenario name="Auto-Fix Dry Run">
+          <command>swarm-attack qa auto-fix /tmp/buggy-api --dry-run</command>
+          <expected>Detects bugs, reports what would be fixed</expected>
+        </scenario>
+        <scenario name="Auto-Fix Execute">
+          <command>swarm-attack qa auto-fix /tmp/buggy-api --approve-all</command>
+          <expected>Fixes bugs, tests pass after</expected>
+        </scenario>
+      </test_scenarios>
+    </phase>
+  </implementation_phases>
+
+  <critical_gap>
+    <title>QA create-bugs Only Writes Markdown</title>
+    <problem>
+      QAOrchestrator.create_bug_investigations() writes qa-bugs.md but does NOT
+      create BugState entries that BugOrchestrator can process.
+    </problem>
+    <solution>
+      AutoFixOrchestrator must call BugOrchestrator.init_bug() directly to
+      create actual bug investigations that can flow through the pipeline.
+    </solution>
+    <code>
+      <![CDATA[
+def _create_bug_states_from_findings(self, findings: list[QAFinding]) -> list[str]:
+    bug_ids = []
+    for finding in findings:
+        result = self.bug_orchestrator.init_bug(
+            description=f"{finding.title}\n\n{finding.description}",
+            error_message=finding.evidence.get("error_message", ""),
+        )
+        if result.success:
+            bug_ids.append(result.bug_id)
+    return bug_ids
+      ]]>
+    </code>
+  </critical_gap>
+
+  <safety_requirements>
+    <requirement id="S1">Auto-approve disabled by default (auto_approve=False)</requirement>
+    <requirement id="S2">Only auto-fix severity ≤ MODERATE</requirement>
+    <requirement id="S3">Require RCA confidence ≥ 0.85 for auto-approval</requirement>
+    <requirement id="S4">Block auto-fix for security-critical files</requirement>
+    <requirement id="S5">Max 3 fix attempts per bug (loop prevention)</requirement>
+    <requirement id="S6">Circuit breaker after 5 consecutive failures</requirement>
+    <requirement id="S7">Rollback on verification failure</requirement>
+  </safety_requirements>
+
+  <execution_instructions>
+    <instruction priority="CRITICAL">
+      Follow TDD: Write failing tests BEFORE implementation
+    </instruction>
+    <instruction priority="CRITICAL">
+      Run existing tests after each phase to prevent regressions
+    </instruction>
+    <instruction priority="HIGH">
+      Start with Phase 1 (StaticBugDetector) - it has no dependencies
+    </instruction>
+    <instruction priority="HIGH">
+      Test each CLI command manually after implementation
+    </instruction>
+    <instruction priority="MEDIUM">
+      Use /tmp/buggy-api for E2E testing throughout
+    </instruction>
+  </execution_instructions>
+
+  <success_criteria>
+    <criterion id="SC1">swarm-attack analyze all detects bugs in /tmp/buggy-api</criterion>
+    <criterion id="SC2">swarm-attack analyze all --create-bugs creates bug entries</criterion>
+    <criterion id="SC3">swarm-attack qa auto-fix --dry-run reports planned fixes</criterion>
+    <criterion id="SC4">swarm-attack qa auto-fix --approve-all fixes bugs</criterion>
+    <criterion id="SC5">High-risk bugs route to human checkpoint</criterion>
+    <criterion id="SC6">All unit tests pass (~500+ new tests)</criterion>
+    <criterion id="SC7">No regressions in existing tests</criterion>
+  </success_criteria>
+
+  <deliverables>
+    <deliverable>swarm_attack/static_analysis/detector.py</deliverable>
+    <deliverable>swarm_attack/qa/auto_fix.py</deliverable>
+    <deliverable>swarm_attack/cli/analyze.py</deliverable>
+    <deliverable>tests/unit/static_analysis/test_detector.py</deliverable>
+    <deliverable>tests/unit/qa/test_auto_fix.py</deliverable>
+    <deliverable>Updated config schema</deliverable>
+    <deliverable>E2E verification passing</deliverable>
+  </deliverables>
+</specialist_prompt>

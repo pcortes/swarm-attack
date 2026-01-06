@@ -1,0 +1,189 @@
+{
+  "feature_id": "auto-fix",
+  "generated_at": "2025-12-31T19:30:00Z",
+  "issues": [
+    {
+      "title": "Create StaticBugReport and StaticAnalysisResult data models",
+      "body": "## Description\n\nCreate the core data models for static analysis results. These models will be used by StaticBugDetector to report findings and by AutoFixOrchestrator to process them.\n\n## Acceptance Criteria\n\n- [ ] `StaticBugReport` dataclass with fields: source, file_path, line_number, error_code, message, severity\n- [ ] `StaticAnalysisResult` dataclass with fields: bugs, tools_run, tools_skipped\n- [ ] Source field is Literal[\"pytest\", \"mypy\", \"ruff\"]\n- [ ] Severity field is Literal[\"critical\", \"moderate\", \"minor\"]\n- [ ] Both classes have `from_dict()` and `to_dict()` methods\n- [ ] Unit tests for serialization/deserialization\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.\n\n**Required Methods:**\n- `from_dict(cls, data: dict) -> StaticBugReport` - Classmethod to create from dictionary\n- `to_dict(self) -> dict` - Instance method to serialize to dictionary\n\n**Called By:**\n- `swarm_attack/static_analysis/detector.py` - StaticBugDetector returns these\n- `swarm_attack/qa/auto_fix.py` - AutoFixOrchestrator consumes these\n\n## Technical Notes\n\n- Create in `swarm_attack/static_analysis/models.py`\n- Use `@dataclass` decorator\n- Use `typing.Literal` for constrained string fields",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 1,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add AutoFixConfig to config system",
+      "body": "## Description\n\nAdd the `auto_fix` configuration section to the swarm-attack config system. This enables users to configure auto-fix behavior via config.yaml.\n\n## Acceptance Criteria\n\n- [ ] `AutoFixConfig` dataclass with fields: enabled, max_iterations, auto_approve, dry_run, watch_poll_seconds\n- [ ] Default values: enabled=False, max_iterations=3, auto_approve=False, dry_run=False, watch_poll_seconds=5\n- [ ] Config is parsed from `auto_fix` section in config.yaml\n- [ ] Config is accessible via `config.auto_fix`\n- [ ] Unit tests for config parsing\n\n## Interface Contract (REQUIRED)\n\n**Pattern Reference:** See `swarm_attack/config.py:BugBashConfig` for the expected pattern.\n\n**Required Methods:**\n- `from_dict(cls, data: dict) -> AutoFixConfig` - Classmethod to create from dictionary\n- `to_dict(self) -> dict` - Instance method to serialize to dictionary\n\n**Called By:**\n- `swarm_attack/config.py:load_config()` - Parses auto_fix section\n- `swarm_attack/qa/auto_fix.py:AutoFixOrchestrator` - Uses config values\n\n## Technical Notes\n\n- Add `AutoFixConfig` dataclass to `swarm_attack/config.py`\n- Add `_parse_auto_fix_config()` helper function\n- Add `auto_fix: AutoFixConfig | None` field to main Config class\n- Handle missing section gracefully (return None or default config)",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [],
+      "order": 2,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement StaticBugDetector with pytest JSON parsing",
+      "body": "## Description\n\nCreate the StaticBugDetector class that wraps static analysis tools. Start with pytest JSON report parsing.\n\n## Acceptance Criteria\n\n- [ ] `StaticBugDetector` class created in `swarm_attack/static_analysis/detector.py`\n- [ ] `_tool_available(tool: str) -> bool` checks if tool is installed\n- [ ] `detect_from_tests(path: str | None) -> list[StaticBugReport]` runs pytest with --json-report\n- [ ] Parses pytest JSON output correctly (failures \u2192 StaticBugReport)\n- [ ] Maps pytest failures to appropriate severity (assertion errors \u2192 moderate, exceptions \u2192 critical)\n- [ ] Returns empty list if pytest not available (graceful degradation)\n- [ ] Unit tests with mocked subprocess calls\n\n## Technical Notes\n\n- Use `subprocess.run` with `capture_output=True`\n- pytest command: `pytest --json-report --json-report-file=- {path}`\n- Parse stdout as JSON\n- Handle subprocess errors gracefully\n- Log warnings for missing tools, don't raise exceptions",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        1
+      ],
+      "order": 3,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add mypy JSON parsing to StaticBugDetector",
+      "body": "## Description\n\nExtend StaticBugDetector to parse mypy type errors.\n\n## Acceptance Criteria\n\n- [ ] `detect_from_types(path: str | None) -> list[StaticBugReport]` runs mypy with JSON output\n- [ ] Parses mypy JSON output correctly (errors \u2192 StaticBugReport)\n- [ ] Maps mypy error codes to appropriate severity\n- [ ] Returns empty list if mypy not available (graceful degradation)\n- [ ] Unit tests with mocked subprocess calls\n\n## Technical Notes\n\n- mypy command: `mypy --output=json {path}`\n- Parse stdout as JSON (one JSON object per line)\n- Severity mapping: error \u2192 moderate, note \u2192 minor\n- Handle subprocess errors gracefully",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3
+      ],
+      "order": 4,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add ruff JSON parsing to StaticBugDetector",
+      "body": "## Description\n\nExtend StaticBugDetector to parse ruff lint issues.\n\n## Acceptance Criteria\n\n- [ ] `detect_from_lint(path: str | None) -> list[StaticBugReport]` runs ruff with JSON output\n- [ ] Parses ruff JSON output correctly (issues \u2192 StaticBugReport)\n- [ ] Maps ruff codes to appropriate severity (E/F errors \u2192 moderate, W warnings \u2192 minor)\n- [ ] Returns empty list if ruff not available (graceful degradation)\n- [ ] Unit tests with mocked subprocess calls\n\n## Technical Notes\n\n- ruff command: `ruff check --output-format=json {path}`\n- Parse stdout as JSON array\n- Severity mapping based on code prefix (E, F, W, etc.)\n- Handle subprocess errors gracefully",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        3
+      ],
+      "order": 5,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement detect_all() in StaticBugDetector",
+      "body": "## Description\n\nImplement the unified detection method that runs all available tools and combines results.\n\n## Acceptance Criteria\n\n- [ ] `detect_all(path: str | None) -> StaticAnalysisResult` runs all detectors\n- [ ] Combines results from pytest, mypy, and ruff\n- [ ] Tracks which tools ran vs which were skipped\n- [ ] Returns StaticAnalysisResult with all findings\n- [ ] Deduplicates bugs that appear in multiple tools (same file:line)\n- [ ] Unit tests verifying combined results\n\n## Technical Notes\n\n- Call detect_from_tests(), detect_from_types(), detect_from_lint()\n- Track tool availability in tools_run vs tools_skipped\n- Consider dedup strategy: same file + line + similar message = same bug",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        4,
+        5
+      ],
+      "order": 6,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create analyze CLI commands",
+      "body": "## Description\n\nCreate the `swarm-attack analyze` CLI sub-app for running static analysis.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack analyze all` runs all detectors and displays results\n- [ ] `swarm-attack analyze all --create-bugs` also creates BugState entries\n- [ ] `swarm-attack analyze tests` runs pytest only\n- [ ] `swarm-attack analyze types` runs mypy only\n- [ ] `swarm-attack analyze lint` runs ruff only\n- [ ] `swarm-attack analyze lint --fix` runs ruff --fix\n- [ ] Pretty-printed output showing bugs by severity\n- [ ] Exit code 0 if no bugs, 1 if bugs found\n- [ ] Unit tests for CLI parsing\n\n## Technical Notes\n\n- Create `swarm_attack/cli/analyze.py` with Typer sub-app\n- Register in `swarm_attack/cli/app.py`\n- Use `--create-bugs` flag to bridge to BugOrchestrator.init_bug()\n- Format output with Rich tables for readability",
+      "labels": [
+        "enhancement",
+        "backend",
+        "api"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        6
+      ],
+      "order": 7,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement AutoFixOrchestrator core loop",
+      "body": "## Description\n\nCreate the AutoFixOrchestrator class that chains detection \u2192 fix in a loop.\n\n## Acceptance Criteria\n\n- [ ] `AutoFixOrchestrator` class created in `swarm_attack/qa/auto_fix.py`\n- [ ] Constructor accepts BugOrchestrator, StaticBugDetector, AutoFixConfig\n- [ ] `_create_bug_from_finding(bug: StaticBugReport) -> str | None` creates BugState via BugOrchestrator\n- [ ] `run()` implements detection-fix loop per spec\n- [ ] Respects max_iterations limit\n- [ ] Respects auto_approve flag (critical bugs need human approval if False)\n- [ ] Returns AutoFixResult with summary of actions taken\n- [ ] Unit tests with mocked BugOrchestrator\n\n## Interface Contract (REQUIRED)\n\n**Required Methods:**\n- `run(target, max_iterations, auto_approve, dry_run) -> AutoFixResult`\n- `_create_bug_from_finding(bug: StaticBugReport) -> str | None`\n\n**Called By:**\n- `swarm_attack/cli/qa_commands.py` - CLI invokes run()\n\n## Technical Notes\n\n- Follow loop logic from spec exactly\n- Log progress at each iteration\n- Handle BugOrchestrator failures gracefully\n- Create AutoFixResult dataclass for return value",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "large",
+      "dependencies": [
+        2,
+        6
+      ],
+      "order": 8,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add dry_run mode to AutoFixOrchestrator",
+      "body": "## Description\n\nImplement dry-run mode that shows what would be fixed without executing.\n\n## Acceptance Criteria\n\n- [ ] `run(dry_run=True)` logs actions without executing them\n- [ ] Skips BugOrchestrator.analyze(), approve(), fix() calls in dry-run\n- [ ] Still runs detection to show what bugs exist\n- [ ] AutoFixResult includes would_fix list in dry-run mode\n- [ ] Unit tests for dry-run behavior\n\n## Technical Notes\n\n- Check dry_run flag before calling BugOrchestrator methods\n- Log with clear \"DRY RUN\" prefix\n- Track what would have been fixed in result",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "small",
+      "dependencies": [
+        8
+      ],
+      "order": 9,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Implement watch mode in AutoFixOrchestrator",
+      "body": "## Description\n\nAdd watch mode that continuously monitors for changes and auto-fixes.\n\n## Acceptance Criteria\n\n- [ ] `watch()` method polls for file changes\n- [ ] Uses simple polling (no watchdog/external deps)\n- [ ] Poll interval configurable via watch_poll_seconds\n- [ ] Ctrl+C stops watch mode gracefully\n- [ ] Runs detection-fix loop when changes detected\n- [ ] Only re-checks files that changed\n- [ ] Unit tests for watch loop logic\n\n## Technical Notes\n\n- Use os.stat() mtime tracking for change detection\n- Track mtimes of Python files in target directory\n- Signal handler for SIGINT to stop gracefully\n- Log when entering/exiting watch mode",
+      "labels": [
+        "enhancement",
+        "backend"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        8
+      ],
+      "order": 10,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Add auto-fix and auto-watch CLI commands",
+      "body": "## Description\n\nAdd the `swarm-attack qa auto-fix` and `swarm-attack qa auto-watch` CLI commands.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack qa auto-fix` runs detection-fix loop\n- [ ] `swarm-attack qa auto-fix --max-iterations N` sets iteration limit\n- [ ] `swarm-attack qa auto-fix --approve-all` enables auto-approve for all severities\n- [ ] `swarm-attack qa auto-fix --dry-run` shows what would be fixed\n- [ ] `swarm-attack qa auto-fix <path>` targets specific path\n- [ ] `swarm-attack qa auto-watch` runs watch mode\n- [ ] `swarm-attack qa auto-watch --approve-all` full autopilot watch\n- [ ] Help text documents all options\n- [ ] Unit tests for CLI argument parsing\n\n## Technical Notes\n\n- Add commands to `swarm_attack/cli/qa_commands.py`\n- Instantiate AutoFixOrchestrator with config from config.yaml\n- Pass CLI args to run() or watch() methods\n- Pretty-print AutoFixResult summary",
+      "labels": [
+        "enhancement",
+        "backend",
+        "api"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        9,
+        10
+      ],
+      "order": 11,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Create integration tests for auto-fix pipeline",
+      "body": "## Description\n\nCreate integration tests that verify the full detection-fix pipeline works end-to-end.\n\n## Acceptance Criteria\n\n- [ ] Integration test with a buggy fixture file\n- [ ] Test verifies StaticBugDetector finds the bug\n- [ ] Test verifies AutoFixOrchestrator creates bug entry\n- [ ] Test verifies fix loop terminates correctly\n- [ ] Test covers dry-run mode\n- [ ] Test covers max_iterations limit\n- [ ] Tests use temporary directories for isolation\n\n## Technical Notes\n\n- Create `tests/integration/test_auto_fix_pipeline.py`\n- Use pytest fixtures to create buggy Python files\n- Mock BugOrchestrator.fix() to avoid actual LLM calls\n- Verify state transitions and logging",
+      "labels": [
+        "enhancement",
+        "tests"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        11
+      ],
+      "order": 12,
+      "automation_type": "automated"
+    },
+    {
+      "title": "Manual E2E testing of auto-fix pipeline",
+      "body": "## Description\n\nManually test the complete auto-fix pipeline on a real buggy codebase following the spec's testing instructions.\n\n## Acceptance Criteria\n\n- [ ] `swarm-attack analyze all` runs and shows bugs from pytest/mypy/ruff\n- [ ] `swarm-attack analyze all --create-bugs` creates .swarm/bugs/*/state.json files\n- [ ] `swarm-attack qa auto-fix --dry-run` shows what would be fixed\n- [ ] `swarm-attack qa auto-fix --approve-all` fixes bugs and tests pass\n- [ ] `swarm-attack qa auto-watch --approve-all` watches for changes and auto-fixes\n- [ ] Missing tools (e.g., mypy not installed) are skipped gracefully with warning\n- [ ] Max iterations prevents infinite loops\n- [ ] Create test report at `.swarm/qa/test-reports/auto-fix-YYYYMMDD-HHMMSS.md`\n\n## Technical Notes\n\nFollow manual testing instructions from spec:\n```bash\ncd /tmp/buggy-api  # Or create test project with intentional bugs\nswarm-attack analyze all\nswarm-attack analyze all --create-bugs\nswarm-attack qa auto-fix --dry-run\nswarm-attack qa auto-fix --approve-all\nswarm-attack qa auto-watch --approve-all  # Ctrl+C to stop\n```",
+      "labels": [
+        "enhancement",
+        "tests"
+      ],
+      "estimated_size": "medium",
+      "dependencies": [
+        12
+      ],
+      "order": 13,
+      "automation_type": "manual"
+    }
+  ]
+}

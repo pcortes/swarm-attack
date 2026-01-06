@@ -1,0 +1,5 @@
+{"ts": "2025-12-31T18:55:45.400667Z", "event": "issue_started", "issue": 1, "session": "sess_20251231_185545_399979"}
+{"ts": "2025-12-31T18:57:20.262360Z", "event": "retry_started", "issue": 1, "attempt": 1}
+{"ts": "2025-12-31T18:58:02.235487Z", "event": "retry_started", "issue": 1, "attempt": 2}
+{"ts": "2025-12-31T18:58:19.642055Z", "event": "retry_started", "issue": 1, "attempt": 3}
+{"ts": "2025-12-31T18:58:47.243605Z", "event": "issue_blocked", "issue": 1, "reason": "Max retries exceeded: Collection error: module 'swarm_attack.static_analysis' not found - implementation file may be missing", "retries": 3}

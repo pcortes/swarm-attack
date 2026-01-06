@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_continuation_prompt>
+  <metadata>
+    <title>Auto-Fix Feature Implementation Continuation</title>
+    <created>2025-12-31T19:26:00Z</created>
+    <feature>auto-fix</feature>
+    <status>6/13 issues complete</status>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack-integration</worktree>
+  </metadata>
+
+  <objective>
+    Continue implementing the Auto-Fix feature. Issues 1-6 are DONE. Issues 7-13 remain.
+    Use Task tool with subagent_type="general-purpose" to parallelize work.
+  </objective>
+
+  <current_state>
+    <phase>IMPLEMENTING</phase>
+    <progress>6/13 issues complete</progress>
+    <test_count>177+ unit tests passing</test_count>
+    <files_created>
+      <file>swarm_attack/static_analysis/models.py - StaticBugReport, StaticAnalysisResult</file>
+      <file>swarm_attack/static_analysis/detector.py - StaticBugDetector with detect_from_tests, detect_from_types, detect_from_lint, detect_all</file>
+      <file>swarm_attack/config.py - AutoFixConfig added</file>
+      <file>tests/unit/test_auto_fix_config.py - 17 tests</file>
+      <file>tests/unit/static_analysis/test_detector.py - 127 tests</file>
+      <file>tests/generated/auto-fix/test_issue_1.py - 32 tests</file>
+    </files_created>
+  </current_state>
+
+  <remaining_issues>
+    <issue number="7" size="medium" deps="6" ready="true">
+      <title>Create analyze CLI commands</title>
+      <file_to_create>swarm_attack/cli/analyze.py</file_to_create>
+      <commands>
+        swarm-attack analyze all
+        swarm-attack analyze all --create-bugs
+        swarm-attack analyze tests
+        swarm-attack analyze types
+        swarm-attack analyze lint
+        swarm-attack analyze lint --fix
+      </commands>
+    </issue>
+
+    <issue number="8" size="large" deps="2,6" ready="true">
+      <title>Implement AutoFixOrchestrator core loop</title>
+      <file_to_create>swarm_attack/qa/auto_fix.py</file_to_create>
+      <class>AutoFixOrchestrator</class>
+      <methods>
+        __init__(bug_orchestrator, detector, config)
+        run(target, max_iterations, auto_approve, dry_run) -> AutoFixResult
+        _create_bug_from_finding(bug: StaticBugReport) -> str | None
+      </methods>
+    </issue>
+
+    <issue number="9" size="small" deps="8">Add dry_run mode</issue>
+    <issue number="10" size="medium" deps="8">Implement watch mode</issue>
+    <issue number="11" size="medium" deps="9,10">CLI commands for auto-fix</issue>
+    <issue number="12" size="medium" deps="11">Integration tests</issue>
+    <issue number="13" size="medium" deps="12">E2E testing</issue>
+  </remaining_issues>
+
+  <how_to_continue>
+    <step>1. Run issues 7 and 8 in parallel using Task tool</step>
+    <step>2. After 8 completes, run 9 and 10 in parallel</step>
+    <step>3. After 9,10 complete, run 11, then 12, then 13</step>
+    <step>4. Run full QA verification (pytest, mypy, ruff)</step>
+    <step>5. Update bug log with any issues found</step>
+  </how_to_continue>
+
+  <verification_commands>
+    pytest tests/generated/auto-fix/ tests/unit/test_auto_fix_config.py tests/unit/static_analysis/ -v
+    swarm-attack status auto-fix
+  </verification_commands>
+</implementation_continuation_prompt>

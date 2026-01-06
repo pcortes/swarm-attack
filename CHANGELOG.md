@@ -2,6 +2,66 @@
 
 All notable changes to Swarm Attack are documented here.
 
+## [0.5.0] - 2026-01-06
+
+### Major Features
+
+#### Memory System - Phase 5: Cross-Session Learning
+
+Complete memory system for agent learning across sessions with pattern detection, recommendations, and semantic search.
+
+**New Components:**
+- **PatternDetector** - Detects recurring issues (schema drift, fix patterns, failure clusters)
+- **RecommendationEngine** - Provides contextual suggestions based on historical patterns
+- **SemanticSearch** - Weighted keyword search with category boosting and recency factors
+- **MemoryIndex** - O(1) inverted index for fast keyword lookups
+
+**Agent Integration:**
+- **CoderAgent** - Receives historical recommendations before implementation
+  - `_extract_potential_classes()` - Extracts class names from issue body
+  - `_get_schema_warnings()` - Queries memory for prior conflicts
+  - Injects warnings into implementation prompt
+- **VerifierAgent** - Records success/failure patterns to memory
+  - `_record_success_pattern()` - Records successful verifications
+  - `_record_failure_pattern()` - Records failures with context
+  - `_link_fix_to_failure()` - Links fixes to original failures
+
+**New CLI Commands:**
+- `swarm-attack memory patterns` - Detect recurring patterns
+- `swarm-attack memory recommend <category>` - Get recommendations
+- `swarm-attack memory search <query>` - Semantic search
+- `swarm-attack memory analytics` - Analytics report
+- `swarm-attack memory compress` - Deduplicate entries
+- `swarm-attack memory export/import` - Persistence operations
+
+### Files Added
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/memory/patterns.py` | PatternDetector, pattern types |
+| `swarm_attack/memory/recommendations.py` | RecommendationEngine |
+| `swarm_attack/memory/search.py` | SemanticSearch |
+| `swarm_attack/memory/index.py` | MemoryIndex |
+| `docs/MEMORY.md` | Full documentation |
+| `tests/unit/memory/test_patterns.py` | Pattern detection tests |
+| `tests/unit/memory/test_recommendations.py` | Recommendation tests |
+| `tests/unit/memory/test_semantic_search.py` | Search tests |
+| `tests/unit/memory/test_index.py` | Index tests |
+| `tests/unit/test_coder_recommendations.py` | CoderAgent integration tests |
+| `tests/unit/test_verifier_patterns.py` | VerifierAgent integration tests |
+| `tests/integration/test_memory_e2e.py` | E2E memory tests |
+| `tests/unit/cli/test_memory_cli.py` | CLI command tests |
+
+### Test Coverage
+
+- 262 memory unit tests
+- 21 E2E integration tests
+- 34 CLI command tests
+- 16 agent integration tests
+- **Total: 333 new tests**
+
+---
+
 ## [0.4.0] - 2026-01-01
 
 ### Added

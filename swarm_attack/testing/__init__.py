@@ -27,10 +27,10 @@ from swarm_attack.testing.adversarial_test_generator import (
     AdversarialTestGenerator,
     InterfaceSpec,
     GeneratedTest,
-    AdversarialGenerationResult,
-    AdversarialCategory,
+    TestGenerationResult,
+    TestCategory,
     MutationTestResult,
-    AdversarialGenerationError,
+    TestGenerationError,
 )
 
 __all__ = [
@@ -49,8 +49,8 @@ __all__ = [
     "AdversarialTestGenerator",
     "InterfaceSpec",
     "GeneratedTest",
-    "AdversarialGenerationResult",
-    "AdversarialCategory",
+    "TestGenerationResult",
+    "TestCategory",
     "MutationTestResult",
-    "AdversarialGenerationError",
+    "TestGenerationError",
 ]

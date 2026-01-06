@@ -1,8 +1,10 @@
 # Compound Engineering Plugin vs Swarm Attack: Key Architectural Differences
 
+> **STATUS UPDATE:** This analysis led to the implementation of `swarm_attack/agents/tool_sets.py`. Key agents like `IssueCreatorAgent` and `ComplexityGateAgent` now use `get_tools_for_agent()` to get research tools (`["Read", "Glob", "Grep"]`). The `BaseAgent` class now has `DEFAULT_TOOLS = ["Read", "Glob", "Grep"]` and a `get_tools()` method. See `specs/agent-research-capability/SPEC.md` for full implementation details.
+
 ## Executive Summary
 
-**The Core Problem:** Our Coder agent runs with `allowed_tools=[]` and receives only text-based context in the prompt. Compound-engineering-plugin agents run with `allowed-tools: [Read, Edit, Bash]` and can dynamically explore the codebase during execution.
+**The Core Problem (PARTIALLY RESOLVED):** Our Coder agent previously ran with `allowed_tools=[]` and received only text-based context in the prompt. This has been partially addressed - agents now use `get_tools_for_agent()` from `tool_sets.py` to get appropriate research tools.
 
 ---
 

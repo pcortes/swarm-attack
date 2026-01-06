@@ -219,6 +219,9 @@ swarm-attack reject user-authentication --reason "Need more detail on token refr
 | `swarm-attack smart <feature>` | Interactive mode with recovery |
 | `swarm-attack recover <feature>` | Recover from blocked state |
 | `swarm-attack unblock <feature>` | Unblock a stuck feature |
+| `swarm-attack memory stats` | Show memory store statistics |
+| `swarm-attack memory patterns` | Detect recurring patterns |
+| `swarm-attack memory search <query>` | Semantic search over history |
 | `swarm-attack --help` | Show all commands |
 
 ---

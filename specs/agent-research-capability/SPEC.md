@@ -10,15 +10,17 @@ Fix the fundamental weakness in Swarm Attack where agents operate without codeba
 
 <problem_analysis>
 
-### Current State: Agents Operating Blind
+### Previous State: Agents Operating Blind (NOW FIXED)
 
-Several critical agents have **no codebase search capability**:
+Several critical agents previously had **no codebase search capability**:
 
-| Agent | Current Tools | Problem |
-|-------|---------------|---------|
-| **IssueCreator** | `allowed_tools=[]` | Creates issues without knowing what code exists |
-| **ComplexityGate** | `allowed_tools=[]` | Estimates complexity without seeing actual code |
-| **SpecCritic** | Codex CLI (no tools) | Reviews specs without verifying against codebase |
+| Agent | Previous Tools | Problem | Current State |
+|-------|----------------|---------|---------------|
+| **IssueCreator** | `allowed_tools=[]` | Created issues without knowing what code exists | **FIXED**: Uses `get_tools_for_agent("IssueCreatorAgent")` |
+| **ComplexityGate** | `allowed_tools=[]` | Estimated complexity without seeing actual code | **FIXED**: Uses `get_tools_for_agent("ComplexityGateAgent")` |
+| **SpecCritic** | Codex CLI (no tools) | Reviews specs without verifying against codebase | Out of scope (Codex agent) |
+
+**UPDATE (Implementation Complete):** The `tool_sets.py` module now provides centralized tool management. All agents use `get_tools_for_agent()` which returns `["Read", "Glob", "Grep"]` for research capability.
 
 ### Root Cause
 
@@ -340,81 +342,48 @@ class BaseAgent(ABC):
 
 <agent_changes>
 
-### 1. IssueCreatorAgent (HIGH PRIORITY)
+### 1. IssueCreatorAgent (IMPLEMENTED)
 
-**Current:** `allowed_tools=[]` - runs completely blind
+**Previous:** `allowed_tools=[]` - ran completely blind
 
-**Change:** Enable research tools, add codebase exploration
+**Current Implementation:** Uses `get_tools_for_agent("IssueCreatorAgent")` which returns `["Read", "Glob", "Grep"]`
 
 ```python
-# issue_creator.py changes
+# issue_creator.py - NOW IMPLEMENTED via tool_sets.py
 
-class IssueCreatorAgent(BaseAgent, AgentResearchMixin):
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
+class IssueCreatorAgent(BaseAgent):
     """Creates issues with codebase awareness."""
 
     def run(self, context: dict) -> AgentResult:
-        # NEW: Research existing code structure
-        research = self.research_codebase(
-            search_patterns=[
-                "swarm_attack/**/*.py",
-                "tests/**/*.py",
-            ],
-            grep_patterns=[
-                r"class\s+\w+",
-                r"def\s+\w+\(",
-            ],
-            read_files=["CLAUDE.md", "swarm_attack/agents/base.py"],
-        )
-
-        # Include research in prompt
-        prompt = self._build_prompt(
-            spec_content=spec_content,
-            existing_modules=research.context["classes_discovered"],
-            existing_patterns=research.summary,
-        )
-
-        # NOW: Use tools for verification
+        # Uses tools for verification via get_tools_for_agent()
         result = self.llm.run(
             prompt,
-            allowed_tools=["Read", "Glob", "Grep"],  # CHANGED from []
-            max_turns=5,  # CHANGED from 1 - allow exploration
+            allowed_tools=get_tools_for_agent("IssueCreatorAgent"),  # ["Read", "Glob", "Grep"]
+            max_turns=5,  # Allows exploration
         )
 ```
 
-### 2. ComplexityGateAgent (HIGH PRIORITY)
+### 2. ComplexityGateAgent (IMPLEMENTED)
 
-**Current:** `allowed_tools=[]`, `max_turns=1` - instant judgment without looking
+**Previous:** `allowed_tools=[]`, `max_turns=1` - instant judgment without looking
 
-**Change:** Allow code inspection before complexity estimation
+**Current Implementation:** Uses `get_tools_for_agent("ComplexityGateAgent")` which returns `["Read", "Glob", "Grep"]`
 
 ```python
-# complexity_gate.py changes
+# complexity_gate.py - NOW IMPLEMENTED via tool_sets.py
 
-class ComplexityGateAgent(BaseAgent, AgentResearchMixin):
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
+class ComplexityGateAgent(BaseAgent):
     """Estimates complexity with codebase awareness."""
 
     def run(self, context: dict) -> AgentResult:
-        issue_body = context["issue_body"]
-
-        # NEW: Research code mentioned in issue
-        referenced_files = self._extract_file_references(issue_body)
-
-        research = self.research_codebase(
-            search_patterns=referenced_files,
-            grep_patterns=self._extract_class_references(issue_body),
-            read_files=referenced_files[:5],  # Read up to 5 files
-        )
-
-        prompt = self._build_prompt(
-            issue_body=issue_body,
-            existing_code_context=research.summary,
-            actual_complexity_signals=research.context,
-        )
-
         result = self.llm.run(
             prompt,
-            allowed_tools=["Read", "Glob", "Grep"],  # CHANGED from []
-            max_turns=3,  # CHANGED from 1
+            allowed_tools=get_tools_for_agent("ComplexityGateAgent"),  # ["Read", "Glob", "Grep"]
+            max_turns=3,  # Allows exploration
             model="haiku",  # Still use cheap model
         )
 ```
@@ -472,17 +441,17 @@ DO NOT proceed to implementation until you have:
 <acceptance_criteria>
 
 ### Core Functionality
-- [ ] `AgentResearchMixin` provides standard research interface
-- [ ] `ToolSet` enum defines consistent tool sets
-- [ ] `AGENT_TOOL_REQUIREMENTS` maps all agents to appropriate tools
-- [ ] `get_tools_for_agent()` returns correct tools for any agent
-- [ ] `@requires_research` decorator enforces research phase
+- [x] `AgentResearchMixin` provides standard research interface
+- [x] `ToolSet` enum defines consistent tool sets (in `swarm_attack/agents/tool_sets.py`)
+- [x] `AGENT_TOOL_REQUIREMENTS` maps all agents to appropriate tools
+- [x] `get_tools_for_agent()` returns correct tools for any agent
+- [ ] `@requires_research` decorator enforces research phase (optional enhancement)
 
 ### Agent Changes
-- [ ] `IssueCreatorAgent` uses research tools (not `allowed_tools=[]`)
-- [ ] `ComplexityGateAgent` uses research tools (not `allowed_tools=[]`)
-- [ ] All agents get research tools by default via `BaseAgent.DEFAULT_TOOLS`
-- [ ] SpecCriticAgent unchanged (Codex agents out of scope)
+- [x] `IssueCreatorAgent` uses research tools via `get_tools_for_agent("IssueCreatorAgent")`
+- [x] `ComplexityGateAgent` uses research tools via `get_tools_for_agent("ComplexityGateAgent")`
+- [x] All agents get research tools by default via `BaseAgent.DEFAULT_TOOLS`
+- [x] SpecCriticAgent unchanged (Codex agents out of scope)
 
 ### Skill Updates
 - [ ] All SKILL.md files include "Phase 0: Research" section

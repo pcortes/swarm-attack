@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_continuation_prompt>
+  <metadata>
+    <title>Auto-Fix Feature Implementation Continuation V2</title>
+    <created>2025-12-31T20:00:00Z</created>
+    <feature>auto-fix</feature>
+    <status>Issues 7-11 COMPLETE, Issues 12-13 PENDING</status>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack-integration</worktree>
+  </metadata>
+
+  <objective>
+    Complete the Auto-Fix feature implementation. Issues 7-11 are DONE. Issues 12-13 remain.
+    Use Task tool with subagent_type="general-purpose" to parallelize work.
+  </objective>
+
+  <completed_work>
+    <issue number="7" status="DONE">
+      <title>Create analyze CLI commands</title>
+      <file>swarm_attack/cli/analyze.py - 465 lines</file>
+      <tests>tests/unit/cli/test_analyze_commands.py - 660 lines, all passing</tests>
+      <commands>
+        - swarm-attack analyze all
+        - swarm-attack analyze all --create-bugs
+        - swarm-attack analyze tests
+        - swarm-attack analyze types
+        - swarm-attack analyze lint
+        - swarm-attack analyze lint --fix
+      </commands>
+    </issue>
+
+    <issue number="8" status="DONE">
+      <title>Implement AutoFixOrchestrator core loop</title>
+      <file>swarm_attack/qa/auto_fix.py - 463 lines</file>
+      <tests>tests/unit/qa/test_auto_fix.py - 1361 lines</tests>
+      <class>AutoFixOrchestrator</class>
+      <methods>
+        - __init__(bug_orchestrator, detector, config)
+        - run(target, max_iterations, auto_approve, dry_run) -> AutoFixResult
+        - _create_bug_from_finding(bug: StaticBugReport) -> str | None
+      </methods>
+    </issue>
+
+    <issue number="9" status="DONE">
+      <title>Add dry_run mode</title>
+      <notes>Implemented in run() method - accepts dry_run parameter</notes>
+    </issue>
+
+    <issue number="10" status="DONE">
+      <title>Implement watch mode</title>
+      <methods>
+        - watch(target, max_iterations, auto_approve) -> None
+        - _get_file_mtimes(target) -> dict[str, float]
+        - _files_changed(old_mtimes, new_mtimes) -> bool
+      </methods>
+      <tests>tests/unit/qa/test_auto_fix.py::TestWatchMode - 11 tests</tests>
+    </issue>
+
+    <issue number="11" status="DONE">
+      <title>CLI commands for auto-fix</title>
+      <file>swarm_attack/cli/qa_commands.py - 695 lines (updated)</file>
+      <tests>tests/unit/cli/test_qa_auto_fix_commands.py - 623 lines</tests>
+      <commands>
+        - swarm-attack qa auto-fix [target] [--max-iterations N] [--approve-all] [--dry-run]
+        - swarm-attack qa auto-watch [target] [--approve-all]
+      </commands>
+    </issue>
+  </completed_work>
+
+  <remaining_issues>
+    <issue number="12" size="medium" deps="11" ready="true">
+      <title>Integration tests</title>
+      <file_to_create>tests/integration/qa/test_auto_fix_integration.py</file_to_create>
+      <tests_to_write>
+        - Full pipeline: detect_all -> create_bug -> analyze -> approve -> fix
+        - dry_run mode with all components
+        - Critical bugs trigger checkpoints correctly
+        - Graceful handling when BugOrchestrator.fix() fails
+        - Multiple bugs in one iteration all processed
+      </tests_to_write>
+    </issue>
+
+    <issue number="13" size="medium" deps="12" ready="true">
+      <title>E2E testing</title>
+      <file_to_create>tests/integration/qa/test_auto_fix_e2e.py</file_to_create>
+      <tests_to_write>
+        - E2E test for `swarm-attack analyze all` command
+        - E2E test for `swarm-attack analyze all --create-bugs`
+        - E2E test for `swarm-attack qa auto-fix --dry-run`
+        - E2E test for full auto-fix loop via CLI
+      </tests_to_write>
+    </issue>
+  </remaining_issues>
+
+  <current_test_counts>
+    <passing>
+      - tests/generated/auto-fix/test_issue_1.py - 32 tests
+      - tests/unit/test_auto_fix_config.py - 17 tests
+      - tests/unit/static_analysis/test_detector.py - 127 tests
+      - tests/unit/qa/test_auto_fix.py - ~50 tests (including watch mode)
+      - tests/unit/cli/test_analyze_commands.py - 36 tests
+      - tests/unit/cli/test_qa_auto_fix_commands.py - ~30 tests
+    </passing>
+    <total_estimated>292+ tests</total_estimated>
+  </current_test_counts>
+
+  <how_to_continue>
+    <step>1. Run issues 12 and 13 in parallel using Task tool</step>
+    <step>2. Issue 12: Create integration tests in tests/integration/qa/test_auto_fix_integration.py</step>
+    <step>3. Issue 13: Create E2E tests in tests/integration/qa/test_auto_fix_e2e.py</step>
+    <step>4. Run full test suite: pytest tests/ -v</step>
+    <step>5. Verify all tests pass</step>
+    <step>6. Run manual testing on buggy-api</step>
+  </how_to_continue>
+
+  <verification_commands>
+    <command>pytest tests/generated/auto-fix/ tests/unit/test_auto_fix_config.py tests/unit/static_analysis/ tests/unit/qa/test_auto_fix.py tests/unit/cli/test_analyze_commands.py tests/unit/cli/test_qa_auto_fix_commands.py -v --tb=short</command>
+    <command>swarm-attack status auto-fix</command>
+    <command>swarm-attack analyze all --help</command>
+    <command>swarm-attack qa auto-fix --help</command>
+  </verification_commands>
+
+  <key_files>
+    <implementation>
+      - swarm_attack/static_analysis/models.py - StaticBugReport, StaticAnalysisResult
+      - swarm_attack/static_analysis/detector.py - StaticBugDetector
+      - swarm_attack/qa/auto_fix.py - AutoFixOrchestrator
+      - swarm_attack/cli/analyze.py - analyze CLI commands
+      - swarm_attack/cli/qa_commands.py - auto-fix CLI commands
+      - swarm_attack/config.py - AutoFixConfig
+    </implementation>
+    <tests>
+      - tests/unit/static_analysis/test_detector.py
+      - tests/unit/qa/test_auto_fix.py
+      - tests/unit/cli/test_analyze_commands.py
+      - tests/unit/cli/test_qa_auto_fix_commands.py
+      - tests/unit/test_auto_fix_config.py
+      - tests/generated/auto-fix/test_issue_1.py
+    </tests>
+  </key_files>
+
+  <tdd_approach>
+    Follow strict TDD for remaining issues:
+    1. Write FAILING tests first
+    2. Run tests to confirm they fail
+    3. Implement minimal code to pass tests
+    4. Refactor if needed
+    5. Verify all tests pass
+  </tdd_approach>
+</implementation_continuation_prompt>

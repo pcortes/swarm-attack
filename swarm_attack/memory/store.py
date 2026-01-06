@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, List, Optional
+
+from swarm_attack.memory.relevance import RelevanceScorer
 
 
 @dataclass
@@ -351,10 +353,362 @@ class MemoryStore:
             return True
         return False
 
+    def get_schema_drift_warnings(self, class_names: list[str]) -> list[MemoryEntry]:
+        """Get schema drift entries for the given class names.
+
+        Searches for schema_drift category entries that have a class_name
+        in their content matching any of the provided class names.
+
+        Args:
+            class_names: List of class names to search for.
+
+        Returns:
+            List of MemoryEntry objects matching the class names.
+        """
+        if not class_names:
+            return []
+
+        results: list[MemoryEntry] = []
+        class_names_set = set(class_names)
+
+        for entry in self._entries.values():
+            if entry.category != "schema_drift":
+                continue
+
+            # Check if the entry's class_name matches any in the list
+            entry_class_name = entry.content.get("class_name")
+            if entry_class_name and entry_class_name in class_names_set:
+                entry.hit_count += 1
+                results.append(entry)
+
+        return results
+
+    def get_test_failure_patterns(self, test_path: str) -> list[MemoryEntry]:
+        """Get test failure entries matching the test path.
+
+        Searches for test_failure category entries where the test_path
+        in content matches the provided path.
+
+        Args:
+            test_path: The test file path to search for.
+
+        Returns:
+            List of MemoryEntry objects matching the test path.
+        """
+        results: list[MemoryEntry] = []
+
+        for entry in self._entries.values():
+            if entry.category != "test_failure":
+                continue
+
+            # Check if the entry's test_path matches
+            entry_test_path = entry.content.get("test_path")
+            if entry_test_path == test_path:
+                entry.hit_count += 1
+                results.append(entry)
+
+        return results
+
+    def get_recent_entries(self, category: str, limit: int = 10) -> list[MemoryEntry]:
+        """Get most recent entries for a category, sorted by timestamp desc.
+
+        Args:
+            category: The category to filter by.
+            limit: Maximum number of entries to return. Defaults to 10.
+
+        Returns:
+            List of MemoryEntry objects sorted by created_at descending.
+        """
+        # Filter by category
+        category_entries = [
+            entry for entry in self._entries.values()
+            if entry.category == category
+        ]
+
+        # Sort by created_at descending (most recent first)
+        category_entries.sort(key=lambda e: e.created_at, reverse=True)
+
+        # Apply limit and update hit counts
+        results = category_entries[:limit]
+        for entry in results:
+            entry.hit_count += 1
+
+        return results
+
+    def prune_old_entries(self, days: int) -> int:
+        """Remove entries older than N days.
+
+        Args:
+            days: Remove entries older than this many days.
+                  If days=0, nothing is removed (edge case).
+
+        Returns:
+            Count of entries removed.
+        """
+        if days <= 0:
+            return 0
+
+        cutoff = datetime.now() - timedelta(days=days)
+        to_remove: list[str] = []
+
+        for entry_id, entry in self._entries.items():
+            entry_date = datetime.fromisoformat(entry.created_at)
+            if entry_date < cutoff:
+                to_remove.append(entry_id)
+
+        for entry_id in to_remove:
+            del self._entries[entry_id]
+
+        return len(to_remove)
+
+    def prune_low_value_entries(self, min_hits: int = 1) -> int:
+        """Remove entries with fewer than min_hits query hits.
+
+        Args:
+            min_hits: Minimum hit_count to keep an entry. Entries with
+                      hit_count < min_hits will be removed. Defaults to 1.
+
+        Returns:
+            Count of entries removed.
+        """
+        to_remove: list[str] = []
+
+        for entry_id, entry in self._entries.items():
+            if entry.hit_count < min_hits:
+                to_remove.append(entry_id)
+
+        for entry_id in to_remove:
+            del self._entries[entry_id]
+
+        return len(to_remove)
+
     def clear(self) -> None:
         """Clear all entries from the store."""
         self._entries.clear()
         self._query_count = 0
+
+    def prune_by_relevance(
+        self,
+        threshold: float = 0.3,
+        min_entries: int = 10
+    ) -> int:
+        """Remove entries below relevance threshold.
+
+        Uses RelevanceScorer to calculate scores. The threshold is compared
+        against normalized scores (0-1 range based on min-max in the set).
+        Keeps at least min_entries regardless of threshold.
+        Returns count of removed entries.
+
+        Args:
+            threshold: Minimum normalized relevance score (0-1) to keep an entry.
+                      Entries with normalized score < threshold are candidates for removal.
+            min_entries: Minimum number of entries to keep regardless of threshold.
+                        The highest scoring entries are kept.
+
+        Returns:
+            Count of entries removed.
+        """
+        if not self._entries:
+            return 0
+
+        scorer = RelevanceScorer()
+
+        # Score all entries
+        scored_entries: List[tuple[float, str]] = []
+        for entry_id, entry in self._entries.items():
+            score = scorer.score(entry)
+            scored_entries.append((score, entry_id))
+
+        # Sort by score descending (highest first)
+        scored_entries.sort(key=lambda x: x[0], reverse=True)
+
+        # Find min and max for normalization
+        max_score = scored_entries[0][0]
+        min_score = scored_entries[-1][0]
+        score_range = max_score - min_score
+
+        total_entries = len(self._entries)
+
+        # Check if entries are tightly clustered (within 20% of each other)
+        scores_are_similar = score_range < 0.2 * max_score if max_score > 0 else True
+
+        # Separate entries by normalized threshold
+        above_threshold: List[tuple[float, str]] = []
+        below_threshold: List[tuple[float, str]] = []
+
+        for score, entry_id in scored_entries:
+            if score_range > 0 and not scores_are_similar:
+                # Normalize to 0-1 range based on min-max
+                normalized_score = (score - min_score) / score_range
+                if normalized_score >= threshold:
+                    above_threshold.append((score, entry_id))
+                else:
+                    below_threshold.append((score, entry_id))
+            else:
+                # All entries have similar scores - all go to above_threshold
+                # (but we'll still apply min_entries logic below)
+                above_threshold.append((score, entry_id))
+
+        entries_to_keep: set[str] = set()
+
+        if above_threshold and not below_threshold:
+            # All entries are above threshold (or similar)
+            # Apply min_entries pruning only for high thresholds on similar scores
+            # High threshold (>= 0.5) with similar scores suggests pruning is intended
+            # Low threshold (< 0.5) with similar scores suggests all entries are acceptable
+            if scores_are_similar and total_entries > min_entries and threshold >= 0.5:
+                # When scores are similar and threshold is high, prune to min_entries
+                # Keep the top min_entries (they're all similar, so just keep first N)
+                entries_to_keep = {entry_id for _, entry_id in scored_entries[:min_entries]}
+            else:
+                # Keep all above-threshold entries (low threshold or diverse scores)
+                entries_to_keep = {entry_id for _, entry_id in above_threshold}
+        elif above_threshold:
+            # Case: Some entries are above threshold, some below
+            # Always keep all above-threshold entries
+            entries_to_keep = {entry_id for _, entry_id in above_threshold}
+
+            # If we have enough total entries to meet min_entries,
+            # also keep top below-threshold entries to reach min_entries
+            if total_entries >= min_entries and len(above_threshold) < min_entries:
+                needed_from_below = min_entries - len(above_threshold)
+                for i, (_, entry_id) in enumerate(below_threshold):
+                    if i < needed_from_below:
+                        entries_to_keep.add(entry_id)
+        else:
+            # Case: ALL entries are below threshold
+            # Apply min_entries constraint - keep at least min_entries of the highest scoring
+            if total_entries <= min_entries:
+                # Keep all since we have fewer than min_entries
+                entries_to_keep = {entry_id for _, entry_id in below_threshold}
+            else:
+                # Keep top min_entries by score
+                entries_to_keep = {entry_id for _, entry_id in below_threshold[:min_entries]}
+
+        # Remove entries not in keep set
+        to_remove = [eid for eid in self._entries if eid not in entries_to_keep]
+        for entry_id in to_remove:
+            del self._entries[entry_id]
+
+        return len(to_remove)
+
+    def get_by_relevance(
+        self,
+        category: str = None,
+        limit: int = 10
+    ) -> List[MemoryEntry]:
+        """Get entries sorted by relevance score.
+
+        Optionally filter by category.
+        Returns up to limit entries, highest relevance first.
+
+        Args:
+            category: Optional category to filter by.
+            limit: Maximum number of entries to return.
+
+        Returns:
+            List of MemoryEntry objects sorted by relevance score (highest first).
+        """
+        scorer = RelevanceScorer()
+
+        # Filter by category if specified
+        candidates = []
+        for entry in self._entries.values():
+            if category is not None and entry.category != category:
+                continue
+            candidates.append(entry)
+
+        if not candidates:
+            return []
+
+        # Score and sort by relevance (highest first)
+        scored: List[tuple[float, MemoryEntry]] = []
+        for entry in candidates:
+            score = scorer.score(entry)
+            scored.append((score, entry))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Get top N entries
+        results = [entry for _, entry in scored[:limit]]
+
+        # Update hit counts for returned entries
+        for entry in results:
+            entry.hit_count += 1
+
+        return results
+
+    def save_to_file(self, path: Path) -> None:
+        """Save memory store to JSON file.
+
+        Creates parent directories if they don't exist.
+        Format matches existing save() method.
+
+        Args:
+            path: Path to save the JSON file to.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        data = {
+            "version": "1.0",
+            "entries": [e.to_dict() for e in self._entries.values()],
+            "stats": {
+                "total_queries": self._query_count,
+                "last_saved": datetime.now().isoformat(),
+            },
+        }
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    def load_from_file(self, path: Path) -> None:
+        """Load memory store from JSON file.
+
+        Adds entries to existing store (doesn't replace).
+        Handles corrupted/missing files gracefully.
+
+        Args:
+            path: Path to the JSON file to load from.
+        """
+        if not path.exists():
+            return
+
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+
+            # Handle case where data is not a dict (e.g., JSON array)
+            if not isinstance(data, dict):
+                return
+
+            for entry_data in data.get("entries", []):
+                entry = MemoryEntry.from_dict(entry_data)
+                self._entries[entry.id] = entry
+
+            # Load stats if present
+            stats = data.get("stats", {})
+            if "total_queries" in stats:
+                self._query_count = stats["total_queries"]
+
+        except (json.JSONDecodeError, IOError, OSError, KeyError, TypeError):
+            # Gracefully handle corrupted/empty/malformed files
+            pass
+
+    @classmethod
+    def from_file(cls, path: Path) -> "MemoryStore":
+        """Create new store from file.
+
+        Returns empty store if file doesn't exist or is corrupted.
+
+        Args:
+            path: Path to the JSON file to load from.
+
+        Returns:
+            MemoryStore instance with loaded entries, or empty store on error.
+        """
+        store = cls()
+        store.load_from_file(path)
+        return store
 
 
 # Global memory store singleton for convenience

@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<specialist_prompt>
+  <metadata>
+    <title>QA End-to-End Verification - Bug Detection to Fix Pipeline</title>
+    <created>2025-12-31</created>
+    <objective>Verify swarm-attack QA can detect bugs and feed them through the fix pipeline</objective>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack-integration</working_directory>
+    <test_project>/tmp/buggy-api</test_project>
+    <prerequisite>QA Agent integration complete (merged to master)</prerequisite>
+  </metadata>
+
+  <team_structure>
+    <role name="Test Project Architect">
+      <responsibility>Create a realistic buggy API service that QA can test</responsibility>
+      <tools>Write, Bash, FastAPI/Flask</tools>
+      <deliverable>Running API with intentional bugs at localhost:8000</deliverable>
+    </role>
+    <role name="Swarm Config Specialist">
+      <responsibility>Configure test project as swarm-attack managed repo</responsibility>
+      <tools>swarm-attack init, config.yaml, specs</tools>
+      <deliverable>Properly configured swarm-attack project</deliverable>
+    </role>
+    <role name="QA Agent Operator">
+      <responsibility>Run QA agents against test API and capture findings</responsibility>
+      <tools>swarm-attack qa test, qa health, qa bugs, qa create-bugs</tools>
+      <deliverable>QA session with discovered bugs</deliverable>
+    </role>
+    <role name="Bug Bash Operator">
+      <responsibility>Process QA findings through bug fix pipeline</responsibility>
+      <tools>swarm-attack bug analyze, bug approve, bug fix</tools>
+      <deliverable>Fixed bugs with passing tests</deliverable>
+    </role>
+    <role name="Verification Engineer">
+      <responsibility>Validate full pipeline works end-to-end</responsibility>
+      <tools>pytest, swarm-attack qa validate</tools>
+      <deliverable>Verification report proving the loop works</deliverable>
+    </role>
+  </team_structure>
+
+  <context>
+    <current_state>
+      <qa_integration>Complete - merged to master</qa_integration>
+      <qa_cli_available>swarm-attack qa test|validate|health|bugs|create-bugs</qa_cli_available>
+      <bug_bash_available>swarm-attack bug init|analyze|approve|fix</bug_bash_available>
+      <test_project_exists>/tmp/buggy-api with api.py (9 intentional bugs)</test_project_exists>
+    </current_state>
+
+    <known_bugs_in_test_project>
+      <bug id="1">User.to_dict() missing 'id' field in serialization</bug>
+      <bug id="2">User.from_dict() no validation for missing keys</bug>
+      <bug id="3">UserService.create_user() no email validation</bug>
+      <bug id="4">UserService.get_user() returns None without handling</bug>
+      <bug id="5">UserService.delete_user() silent failure, always True</bug>
+      <bug id="6">UserService.update_user() crashes on nonexistent user</bug>
+      <bug id="7">divide() no zero division check</bug>
+      <bug id="8">process_json() no error handling for invalid JSON</bug>
+      <bug id="9">get_item_at_index() no bounds checking</bug>
+    </known_bugs_in_test_project>
+
+    <qa_agent_capabilities>
+      <agent name="BehavioralTester">Tests API endpoints via HTTP requests</agent>
+      <agent name="ContractValidator">Validates interface contracts</agent>
+      <agent name="RegressionScanner">Checks for regressions in existing functionality</agent>
+      <limitation>QA agents test running services, not static code</limitation>
+    </qa_agent_capabilities>
+  </context>
+
+  <mission>
+    <phase name="1. Create Testable API Service" priority="P0">
+      <title>Transform Buggy Code into Running FastAPI Service</title>
+      <description>
+        The QA agent needs a running HTTP service to test.
+        Convert the buggy code into a FastAPI app with endpoints.
+      </description>
+      <tasks>
+        <task>Create FastAPI wrapper around existing buggy code</task>
+        <task>Expose endpoints: POST /users, GET /users/{id}, DELETE /users/{id}, PUT /users/{id}</task>
+        <task>Expose utility endpoints: POST /divide, POST /parse-json</task>
+        <task>Add /health endpoint for QA health checks</task>
+        <task>Keep the bugs intact - don't fix them yet</task>
+      </tasks>
+      <code_template>
+        <![CDATA[
+# /tmp/buggy-api/main.py
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from api import User, UserService, divide, process_json
+
+app = FastAPI()
+service = UserService()
+
+class CreateUserRequest(BaseModel):
+    name: str
+    email: str
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/users")
+def create_user(req: CreateUserRequest):
+    user = service.create_user(req.name, req.email)
+    return user.to_dict()  # BUG: missing id field
+
+@app.get("/users/{user_id}")
+def get_user(user_id: int):
+    user = service.get_user(user_id)
+    if user is None:
+        raise HTTPException(404, "User not found")
+    return user.to_dict()
+
+@app.delete("/users/{user_id}")
+def delete_user(user_id: int):
+    result = service.delete_user(user_id)
+    return {"deleted": result}  # BUG: always True
+
+@app.put("/users/{user_id}")
+def update_user(user_id: int, req: CreateUserRequest):
+    user = service.update_user(user_id, req.name, req.email)  # BUG: crashes
+    return user.to_dict()
+
+@app.post("/divide")
+def divide_endpoint(a: int, b: int):
+    return {"result": divide(a, b)}  # BUG: zero division
+
+@app.post("/parse-json")
+def parse_json(data: str):
+    return process_json(data)  # BUG: no error handling
+        ]]>
+      </code_template>
+      <commands>
+        <cmd>cd /tmp/buggy-api &amp;&amp; pip install fastapi uvicorn</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; uvicorn main:app --port 8000 &amp;</cmd>
+        <cmd>curl http://localhost:8000/health</cmd>
+      </commands>
+      <output>
+        <artifact>Running API at http://localhost:8000</artifact>
+        <artifact>/tmp/buggy-api/main.py</artifact>
+      </output>
+    </phase>
+
+    <phase name="2. Configure as Swarm-Attack Project" priority="P0">
+      <title>Initialize Swarm-Attack Configuration</title>
+      <tasks>
+        <task>Create config.yaml for swarm-attack</task>
+        <task>Create a minimal PRD describing the API</task>
+        <task>Create a spec that defines expected behavior</task>
+        <task>Initialize .swarm directory structure</task>
+      </tasks>
+      <commands>
+        <cmd description="Create config">
+          <![CDATA[
+cat > /tmp/buggy-api/config.yaml << 'EOF'
+github:
+  repo: "local/buggy-api"
+
+claude:
+  binary: "claude"
+  max_turns: 6
+  timeout_seconds: 300
+
+tests:
+  command: "pytest"
+  args: ["-v"]
+
+qa:
+  default_depth: "standard"
+  base_url: "http://localhost:8000"
+EOF
+          ]]>
+        </cmd>
+        <cmd description="Create PRD">mkdir -p /tmp/buggy-api/.claude/prds</cmd>
+        <cmd description="Create spec">mkdir -p /tmp/buggy-api/specs/user-api</cmd>
+        <cmd description="Create swarm state">mkdir -p /tmp/buggy-api/.swarm/state</cmd>
+      </commands>
+      <output>
+        <artifact>/tmp/buggy-api/config.yaml</artifact>
+        <artifact>/tmp/buggy-api/.swarm/ directory structure</artifact>
+      </output>
+    </phase>
+
+    <phase name="3. Run QA Detection" priority="P0">
+      <title>Execute QA Agents to Find Bugs</title>
+      <description>
+        Run the QA pipeline against the buggy API to discover issues.
+        The agents should find behavioral problems.
+      </description>
+      <tasks>
+        <task>Run health check first</task>
+        <task>Run shallow QA test on all endpoints</task>
+        <task>Run standard depth to get contract validation</task>
+        <task>Run deep scan for comprehensive coverage</task>
+        <task>List discovered bugs</task>
+      </tasks>
+      <commands>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa health --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa test "/users" --depth shallow --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa test "/users" --depth standard --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa test "/divide" --depth standard --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa bugs</cmd>
+      </commands>
+      <expected_findings>
+        <finding>POST /users response missing 'id' field</finding>
+        <finding>DELETE /users/{id} returns 200 for nonexistent user</finding>
+        <finding>PUT /users/{id} returns 500 for nonexistent user</finding>
+        <finding>POST /divide crashes on zero divisor</finding>
+        <finding>POST /users accepts invalid email format</finding>
+      </expected_findings>
+      <output>
+        <artifact>QA session ID with findings</artifact>
+        <artifact>Bug list from qa bugs command</artifact>
+      </output>
+    </phase>
+
+    <phase name="4. Create Bug Bash Entries" priority="P1">
+      <title>Feed QA Findings into Bug Bash Pipeline</title>
+      <tasks>
+        <task>Create bug entries from QA session</task>
+        <task>Verify bugs are created in .swarm/bugs/</task>
+        <task>List bugs ready for processing</task>
+      </tasks>
+      <commands>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa create-bugs [SESSION_ID] --severity-threshold moderate</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack bug list</cmd>
+        <cmd>ls /tmp/buggy-api/.swarm/bugs/</cmd>
+      </commands>
+      <output>
+        <artifact>Bug IDs created from QA findings</artifact>
+      </output>
+    </phase>
+
+    <phase name="5. Run Bug Fix Pipeline" priority="P1">
+      <title>Process Bugs Through Analyze → Approve → Fix</title>
+      <description>
+        For each bug discovered by QA, run the full bug bash pipeline.
+        This demonstrates the complete detection-to-fix loop.
+      </description>
+      <tasks>
+        <task>For each bug: run analyze phase</task>
+        <task>Review fix plans</task>
+        <task>Approve fix plans</task>
+        <task>Execute fixes</task>
+        <task>Verify fixes with tests</task>
+      </tasks>
+      <workflow>
+        <step>swarm-attack bug analyze [BUG_ID]</step>
+        <step>Review: cat .swarm/bugs/[BUG_ID]/fix-plan.md</step>
+        <step>swarm-attack bug approve [BUG_ID]</step>
+        <step>swarm-attack bug fix [BUG_ID]</step>
+        <step>pytest tests/ -v</step>
+      </workflow>
+      <output>
+        <artifact>Fixed bugs with passing tests</artifact>
+        <artifact>Git commits for each fix</artifact>
+      </output>
+    </phase>
+
+    <phase name="6. Re-run QA Validation" priority="P1">
+      <title>Verify Fixes with QA Re-scan</title>
+      <tasks>
+        <task>Restart the API with fixes applied</task>
+        <task>Run QA health check</task>
+        <task>Run QA test on previously failing endpoints</task>
+        <task>Verify no bugs found (or reduced count)</task>
+      </tasks>
+      <commands>
+        <cmd>cd /tmp/buggy-api &amp;&amp; pkill -f "uvicorn main:app" || true</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; uvicorn main:app --port 8000 &amp;</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa health --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa test "/users" --depth standard --base-url http://localhost:8000</cmd>
+        <cmd>cd /tmp/buggy-api &amp;&amp; swarm-attack qa bugs</cmd>
+      </commands>
+      <success_criteria>
+        <criterion>Health check passes</criterion>
+        <criterion>QA test shows PASS recommendation</criterion>
+        <criterion>Bug count reduced or zero</criterion>
+      </success_criteria>
+      <output>
+        <artifact>Clean QA report</artifact>
+      </output>
+    </phase>
+
+    <phase name="7. Generate Verification Report" priority="P2">
+      <title>Document End-to-End Verification</title>
+      <tasks>
+        <task>Document what bugs were found</task>
+        <task>Document what fixes were applied</task>
+        <task>Document before/after QA results</task>
+        <task>Create summary of pipeline capabilities</task>
+      </tasks>
+      <output>
+        <artifact>E2E_VERIFICATION_REPORT.md</artifact>
+      </output>
+    </phase>
+  </mission>
+
+  <alternative_approach name="Static Analysis Path">
+    <description>
+      If the API-based QA approach proves too complex, use this simpler path
+      that leverages pytest failures directly into bug bash.
+    </description>
+    <workflow>
+      <step name="1. Run Tests">
+        <cmd>cd /tmp/buggy-api &amp;&amp; pytest tests/ -v --tb=short 2>&amp;1 | tee test_failures.txt</cmd>
+      </step>
+      <step name="2. Parse Failures">
+        <cmd>Extract failing test names and error messages</cmd>
+      </step>
+      <step name="3. Create Bugs from Failures">
+        <cmd>For each failure: swarm-attack bug init "description" --id bug-N --test tests/test_api.py -e "error"</cmd>
+      </step>
+      <step name="4. Run Bug Pipeline">
+        <cmd>swarm-attack bug analyze bug-N</cmd>
+        <cmd>swarm-attack bug approve bug-N</cmd>
+        <cmd>swarm-attack bug fix bug-N</cmd>
+      </step>
+      <step name="5. Verify">
+        <cmd>pytest tests/ -v  # All should pass now</cmd>
+      </step>
+    </workflow>
+  </alternative_approach>
+
+  <execution_instructions>
+    <instruction priority="CRITICAL">
+      Run phases in order. Phase 1 must complete before QA can run.
+    </instruction>
+    <instruction priority="CRITICAL">
+      Keep the API server running during QA phases. Use background process.
+    </instruction>
+    <instruction priority="HIGH">
+      If QA agents don't find expected bugs, try the alternative_approach.
+    </instruction>
+    <instruction priority="HIGH">
+      Document each step's output for the verification report.
+    </instruction>
+    <instruction priority="MEDIUM">
+      If a phase fails, document the failure and attempt recovery before proceeding.
+    </instruction>
+  </execution_instructions>
+
+  <success_criteria>
+    <criterion id="SC1">QA agents successfully find at least 3 bugs in the API</criterion>
+    <criterion id="SC2">Bugs are created in .swarm/bugs/ from QA findings</criterion>
+    <criterion id="SC3">Bug bash pipeline successfully fixes at least 1 bug</criterion>
+    <criterion id="SC4">Re-run QA shows improvement (fewer findings)</criterion>
+    <criterion id="SC5">Full loop demonstrated: QA detect → create-bugs → analyze → fix → verify</criterion>
+    <criterion id="SC6">Verification report documents the complete flow</criterion>
+  </success_criteria>
+
+  <rollback_plan>
+    <step>Kill API server: pkill -f "uvicorn main:app"</step>
+    <step>Reset test project: cd /tmp/buggy-api &amp;&amp; git reset --hard HEAD</step>
+    <step>Clean swarm state: rm -rf /tmp/buggy-api/.swarm/</step>
+  </rollback_plan>
+
+  <deliverables>
+    <deliverable>/tmp/buggy-api/main.py - FastAPI wrapper</deliverable>
+    <deliverable>/tmp/buggy-api/config.yaml - Swarm config</deliverable>
+    <deliverable>QA session reports showing discovered bugs</deliverable>
+    <deliverable>Bug bash entries created from QA</deliverable>
+    <deliverable>Fixed code with passing tests</deliverable>
+    <deliverable>E2E_VERIFICATION_REPORT.md</deliverable>
+  </deliverables>
+</specialist_prompt>

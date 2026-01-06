@@ -1,6 +1,6 @@
 # Swarm Attack
 
-**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2`
+**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack`
 **Branch:** `master`
 
 ---
@@ -10,8 +10,8 @@
 **Before reading further, run these commands:**
 
 ```bash
-cd /Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2
-pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2
+cd /Users/philipjcortes/Desktop/swarm-attack
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack
 git branch   # Must show: * master
 ```
 
@@ -457,7 +457,65 @@ swarm-attack bug unblock bug-id
 | **FixPlanner** | Generates comprehensive fix plans |
 | **BugFixerAgent** | Applies approved fix plans via Claude CLI |
 
-## Debate Retry Handler (v0.3.1) - UPDATED
+## Agent Research Capability (v0.4.2)
+
+All agents now have access to codebase exploration tools by default. This enables intelligent context gathering during LLM execution.
+
+### BaseAgent DEFAULT_TOOLS
+
+BaseAgent defines default tools available to all agents:
+
+```python
+class BaseAgent(ABC):
+    # Default tools available to all agents (codebase exploration)
+    DEFAULT_TOOLS: list[str] = ["Read", "Glob", "Grep"]
+
+    @classmethod
+    def get_tools(cls) -> list[str]:
+        """Get the default tools for this agent type."""
+        return cls.DEFAULT_TOOLS.copy()
+```
+
+### Tool Set Configuration
+
+Agent-specific tool sets are managed via `swarm_attack/agents/tool_sets.py`:
+
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
+# Get tools for a specific agent
+tools = get_tools_for_agent("CoderAgent")  # Returns ["Read", "Glob", "Grep"]
+tools = get_tools_for_agent("IssueCreatorAgent")  # Returns ["Read", "Glob", "Grep"]
+```
+
+### Agent Integration
+
+Agents that need codebase exploration use `get_tools_for_agent()`:
+
+**ComplexityGateAgent:**
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+allowed_tools = get_tools_for_agent("ComplexityGateAgent")
+result = self.llm.run(prompt, allowed_tools=allowed_tools)
+```
+
+**IssueCreatorAgent:**
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+allowed_tools = get_tools_for_agent("IssueCreatorAgent")
+result = self.llm.run(prompt, allowed_tools=allowed_tools)
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/agents/base.py` | BaseAgent.DEFAULT_TOOLS, get_tools() class method |
+| `swarm_attack/agents/tool_sets.py` | get_tools_for_agent() function |
+| `tests/unit/test_tool_sets.py` | Tool set unit tests |
+| `tests/integration/test_agent_research.py` | Integration tests |
+
+## Debate Retry Handler (v0.3.1)
 
 Handles transient errors during spec and bug debate loops with exponential backoff retry.
 
@@ -466,7 +524,7 @@ Handles transient errors during spec and bug debate loops with exponential backo
 | Category | Error Types | Behavior |
 |----------|-------------|----------|
 | **Transient** | Rate limit (429), Timeout, Server errors (5xx) | Retry up to 3 times with exponential backoff |
-| **Fatal** | Auth errors (401), Claude CLI not found | Fail immediately (no retry) |
+| **Fatal** | Auth errors (401), CLI not found | Fail immediately (no retry) |
 | **Agent Failure** | Agent returns `success=False` | Pass through (no retry) |
 
 ### Backoff Configuration
@@ -477,35 +535,6 @@ Handles transient errors during spec and bug debate loops with exponential backo
 | `backoff_base_seconds` | 5.0 | Initial delay between retries |
 | `backoff_multiplier` | 2.0 | Exponential multiplier (5s → 10s → 20s) |
 | `max_backoff_seconds` | 60.0 | Maximum delay cap |
-
-### Configuration via config.yaml
-
-```yaml
-debate_retry:
-  max_retries: 3
-  backoff_base_seconds: 30        # 30s initial backoff (was 5s)
-  backoff_multiplier: 2.0         # 30s → 60s → 120s
-  max_backoff_seconds: 300        # Cap at 5 minutes (was 60s)
-
-spec_debate:
-  max_rounds: 3
-  inter_round_delay_seconds: 60   # 1 min between debate rounds
-  intra_round_delay_seconds: 10   # 10s between critic and moderator
-```
-
-### Recommended Values for Claude Max Plan
-
-The defaults are tuned for Claude Max rate limits:
-- Backoff starts at 30s (not 5s) because rate limits need minutes to clear
-- Max backoff is 300s (5 minutes) instead of 60s
-- Inter-round delay prevents back-to-back API calls between rounds
-- Intra-round delay prevents rapid critic→moderator calls
-
-### Troubleshooting Rate Limits
-
-1. Check `.swarm/logs/` for `inter_round_delay` and `intra_round_delay` events
-2. If hitting limits frequently, increase `backoff_base_seconds` or delay values
-3. All delays are logged with feature_id and round number for debugging
 
 ### Usage
 
@@ -520,31 +549,6 @@ The handler is automatically used by:
 |------|---------|
 | `swarm_attack/debate_retry.py` | DebateRetryHandler implementation |
 | `tests/unit/test_debate_retry.py` | Comprehensive unit tests (20 tests) |
-
-### Rate Limit Preemption (v0.3.2)
-
-Proactive rate limiting to prevent hitting Claude API limits.
-
-**Configuration:**
-```yaml
-debate_retry:
-  rate_limit_calls_per_minute: 20  # 0 to disable preemption
-```
-
-**How it works:**
-- Tracks API call timestamps over rolling 1-minute window
-- Before each call, checks if at limit (20 calls/minute default)
-- If at limit, preemptively delays until oldest call ages out
-- Prevents 429 errors instead of reacting to them
-
-**Key Files:**
-| File | Purpose |
-|------|---------|
-| `swarm_attack/rate_limit_tracker.py` | RateLimitTracker class |
-| `tests/unit/test_rate_limit_tracker.py` | Unit tests (20 tests) |
-
-**SpecAuthor Retry:**
-The SpecAuthor step now uses the same retry handler as Critic/Moderator, providing consistent error handling across the entire pipeline.
 
 ## Bug Fixer Agent (v0.4.0)
 
@@ -1200,6 +1204,67 @@ The error classifier follows strict rules to avoid false positives:
 | `tests/unit/test_codex_error_classification.py` | False positive prevention tests |
 | `tests/unit/test_codex_auth_patterns.py` | Auth pattern tests |
 
+## Memory System (Phase 5)
+
+Persistent cross-session learning system with pattern detection, recommendations, and semantic search.
+
+See `docs/MEMORY.md` for full documentation.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **MemoryStore** | Core JSON persistence layer |
+| **PatternDetector** | Detects recurring issues (schema drift, fixes, failure clusters) |
+| **RecommendationEngine** | Provides contextual suggestions based on history |
+| **SemanticSearch** | Weighted keyword search with category boosting |
+| **MemoryIndex** | O(1) inverted index for fast lookups |
+
+### Agent Integration
+
+**CoderAgent** receives historical recommendations:
+- Extracts class names from issue body
+- Queries memory for prior schema drift conflicts
+- Injects warnings into prompt
+
+**VerifierAgent** records patterns:
+- Records success/failure patterns to memory
+- Links patterns to fixes for future recommendations
+- Tags entries with `schema_drift` and class names
+
+### CLI Commands
+
+```bash
+# Basic commands
+swarm-attack memory stats                    # Show statistics
+swarm-attack memory list --category schema_drift  # List entries
+swarm-attack memory prune --older-than 30    # Remove old entries
+
+# Phase 5 commands
+swarm-attack memory patterns                 # Detect patterns
+swarm-attack memory patterns --category schema_drift  # Filter by category
+swarm-attack memory recommend schema_drift --context '{"class_name": "MyClass"}'
+swarm-attack memory search "MyClass error"   # Semantic search
+swarm-attack memory search "error" --category schema_drift --limit 5
+
+# Persistence commands
+swarm-attack memory save backup.json         # Save to file
+swarm-attack memory load backup.json         # Load from file
+swarm-attack memory export drift.json --category schema_drift
+swarm-attack memory import drift.json        # Merge entries
+swarm-attack memory compress                 # Deduplicate entries
+swarm-attack memory analytics                # Show analytics report
+```
+
+### Configuration
+
+```yaml
+memory:
+  file_path: .swarm/memory/store.json  # Default location
+```
+
+---
+
 ## Context Flow & Schema Drift Prevention (v0.3.0)
 
 Prevents duplicate class definitions across issues by tracking what each issue creates or modifies.
@@ -1210,6 +1275,29 @@ Prevents duplicate class definitions across issues by tracking what each issue c
 2. **StateStore** saves class definitions in module registry
 3. **Next issue** receives rich context showing existing classes with source code
 4. **Coder prompt** includes "DO NOT RECREATE" warnings with import statements
+
+### Memory-Based Pre-Implementation Warnings (v0.4.2)
+
+CoderAgent and VerifierAgent now integrate with `MemoryStore` for cross-session schema drift learning:
+
+**CoderAgent** (`memory_store` parameter):
+- `_extract_potential_classes(issue_body)` - Extracts class names from issue body (Interface Contract, Acceptance Criteria)
+- `_get_schema_warnings(class_names)` - Queries memory store for prior schema drift conflicts
+- `_format_schema_warnings(warnings)` - Formats warnings for prompt injection
+
+**VerifierAgent** (`memory_store` parameter):
+- Records schema drift conflicts to memory store when detected
+- Enables cross-session learning - conflicts in one session inform future sessions
+- Tags entries with `schema_drift` and class name for queryability
+
+**Usage:**
+```python
+from swarm_attack.memory.store import MemoryStore
+
+memory = MemoryStore(config)
+coder = CoderAgent(config, memory_store=memory)
+verifier = VerifierAgent(config, memory_store=memory)
+```
 
 ### Module Registry
 

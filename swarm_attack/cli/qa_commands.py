@@ -7,14 +7,19 @@ Implements spec section 4: CLI Specification
 - qa report: View QA reports
 - qa bugs: List QA-discovered bugs
 - qa create-bugs: Create Bug Bash entries from QA findings
+- qa auto-fix: Run detection-fix loop (Issue 11)
+- qa auto-watch: Watch mode with auto-fix on changes (Issue 11)
 """
 
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import typer
+
+if TYPE_CHECKING:
+    from swarm_attack.qa.auto_fix import AutoFixOrchestrator
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -508,6 +513,183 @@ def create_bugs(
             border_style="green",
         ))
 
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+def _get_auto_fix_orchestrator() -> "AutoFixOrchestrator":
+    """Get configured AutoFixOrchestrator.
+
+    Returns:
+        Configured AutoFixOrchestrator instance.
+    """
+    from swarm_attack.bug_orchestrator import BugOrchestrator
+    from swarm_attack.qa.auto_fix import AutoFixOrchestrator
+    from swarm_attack.static_analysis.detector import StaticBugDetector
+
+    config = get_config_or_default()
+    bug_orchestrator = BugOrchestrator(config)
+    detector = StaticBugDetector()
+
+    return AutoFixOrchestrator(
+        bug_orchestrator=bug_orchestrator,
+        detector=detector,
+        config=config.auto_fix,
+    )
+
+
+@app.command("auto-fix")
+def auto_fix(
+    target: Optional[str] = typer.Argument(
+        None,
+        help="Path to analyze (file or directory). Defaults to current directory.",
+    ),
+    max_iterations: int = typer.Option(
+        3,
+        "--max-iterations",
+        "-m",
+        help="Maximum number of detection-fix iterations",
+    ),
+    approve_all: bool = typer.Option(
+        False,
+        "--approve-all",
+        "-a",
+        help="Auto-approve all fixes (including critical bugs)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-n",
+        help="Run detection only, show what would be fixed without making changes",
+    ),
+) -> None:
+    """
+    Run automatic bug detection and fixing loop.
+
+    Detects bugs using static analysis (pytest, mypy, ruff), creates bug
+    investigations, and attempts to fix them through the bug bash pipeline.
+    Repeats until all bugs are fixed or max-iterations is reached.
+
+    Examples:
+        swarm-attack qa auto-fix                    # Fix current directory
+        swarm-attack qa auto-fix src/api/           # Fix specific path
+        swarm-attack qa auto-fix --max-iterations 5 # Up to 5 iterations
+        swarm-attack qa auto-fix --approve-all      # Auto-approve all fixes
+        swarm-attack qa auto-fix --dry-run          # Show what would be fixed
+    """
+    try:
+        orchestrator = _get_auto_fix_orchestrator()
+
+        console.print("[cyan]Starting auto-fix detection loop...[/cyan]")
+        if target:
+            console.print(f"[dim]Target:[/dim] {target}")
+        console.print(f"[dim]Max iterations:[/dim] {max_iterations}")
+        console.print(f"[dim]Auto-approve:[/dim] {approve_all}")
+        if dry_run:
+            console.print("[yellow]DRY RUN MODE - No fixes will be applied[/yellow]")
+        console.print()
+
+        with console.status("[yellow]Running detection-fix loop...[/yellow]"):
+            result = orchestrator.run(
+                target=target,
+                max_iterations=max_iterations,
+                auto_approve=approve_all,
+                dry_run=dry_run,
+            )
+
+        # Build result display
+        lines = [
+            f"[bold]Bugs Found:[/bold] {result.bugs_found}",
+            f"[bold]Bugs Fixed:[/bold] {result.bugs_fixed}",
+            f"[bold]Iterations:[/bold] {result.iterations_run}",
+        ]
+
+        if result.checkpoints_triggered > 0:
+            lines.append(f"[bold]Checkpoints Triggered:[/bold] {result.checkpoints_triggered}")
+
+        if result.dry_run:
+            lines.append("")
+            lines.append("[yellow]DRY RUN - No fixes were applied[/yellow]")
+
+        if result.success:
+            lines.append("")
+            lines.append("[bold green]SUCCESS - Codebase is clean![/bold green]")
+            border_style = "green"
+            title = "Auto-Fix Complete"
+        else:
+            lines.append("")
+            if result.bugs_found == 0:
+                lines.append("[green]No bugs detected[/green]")
+                border_style = "green"
+            else:
+                lines.append(f"[yellow]Incomplete - {result.bugs_found - result.bugs_fixed} bugs remaining[/yellow]")
+                border_style = "yellow"
+            title = "Auto-Fix Results"
+
+        if result.errors:
+            lines.append("")
+            lines.append(f"[bold red]Errors ({len(result.errors)}):[/bold red]")
+            for error in result.errors[:5]:
+                lines.append(f"  [red]- {error}[/red]")
+            if len(result.errors) > 5:
+                lines.append(f"  [dim]... and {len(result.errors) - 5} more[/dim]")
+            border_style = "red"
+
+        console.print(Panel(
+            "\n".join(lines),
+            title=title,
+            border_style=border_style,
+        ))
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
+
+
+@app.command("auto-watch")
+def auto_watch(
+    target: Optional[str] = typer.Argument(
+        None,
+        help="Path to watch (file or directory). Defaults to current directory.",
+    ),
+    approve_all: bool = typer.Option(
+        False,
+        "--approve-all",
+        "-a",
+        help="Auto-approve all fixes (full autopilot mode)",
+    ),
+) -> None:
+    """
+    Watch mode: continuously monitor for changes and auto-fix.
+
+    Watches the target path for file changes and automatically runs the
+    detection-fix loop when changes are detected. Press Ctrl+C to stop.
+
+    Examples:
+        swarm-attack qa auto-watch                  # Watch current directory
+        swarm-attack qa auto-watch src/             # Watch specific path
+        swarm-attack qa auto-watch --approve-all   # Full autopilot mode
+    """
+    try:
+        orchestrator = _get_auto_fix_orchestrator()
+
+        console.print("[cyan]Starting watch mode...[/cyan]")
+        if target:
+            console.print(f"[dim]Watching:[/dim] {target}")
+        else:
+            console.print("[dim]Watching:[/dim] current directory")
+        console.print(f"[dim]Auto-approve:[/dim] {approve_all}")
+        console.print("[dim]Press Ctrl+C to stop[/dim]")
+        console.print()
+
+        orchestrator.watch(
+            target=target,
+            auto_approve=approve_all,
+        )
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Watch mode stopped.[/yellow]")
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)

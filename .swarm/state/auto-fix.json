@@ -1,0 +1,220 @@
+{
+  "feature_id": "auto-fix",
+  "phase": "IMPLEMENTING",
+  "tasks": [
+    {
+      "issue_number": 1,
+      "stage": "DONE",
+      "title": "Create StaticBugReport and StaticAnalysisResult data models",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": "Max retries exceeded: Collection error: module 'swarm_attack.static_analysis' not found - implementation file may be missing",
+      "outputs": null,
+      "completion_summary": "Created StaticBugReport and StaticAnalysisResult dataclasses with from_dict/to_dict methods",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 2,
+      "stage": "DONE",
+      "title": "Add AutoFixConfig to config system",
+      "dependencies": [],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Added AutoFixConfig dataclass with from_dict/to_dict, integrated into SwarmConfig",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 3,
+      "stage": "DONE",
+      "title": "Implement StaticBugDetector with pytest JSON parsing",
+      "dependencies": [
+        1
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Created StaticBugDetector with pytest JSON parsing, _tool_available, graceful degradation",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 4,
+      "stage": "DONE",
+      "title": "Add mypy JSON parsing to StaticBugDetector",
+      "dependencies": [
+        3
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Added detect_from_types() for mypy JSON parsing with severity mapping",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 5,
+      "stage": "DONE",
+      "title": "Add ruff JSON parsing to StaticBugDetector",
+      "dependencies": [
+        3
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Added detect_from_lint() for ruff JSON parsing with severity mapping",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 6,
+      "stage": "DONE",
+      "title": "Implement detect_all() in StaticBugDetector",
+      "dependencies": [
+        4,
+        5
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": "Added detect_all() with deduplication and tool tracking",
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 7,
+      "stage": "READY",
+      "title": "Create analyze CLI commands",
+      "dependencies": [
+        6
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 8,
+      "stage": "READY",
+      "title": "Implement AutoFixOrchestrator core loop",
+      "dependencies": [
+        2,
+        6
+      ],
+      "estimated_size": "large",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 9,
+      "stage": "READY",
+      "title": "Add dry_run mode to AutoFixOrchestrator",
+      "dependencies": [
+        8
+      ],
+      "estimated_size": "small",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 10,
+      "stage": "READY",
+      "title": "Implement watch mode in AutoFixOrchestrator",
+      "dependencies": [
+        8
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 11,
+      "stage": "READY",
+      "title": "Add auto-fix and auto-watch CLI commands",
+      "dependencies": [
+        9,
+        10
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 12,
+      "stage": "READY",
+      "title": "Create integration tests for auto-fix pipeline",
+      "dependencies": [
+        11
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    },
+    {
+      "issue_number": 13,
+      "stage": "READY",
+      "title": "Manual E2E testing of auto-fix pipeline",
+      "dependencies": [
+        12
+      ],
+      "estimated_size": "medium",
+      "business_value_score": 0.5,
+      "technical_risk_score": 0.5,
+      "blocked_reason": null,
+      "outputs": null,
+      "completion_summary": null,
+      "parent_issue": null,
+      "child_issues": []
+    }
+  ],
+  "current_session": null,
+  "created_at": "2025-12-31T18:31:21.377151Z",
+  "updated_at": "2025-12-31T19:26:10.670306Z",
+  "cost_total_usd": 1.5786130500000002,
+  "cost_by_phase": {
+    "IMPLEMENTATION": 1.5786130500000002
+  }
+}

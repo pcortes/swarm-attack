@@ -108,6 +108,16 @@ from swarm_attack.cli.research import app as research_app
 
 app.add_typer(research_app, name="research")
 
+# Import and register analyze commands
+from swarm_attack.cli.analyze import app as analyze_app
+
+app.add_typer(analyze_app, name="analyze")
+
+# Import and register memory commands
+from swarm_attack.cli.memory import memory_app
+
+app.add_typer(memory_app, name="memory")
+
 
 # =========================================================================
 # Entry Point
