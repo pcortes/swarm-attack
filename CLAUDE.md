@@ -816,12 +816,14 @@ AI-powered semantic testing using Claude Code CLI with Opus 4.5. Zero API cost (
 
 | Command | Description |
 |---------|-------------|
-| `swarm-attack qa semantic-test` | Run semantic test on changes |
+| `swarm-attack qa semantic-test` | Run semantic test on changes (auto-records metrics) |
 | `swarm-attack qa semantic-test --scope affected` | Test affected code (wider scope) |
 | `swarm-attack qa semantic-test --expected "desc"` | Test with expected behavior |
+| `swarm-attack qa semantic-test --no-metrics` | Skip recording to .swarm/qa/metrics.json |
 | `swarm-attack qa regression-status` | Check regression scheduler state |
 | `swarm-attack qa regression --force` | Force regression test run |
 | `swarm-attack qa regression --check` | Check if regression is needed |
+| `swarm-attack qa metrics` | Show semantic test metrics summary |
 
 ### Pipeline Integration
 
@@ -841,6 +843,7 @@ Both pipelines include semantic testing:
 ... → Fix Verified → SemanticTestHook → Pytest
                          ↓
                    FAIL → Block
+                   PARTIAL → Warn + Continue
                    PASS → Continue
 ```
 
