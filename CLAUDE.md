@@ -457,7 +457,7 @@ swarm-attack bug unblock bug-id
 | **FixPlanner** | Generates comprehensive fix plans |
 | **BugFixerAgent** | Applies approved fix plans via Claude CLI |
 
-## Debate Retry Handler (v0.3.1)
+## Debate Retry Handler (v0.3.1) - UPDATED
 
 Handles transient errors during spec and bug debate loops with exponential backoff retry.
 
@@ -466,7 +466,7 @@ Handles transient errors during spec and bug debate loops with exponential backo
 | Category | Error Types | Behavior |
 |----------|-------------|----------|
 | **Transient** | Rate limit (429), Timeout, Server errors (5xx) | Retry up to 3 times with exponential backoff |
-| **Fatal** | Auth errors (401), CLI not found | Fail immediately (no retry) |
+| **Fatal** | Auth errors (401), Claude CLI not found | Fail immediately (no retry) |
 | **Agent Failure** | Agent returns `success=False` | Pass through (no retry) |
 
 ### Backoff Configuration
@@ -477,6 +477,35 @@ Handles transient errors during spec and bug debate loops with exponential backo
 | `backoff_base_seconds` | 5.0 | Initial delay between retries |
 | `backoff_multiplier` | 2.0 | Exponential multiplier (5s → 10s → 20s) |
 | `max_backoff_seconds` | 60.0 | Maximum delay cap |
+
+### Configuration via config.yaml
+
+```yaml
+debate_retry:
+  max_retries: 3
+  backoff_base_seconds: 30        # 30s initial backoff (was 5s)
+  backoff_multiplier: 2.0         # 30s → 60s → 120s
+  max_backoff_seconds: 300        # Cap at 5 minutes (was 60s)
+
+spec_debate:
+  max_rounds: 3
+  inter_round_delay_seconds: 60   # 1 min between debate rounds
+  intra_round_delay_seconds: 10   # 10s between critic and moderator
+```
+
+### Recommended Values for Claude Max Plan
+
+The defaults are tuned for Claude Max rate limits:
+- Backoff starts at 30s (not 5s) because rate limits need minutes to clear
+- Max backoff is 300s (5 minutes) instead of 60s
+- Inter-round delay prevents back-to-back API calls between rounds
+- Intra-round delay prevents rapid critic→moderator calls
+
+### Troubleshooting Rate Limits
+
+1. Check `.swarm/logs/` for `inter_round_delay` and `intra_round_delay` events
+2. If hitting limits frequently, increase `backoff_base_seconds` or delay values
+3. All delays are logged with feature_id and round number for debugging
 
 ### Usage
 

@@ -14,8 +14,16 @@ claude:
 codex:
   timeout_seconds: 900  # 15 minutes - allow max reasoning effort on large specs
 
+debate_retry:
+  max_retries: 3
+  backoff_base_seconds: 30
+  backoff_multiplier: 2.0
+  max_backoff_seconds: 300
+
 spec_debate:
   max_rounds: 3
+  inter_round_delay_seconds: 60
+  intra_round_delay_seconds: 10
 
 tests:
   command: "pytest"
