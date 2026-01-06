@@ -48,6 +48,7 @@ from swarm_attack.bug_state_store import BugStateStore
 from swarm_attack.debate_retry import DebateRetryHandler
 from swarm_attack.events.bus import get_event_bus
 from swarm_attack.events.types import EventType, SwarmEvent
+from swarm_attack.memory.store import MemoryStore
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -88,6 +89,7 @@ class BugOrchestrator:
         planner: Optional[FixPlannerAgent] = None,
         critic: Optional[BugCriticAgent] = None,
         moderator: Optional[BugModeratorAgent] = None,
+        memory_store: Optional[MemoryStore] = None,
     ) -> None:
         """
         Initialize the Bug Orchestrator.
@@ -101,9 +103,13 @@ class BugOrchestrator:
             planner: Optional Fix Planner agent (created if not provided).
             critic: Optional Bug Critic agent (created if not provided).
             moderator: Optional Bug Moderator agent (created if not provided).
+            memory_store: Optional MemoryStore for cross-session learning (created if not provided).
         """
         self.config = config
         self._logger = logger
+
+        # Memory store for cross-session learning (create default if not provided)
+        self._memory_store = memory_store or MemoryStore.load()
 
         # Initialize state store
         bugs_path = Path(config.repo_root) / ".swarm" / "bugs"
@@ -131,6 +137,11 @@ class BugOrchestrator:
     def state_store(self) -> BugStateStore:
         """Get the state store."""
         return self._state_store
+
+    @property
+    def memory_store(self) -> MemoryStore:
+        """Get the memory store for cross-session learning."""
+        return self._memory_store
 
     @property
     def researcher(self) -> BugResearcherAgent:
@@ -1144,7 +1155,7 @@ class BugOrchestrator:
         files_changed = []
         agent_cost = 0.0
         try:
-            fixer = BugFixerAgent(self.config, logger=self._logger)
+            fixer = BugFixerAgent(self.config, logger=self._logger, memory_store=self._memory_store)
             fixer_result = fixer.run({
                 "fix_plan": state.fix_plan,
                 "bug_id": bug_id,

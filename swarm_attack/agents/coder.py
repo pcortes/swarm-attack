@@ -147,16 +147,103 @@ class CoderAgent(BaseAgent):
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
         memory_store: Optional["MemoryStore"] = None,
+        recommendation_engine: Optional[Any] = None,
     ) -> None:
         """Initialize the Coder agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._skill_prompt: Optional[str] = None
         self._memory = memory_store
+        self._recommendation_engine = recommendation_engine
 
         # Autopilot integration - all optional for backward compatibility
         self._autopilot_config: Optional[AutopilotFeaturesConfig] = None
         self._self_healing: Optional[CoderSelfHealingIntegration] = None
         self._learning: Optional[CoderIntegration] = None
+
+    def _get_recommendations(
+        self,
+        feature_id: str,
+        issue_number: int,
+        context: Optional[dict[str, Any]] = None,
+    ) -> list[Any]:
+        """
+        Get recommendations from the recommendation engine.
+
+        Args:
+            feature_id: The feature identifier.
+            issue_number: The issue number.
+            context: Optional additional context for the recommendation engine.
+
+        Returns:
+            List of Recommendation objects from the engine, or empty list if
+            no engine is configured.
+        """
+        if self._recommendation_engine is None:
+            return []
+
+        return self._recommendation_engine.get_recommendations(
+            feature_id=feature_id,
+            issue_number=issue_number,
+            context=context,
+        )
+
+    def _format_recommendations(self, recommendations: list[Any]) -> str:
+        """
+        Format recommendations for inclusion in the coder prompt.
+
+        Recommendations are sorted by priority (highest first) and formatted
+        with confidence indicators. High confidence recommendations (>=0.8)
+        are highlighted.
+
+        Args:
+            recommendations: List of Recommendation objects with attributes:
+                - title: str
+                - description: str
+                - confidence: float (0.0 to 1.0)
+                - source: str
+                - source_context: dict[str, Any]
+                - priority: int
+
+        Returns:
+            Formatted markdown string with recommendations section, or empty
+            string if no recommendations.
+        """
+        if not recommendations:
+            return ""
+
+        # Sort by priority (highest first)
+        sorted_recs = sorted(recommendations, key=lambda r: r.priority, reverse=True)
+
+        lines = [
+            "## Recommendations",
+            "",
+            "Based on historical patterns and prior issues, consider the following:",
+            "",
+        ]
+
+        for i, rec in enumerate(sorted_recs, 1):
+            confidence_pct = int(rec.confidence * 100)
+
+            # Highlight high confidence recommendations
+            if rec.is_high_confidence():
+                confidence_label = f"[HIGH CONFIDENCE - {confidence_pct}%]"
+            else:
+                confidence_label = f"[Confidence: {confidence_pct}%]"
+
+            lines.append(f"### {i}. {rec.title}")
+            lines.append(f"**{confidence_label}**")
+            lines.append("")
+            lines.append(rec.description)
+            lines.append("")
+
+            # Include source context
+            lines.append(f"*Source: {rec.source}*")
+            if rec.source_context:
+                for key, value in rec.source_context.items():
+                    lines.append(f"- {key}: `{value}`")
+            lines.append("")
+
+        return "\n".join(lines)
 
     def _extract_potential_classes(self, issue_body: str) -> list[str]:
         """
@@ -1422,6 +1509,17 @@ Refer to spec sections mentioned in issue body if needed.""".format(len(spec_con
         """Build the full prompt for Claude."""
         skill_prompt = self._load_skill_prompt()
 
+        # Get and format recommendations from recommendation engine
+        recommendations_section = ""
+        if self._recommendation_engine is not None:
+            issue_number = issue.get("order", 0)
+            recommendations = self._get_recommendations(
+                feature_id=feature_id,
+                issue_number=issue_number,
+                context={"issue": issue},
+            )
+            recommendations_section = self._format_recommendations(recommendations)
+
         # Check if universal context was injected via with_context()
         # If so, use its pre-built, token-budgeted context instead of building fresh
         if self._universal_context:
@@ -1489,6 +1587,8 @@ Review the failures below and make TARGETED fixes. DO NOT rewrite everything.
 **Source Directory:** {project_info['source_dir']}
 **File Extension:** {project_info['file_ext']}
 **Directory Structure:** {project_info['structure']}
+
+{recommendations_section}
 
 {failures_section}
 

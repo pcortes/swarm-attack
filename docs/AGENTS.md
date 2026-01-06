@@ -263,6 +263,31 @@ Agents are Python classes that orchestrate skill execution. They inherit from `B
 - Standardized logging via `SwarmLogger`
 - Cost tracking for LLM API calls
 - Returns `AgentResult` dataclass with success/failure, output, errors, cost
+- `DEFAULT_TOOLS = ["Read", "Glob", "Grep"]` - Default research tools for all agents
+- `get_tools()` method - Returns tools from `tool_sets.py` for the agent
+
+#### Tool Sets
+**File**: `/Users/philipjcortes/Desktop/swarm-attack/swarm_attack/agents/tool_sets.py`
+**Purpose**: Centralized tool management for all agents
+**Key Features**:
+- `ToolSet` enum defines standard tool configurations:
+  - `RESEARCH_ONLY`: `["Read", "Glob", "Grep"]` - For agents that need codebase exploration
+  - `RESEARCH_WITH_BASH`: `["Read", "Glob", "Grep", "Bash"]` - For agents that also run commands
+  - `RESEARCH_WITH_WRITE`: `["Read", "Glob", "Grep", "Write"]` - For agents that create files
+  - `FULL`: `["Read", "Glob", "Grep", "Bash", "Write", "Edit"]` - Full capability
+- `AGENT_TOOL_REQUIREMENTS` maps agent names to their required tool sets
+- `get_tools_for_agent(agent_name)` - Returns the appropriate tools for any agent
+
+**Agent Tool Mapping**:
+| Agent | ToolSet |
+|-------|---------|
+| CoderAgent | RESEARCH_ONLY |
+| VerifierAgent | RESEARCH_ONLY |
+| IssueCreatorAgent | RESEARCH_ONLY |
+| ComplexityGateAgent | RESEARCH_ONLY |
+| SpecAuthorAgent | RESEARCH_WITH_WRITE |
+| BugResearcherAgent | RESEARCH_WITH_BASH |
+| All Others | RESEARCH_ONLY (default) |
 
 #### AgentResult
 **Purpose**: Standardized return type for all agents
@@ -324,11 +349,25 @@ Agents are Python classes that orchestrate skill execution. They inherit from `B
 - `run(issue_data, spec_path, feature_id)` - Implements issue with tests
 - Thick agent that handles entire test-code-verify loop in single context
 
+**Memory Store Integration (v0.4.2)**:
+- Optional `memory_store` parameter enables cross-session schema drift learning
+- `_extract_potential_classes(issue_body)` - Extracts class names from Interface Contract/Acceptance Criteria
+- `_get_schema_warnings(class_names)` - Queries memory for prior schema drift conflicts
+- `_format_schema_warnings(warnings)` - Formats warnings for prompt injection
+
+When `memory_store` is provided, CoderAgent queries for schema drift warnings before implementation, alerting developers to potential class name collisions discovered in prior sessions.
+
 #### VerifierAgent
 **Skill**: verifier
 **Orchestrates**: Test execution and failure analysis
 **Key Methods**:
 - `run(test_output, feature_id, issue_number)` - Analyzes test failures
+
+**Memory Store Integration (v0.4.2)**:
+- Optional `memory_store` parameter enables schema drift recording
+- When schema conflicts are detected, records them to memory store
+- Entries tagged with `schema_drift` and class name for queryability
+- Enables cross-session learning: conflicts in one session inform future CoderAgent runs
 
 #### RecoveryAgent
 **Skill**: recovery
@@ -492,6 +531,40 @@ swarm_attack/
 ├── features/            # Feature state and outputs
 ├── bugs/                # Bug investigation state
 └── sessions/            # Session logs and checkpoints
+```
+
+---
+
+## Agent Memory Support
+
+Swarm Attack agents can optionally integrate with a persistent `MemoryStore` for cross-session learning. This enables schema drift prevention and knowledge sharing between sessions.
+
+### Memory Support Table
+
+| Agent | Reads Memory | Writes Memory | What It Stores/Queries |
+|-------|--------------|---------------|------------------------|
+| CoderAgent | Yes (schema warnings) | No | Queries prior schema drift conflicts before implementation |
+| VerifierAgent | No | Yes (schema drift) | Records schema conflicts when LLM-generated code violates patterns |
+| BugFixerAgent | Future | Future | Will store/query common bug patterns |
+| RecoveryAgent | Future | Future | Will store/query recovery strategies |
+| SummarizerAgent | Future | Future | Will store/query session summaries |
+
+### How Schema Drift Prevention Works
+
+1. **VerifierAgent** detects when LLM-generated code creates duplicate classes or violates existing patterns
+2. **VerifierAgent** records the conflict to `MemoryStore` with `schema_drift` tag
+3. In future sessions, **CoderAgent** queries `MemoryStore` for classes mentioned in the issue
+4. If prior conflicts exist, CoderAgent receives warnings in its prompt before implementation
+5. This prevents repeating the same schema violations across sessions
+
+### Usage
+
+```python
+from swarm_attack.memory.store import MemoryStore
+
+memory = MemoryStore(config)
+coder = CoderAgent(config, memory_store=memory)
+verifier = VerifierAgent(config, memory_store=memory)
 ```
 
 ---

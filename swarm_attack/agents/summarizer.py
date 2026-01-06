@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
     from swarm_attack.llm_clients import ClaudeCliRunner
     from swarm_attack.logger import SwarmLogger
+    from swarm_attack.memory.store import MemoryStore
     from swarm_attack.models import IssueOutput
 
 
@@ -48,9 +49,11 @@ class SummarizerAgent(BaseAgent):
         config: SwarmConfig,
         logger: Optional[SwarmLogger] = None,
         llm_runner: Optional[ClaudeCliRunner] = None,
+        memory_store: Optional["MemoryStore"] = None,
     ) -> None:
         """Initialize the Summarizer agent."""
         super().__init__(config, logger, llm_runner)
+        self._memory_store = memory_store
 
     def _get_git_diff(self, commit_hash: Optional[str] = None) -> str:
         """

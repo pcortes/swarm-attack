@@ -1,15 +1,21 @@
 # The Blindness Problem: Why Our Coder Can't See
 
+> **STATUS UPDATE:** This analysis led to the implementation of `swarm_attack/agents/tool_sets.py` which provides centralized tool management. Key agents like `IssueCreatorAgent` and `ComplexityGateAgent` now use `get_tools_for_agent()` to get research tools (`["Read", "Glob", "Grep"]`). See `specs/agent-research-capability/SPEC.md` for implementation details.
+
 ## TL;DR
 
-**Compound-engineering-plugin agents have eyes (tools). Our agents are blind (no tools).**
+**Compound-engineering-plugin agents have eyes (tools). Our agents were blind (no tools) - NOW PARTIALLY FIXED.**
 
 ```python
 # Their pattern (CAN SEE)
 allowed_tools: [Read, Edit, Bash, Glob]
 
-# Our pattern (BLIND)
+# Our OLD pattern (was BLIND)
 allowed_tools: []
+
+# Our NEW pattern (via tool_sets.py)
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+allowed_tools = get_tools_for_agent("IssueCreatorAgent")  # ["Read", "Glob", "Grep"]
 ```
 
 ---

@@ -13,41 +13,35 @@ Investigation of the chief-of-staff feature revealed 4 bugs blocking progress:
 
 ---
 
-## Bug Report: IssueCreatorAgent YAML Frontmatter Not Stripped
+## Bug Report: IssueCreatorAgent YAML Frontmatter Not Stripped (RESOLVED)
 
 **Severity:** Critical
 **Component:** IssueCreatorAgent
-**File(s):** `swarm_attack/agents/issue_creator.py:57-61`
+**File(s):** `swarm_attack/agents/issue_creator.py`
+**Status:** **FIXED** via `tool_sets.py` implementation
 
-### Symptoms
-- `python -m swarm_attack issues chief-of-staff` fails with `error_max_turns`
+### Symptoms (Historical)
+- `python -m swarm_attack issues chief-of-staff` failed with `error_max_turns`
 - Error message: "Claude invocation failed: Claude CLI returned error: error_max_turns"
 
-### Root Cause
-The issue-creator skill file `.claude/skills/issue-creator/SKILL.md` has YAML frontmatter:
+### Root Cause (Historical)
+The issue-creator skill file had YAML frontmatter with `allowed-tools: Read,Glob`, but `IssueCreatorAgent.run()` called `self.llm.run()` with `allowed_tools=[]`.
 
-```yaml
----
-name: issue-creator
-description: >
-  Generate GitHub issues from an approved engineering specification.
-allowed-tools: Read,Glob
----
-```
-
-However, `IssueCreatorAgent.run()` calls `self.llm.run()` with `allowed_tools=[]` (line 260-264):
+### Resolution
+This bug has been **FIXED** via the Agent Research Capability implementation:
 
 ```python
+# NOW IMPLEMENTED via tool_sets.py:
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
 result = self.llm.run(
     prompt,
-    allowed_tools=[],  # <-- Explicitly disables all tools
-    max_turns=1,
+    allowed_tools=get_tools_for_agent("IssueCreatorAgent"),  # Returns ["Read", "Glob", "Grep"]
+    max_turns=5,
 )
 ```
 
-Claude sees `allowed-tools: Read,Glob` in the prompt, attempts to use these tools, but the CLI has `--allowedTools ""` set. This causes tool calls to fail and burns through `max_turns=1` immediately.
-
-The same bug was already fixed in `CoderAgent` (lines 172-192) by stripping YAML frontmatter, but the fix was not applied to `IssueCreatorAgent`.
+The `tool_sets.py` module provides centralized tool management for all agents. See `AGENT_TOOL_REQUIREMENTS` mapping for the complete configuration.
 
 ### Proposed Fix
 Add the same frontmatter stripping logic to `IssueCreatorAgent._load_skill_prompt()`:

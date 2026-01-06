@@ -457,6 +457,64 @@ swarm-attack bug unblock bug-id
 | **FixPlanner** | Generates comprehensive fix plans |
 | **BugFixerAgent** | Applies approved fix plans via Claude CLI |
 
+## Agent Research Capability (v0.4.2)
+
+All agents now have access to codebase exploration tools by default. This enables intelligent context gathering during LLM execution.
+
+### BaseAgent DEFAULT_TOOLS
+
+BaseAgent defines default tools available to all agents:
+
+```python
+class BaseAgent(ABC):
+    # Default tools available to all agents (codebase exploration)
+    DEFAULT_TOOLS: list[str] = ["Read", "Glob", "Grep"]
+
+    @classmethod
+    def get_tools(cls) -> list[str]:
+        """Get the default tools for this agent type."""
+        return cls.DEFAULT_TOOLS.copy()
+```
+
+### Tool Set Configuration
+
+Agent-specific tool sets are managed via `swarm_attack/agents/tool_sets.py`:
+
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+
+# Get tools for a specific agent
+tools = get_tools_for_agent("CoderAgent")  # Returns ["Read", "Glob", "Grep"]
+tools = get_tools_for_agent("IssueCreatorAgent")  # Returns ["Read", "Glob", "Grep"]
+```
+
+### Agent Integration
+
+Agents that need codebase exploration use `get_tools_for_agent()`:
+
+**ComplexityGateAgent:**
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+allowed_tools = get_tools_for_agent("ComplexityGateAgent")
+result = self.llm.run(prompt, allowed_tools=allowed_tools)
+```
+
+**IssueCreatorAgent:**
+```python
+from swarm_attack.agents.tool_sets import get_tools_for_agent
+allowed_tools = get_tools_for_agent("IssueCreatorAgent")
+result = self.llm.run(prompt, allowed_tools=allowed_tools)
+```
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/agents/base.py` | BaseAgent.DEFAULT_TOOLS, get_tools() class method |
+| `swarm_attack/agents/tool_sets.py` | get_tools_for_agent() function |
+| `tests/unit/test_tool_sets.py` | Tool set unit tests |
+| `tests/integration/test_agent_research.py` | Integration tests |
+
 ## Debate Retry Handler (v0.3.1)
 
 Handles transient errors during spec and bug debate loops with exponential backoff retry.
@@ -1146,6 +1204,31 @@ The error classifier follows strict rules to avoid false positives:
 | `tests/unit/test_codex_error_classification.py` | False positive prevention tests |
 | `tests/unit/test_codex_auth_patterns.py` | Auth pattern tests |
 
+## Memory Store
+
+Swarm Attack agents share a persistent memory store for cross-session learning.
+
+### How It Works
+1. **VerifierAgent** records schema drift when LLM-generated code violates existing patterns
+2. **CoderAgent** queries memory before generating code to receive warnings about known issues
+3. Memory persists to JSON file between sessions
+
+### CLI Commands
+- `swarm-attack memory stats` - Show entry counts by category
+- `swarm-attack memory list --category=schema_drift` - List entries
+- `swarm-attack memory prune --older-than=30` - Remove old entries
+
+### Configuration
+
+Memory file location can be configured in `config.yaml`:
+
+```yaml
+memory:
+  file_path: .swarm/memory/store.json  # Default location
+```
+
+---
+
 ## Context Flow & Schema Drift Prevention (v0.3.0)
 
 Prevents duplicate class definitions across issues by tracking what each issue creates or modifies.
@@ -1156,6 +1239,29 @@ Prevents duplicate class definitions across issues by tracking what each issue c
 2. **StateStore** saves class definitions in module registry
 3. **Next issue** receives rich context showing existing classes with source code
 4. **Coder prompt** includes "DO NOT RECREATE" warnings with import statements
+
+### Memory-Based Pre-Implementation Warnings (v0.4.2)
+
+CoderAgent and VerifierAgent now integrate with `MemoryStore` for cross-session schema drift learning:
+
+**CoderAgent** (`memory_store` parameter):
+- `_extract_potential_classes(issue_body)` - Extracts class names from issue body (Interface Contract, Acceptance Criteria)
+- `_get_schema_warnings(class_names)` - Queries memory store for prior schema drift conflicts
+- `_format_schema_warnings(warnings)` - Formats warnings for prompt injection
+
+**VerifierAgent** (`memory_store` parameter):
+- Records schema drift conflicts to memory store when detected
+- Enables cross-session learning - conflicts in one session inform future sessions
+- Tags entries with `schema_drift` and class name for queryability
+
+**Usage:**
+```python
+from swarm_attack.memory.store import MemoryStore
+
+memory = MemoryStore(config)
+coder = CoderAgent(config, memory_store=memory)
+verifier = VerifierAgent(config, memory_store=memory)
+```
 
 ### Module Registry
 

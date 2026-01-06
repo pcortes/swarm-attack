@@ -1077,6 +1077,40 @@ class User:
 - [ ] Module registry includes modified file classes
 - [ ] Coder prompt shows existing classes with source code
 
+#### Memory-Based Schema Drift Learning (v0.4.2)
+
+CoderAgent and VerifierAgent now integrate with `MemoryStore` for cross-session schema drift learning:
+
+```python
+from swarm_attack.memory.store import MemoryStore
+from swarm_attack.agents.coder import CoderAgent
+from swarm_attack.agents.verifier import VerifierAgent
+
+config = SwarmConfig.load()
+memory = MemoryStore(config)
+
+# CoderAgent queries memory for schema drift warnings before implementation
+coder = CoderAgent(config, memory_store=memory)
+
+# Test that schema warnings are retrieved
+classes_in_issue = coder._extract_potential_classes("Create class AutopilotSession")
+warnings = coder._get_schema_warnings(classes_in_issue)
+warning_text = coder._format_schema_warnings(warnings)
+
+print(f"Found {len(warnings)} schema drift warnings")
+
+# VerifierAgent records schema conflicts to memory for future sessions
+verifier = VerifierAgent(config, memory_store=memory)
+```
+
+**Verify:**
+- [ ] CoderAgent with memory_store queries for prior schema drift conflicts
+- [ ] `_extract_potential_classes()` finds class names in issue body
+- [ ] `_get_schema_warnings()` returns warnings from memory store
+- [ ] `_format_schema_warnings()` produces readable CLI output
+- [ ] VerifierAgent records schema conflicts to memory when detected
+- [ ] Cross-session learning: conflicts from one session appear in future queries
+
 ### 12.7 Test Campaign Management
 
 ```bash

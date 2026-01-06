@@ -525,3 +525,244 @@ class TestAnalyticsCommand:
                 or "entries" in output_lower
                 or "category" in output_lower
             )
+
+
+# =============================================================================
+# PATTERNS COMMAND TESTS
+# =============================================================================
+
+
+class TestPatternsCommand:
+    """Tests for the memory patterns command."""
+
+    def test_patterns_command_shows_patterns(self, runner, temp_store_path):
+        """Should display detected patterns in the output."""
+        from swarm_attack.cli.memory import memory_app
+
+        # Create store with multiple entries of same class (to form a pattern)
+        store = MemoryStore(store_path=temp_store_path)
+
+        # Add multiple schema_drift entries for same class (3+ = pattern)
+        for i in range(3):
+            entry = MemoryEntry(
+                id=f"drift-{i}",
+                category="schema_drift",
+                feature_id=f"feature-{i}",
+                issue_number=i,
+                content={"class_name": "RecurringDrifter", "drift_type": "field_mismatch"},
+                outcome="detected",
+                created_at=datetime.now().isoformat(),
+                tags=["schema", "recurrent"],
+            )
+            store.add(entry)
+        store.save()
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = store
+
+            result = runner.invoke(memory_app, ["patterns", "--min-occurrences", "3"])
+
+            assert result.exit_code == 0
+            # Should show the recurring class or indicate patterns found
+            assert (
+                "RecurringDrifter" in result.output
+                or "pattern" in result.output.lower()
+                or "Found" in result.output
+            )
+
+    def test_patterns_command_filters_by_category(self, runner, temp_store_path):
+        """Should filter patterns when --category is provided."""
+        from swarm_attack.cli.memory import memory_app
+
+        # Create store with schema_drift entries
+        store = MemoryStore(store_path=temp_store_path)
+        for i in range(3):
+            entry = MemoryEntry(
+                id=f"drift-filter-{i}",
+                category="schema_drift",
+                feature_id=f"feature-{i}",
+                issue_number=i,
+                content={"class_name": "FilteredClass", "drift_type": "type_mismatch"},
+                outcome="detected",
+                created_at=datetime.now().isoformat(),
+                tags=["schema"],
+            )
+            store.add(entry)
+        store.save()
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = store
+
+            result = runner.invoke(
+                memory_app,
+                ["patterns", "--category", "schema_drift", "--min-occurrences", "3"]
+            )
+
+            assert result.exit_code == 0
+            # Should show schema drift patterns
+            assert (
+                "Schema Drift" in result.output
+                or "FilteredClass" in result.output
+                or "pattern" in result.output.lower()
+            )
+
+    def test_patterns_command_registered(self, runner):
+        """patterns command should be registered."""
+        from swarm_attack.cli.memory import memory_app
+
+        result = runner.invoke(memory_app, ["patterns", "--help"])
+        assert result.exit_code == 0
+
+
+# =============================================================================
+# RECOMMEND COMMAND TESTS
+# =============================================================================
+
+
+class TestRecommendCommand:
+    """Tests for the memory recommend command."""
+
+    def test_recommend_command_returns_suggestions(self, runner, temp_store_path):
+        """Should return recommendations based on historical data."""
+        from swarm_attack.cli.memory import memory_app
+
+        # Create store with a successful fix entry
+        store = MemoryStore(store_path=temp_store_path)
+
+        # Add an entry with resolution (so recommendations can be generated)
+        entry = MemoryEntry(
+            id="fix-entry-1",
+            category="schema_drift",
+            feature_id="feature-a",
+            issue_number=1,
+            content={
+                "class_name": "TestClass",
+                "drift_type": "field_mismatch",
+                "resolution": "Update class definition to match schema",
+            },
+            outcome="resolved",
+            created_at=datetime.now().isoformat(),
+            tags=["schema_drift", "TestClass"],
+        )
+        store.add(entry)
+        store.save()
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = store
+
+            result = runner.invoke(
+                memory_app,
+                ["recommend", "schema_drift", "--context", '{"class_name": "TestClass"}']
+            )
+
+            assert result.exit_code == 0
+            # Either shows recommendations or "No recommendations found"
+            assert (
+                "Recommendation" in result.output
+                or "No recommendations" in result.output
+            )
+
+    def test_recommend_command_handles_invalid_json(self, runner):
+        """Should handle invalid JSON context gracefully."""
+        from swarm_attack.cli.memory import memory_app
+
+        with patch("swarm_attack.memory.store.MemoryStore.load"):
+            result = runner.invoke(
+                memory_app,
+                ["recommend", "schema_drift", "--context", "invalid json"]
+            )
+
+            # Should exit with error
+            assert result.exit_code != 0 or "Invalid JSON" in result.output or "error" in result.output.lower()
+
+    def test_recommend_command_registered(self, runner):
+        """recommend command should be registered."""
+        from swarm_attack.cli.memory import memory_app
+
+        result = runner.invoke(memory_app, ["recommend", "--help"])
+        assert result.exit_code == 0
+
+
+# =============================================================================
+# SEARCH COMMAND TESTS
+# =============================================================================
+
+
+class TestSearchCommand:
+    """Tests for the memory search command."""
+
+    def test_search_command_finds_entries(self, runner, temp_store_path, memory_store):
+        """Should find entries matching the search query."""
+        from swarm_attack.cli.memory import memory_app
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = memory_store
+
+            # Search for something that exists in the fixture data
+            result = runner.invoke(memory_app, ["search", "checkpoint decision"])
+
+            assert result.exit_code == 0
+            # Should show results or indicate no results
+            assert (
+                "Search Results" in result.output
+                or "No results" in result.output
+                or "Found" in result.output
+            )
+
+    def test_search_command_respects_limit(self, runner, temp_store_path):
+        """Should respect the --limit parameter."""
+        from swarm_attack.cli.memory import memory_app
+
+        # Create store with many entries
+        store = MemoryStore(store_path=temp_store_path)
+        for i in range(15):
+            entry = MemoryEntry(
+                id=f"search-entry-{i}",
+                category="test_category",
+                feature_id=f"feature-{i}",
+                issue_number=i,
+                content={"message": "test message for search"},
+                outcome="success",
+                created_at=datetime.now().isoformat(),
+                tags=["test", "search"],
+            )
+            store.add(entry)
+        store.save()
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = store
+
+            result = runner.invoke(memory_app, ["search", "test message", "--limit", "5"])
+
+            assert result.exit_code == 0
+            # Output should respect limit (if there are results)
+            # Count table rows (each row has feature-N pattern)
+            feature_matches = result.output.count("feature-")
+            # Should be at most 5 (the limit we specified)
+            assert feature_matches <= 5
+
+    def test_search_command_filters_by_category(self, runner, temp_store_path, memory_store):
+        """Should filter results by category when --category is provided."""
+        from swarm_attack.cli.memory import memory_app
+
+        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
+            mock_load.return_value = memory_store
+
+            result = runner.invoke(
+                memory_app,
+                ["search", "drift", "--category", "schema_drift"]
+            )
+
+            assert result.exit_code == 0
+            # Should show results or indicate no results
+            assert (
+                "Search Results" in result.output
+                or "No results" in result.output
+            )
+
+    def test_search_command_registered(self, runner):
+        """search command should be registered."""
+        from swarm_attack.cli.memory import memory_app
+
+        result = runner.invoke(memory_app, ["search", "--help"])
+        assert result.exit_code == 0

@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from swarm_attack.logger import SwarmLogger
     from swarm_attack.state_store import StateStore
     from swarm_attack.memory.store import MemoryStore
+    from swarm_attack.memory.patterns import PatternDetector
 
 
 class VerifierAgent(BaseAgent):
@@ -50,11 +51,13 @@ class VerifierAgent(BaseAgent):
         llm_runner: Optional[ClaudeCliRunner] = None,
         state_store: Optional[StateStore] = None,
         memory_store: Optional["MemoryStore"] = None,
+        pattern_detector: Optional["PatternDetector"] = None,
     ) -> None:
         """Initialize the Verifier agent."""
         super().__init__(config, logger, llm_runner, state_store)
         self._test_timeout = config.tests.timeout_seconds
         self._memory_store = memory_store
+        self._pattern_detector = pattern_detector
 
     def _get_default_test_path(self, feature_id: str, issue_number: int) -> Path:
         """Get the default path for generated tests."""
@@ -518,6 +521,90 @@ class VerifierAgent(BaseAgent):
                 "error": f"LLM analysis failed: {str(e)}",
             }
 
+    def _record_success_pattern(
+        self,
+        test_path: str,
+        feature_id: str,
+        issue_number: Optional[int] = None,
+        fix_applied: Optional[str] = None,
+        related_entries: Optional[list[str]] = None,
+    ) -> Optional[str]:
+        """Record a successful verification pattern.
+
+        Args:
+            test_path: Path to the test file.
+            feature_id: The feature being verified.
+            issue_number: Optional issue number.
+            fix_applied: What fixed the previously failing test.
+            related_entries: Related memory entry IDs.
+
+        Returns:
+            The ID of the created memory entry, or None if no pattern detector.
+        """
+        if self._pattern_detector is None:
+            return None
+
+        return self._pattern_detector.record_success_pattern(
+            test_path=test_path,
+            feature_id=feature_id,
+            issue_number=issue_number,
+            fix_applied=fix_applied,
+            related_entries=related_entries,
+        )
+
+    def _record_failure_pattern(
+        self,
+        test_path: str,
+        feature_id: str,
+        error_message: str,
+        issue_number: Optional[int] = None,
+        related_entries: Optional[list[str]] = None,
+    ) -> Optional[str]:
+        """Record a failed verification pattern.
+
+        Args:
+            test_path: Path to the test file.
+            feature_id: The feature being verified.
+            error_message: The error message from the failure.
+            issue_number: Optional issue number.
+            related_entries: Related memory entry IDs.
+
+        Returns:
+            The ID of the created memory entry, or None if no pattern detector.
+        """
+        if self._pattern_detector is None:
+            return None
+
+        return self._pattern_detector.record_failure_pattern(
+            test_path=test_path,
+            feature_id=feature_id,
+            error_message=error_message,
+            issue_number=issue_number,
+            related_entries=related_entries,
+        )
+
+    def _link_fix_to_failure(
+        self,
+        failure_entry_id: str,
+        fix_description: str,
+    ) -> bool:
+        """Link a fix description to a previous failure entry.
+
+        Args:
+            failure_entry_id: The ID of the failure entry to update.
+            fix_description: Description of what fixed the issue.
+
+        Returns:
+            True if the entry was found and updated, False otherwise.
+        """
+        if self._pattern_detector is None:
+            return False
+
+        return self._pattern_detector.link_fix_to_failure(
+            failure_entry_id=failure_entry_id,
+            fix_description=fix_description,
+        )
+
     def run(self, context: dict[str, Any]) -> AgentResult:
         """
         Run tests to verify implementation.
@@ -788,6 +875,34 @@ class VerifierAgent(BaseAgent):
                 "has_failure_analysis": failure_analysis is not None,
             },
         )
+
+        # Record verification patterns for cross-session learning
+        if self._pattern_detector is not None:
+            test_path_str = str(test_path)
+            if success:
+                # Record success pattern
+                fix_applied = context.get("fix_applied")
+                related_failure_id = context.get("related_failure_id")
+                related_entries = [related_failure_id] if related_failure_id else None
+                self._record_success_pattern(
+                    test_path=test_path_str,
+                    feature_id=feature_id,
+                    issue_number=issue_number,
+                    fix_applied=fix_applied,
+                    related_entries=related_entries,
+                )
+            else:
+                # Record failure pattern with error details
+                error_message = output if not issue_tests_passed else result_output.get("regression_output", "")
+                # Extract a concise error message
+                if issue_failures:
+                    error_message = "; ".join(f["error"] for f in issue_failures[:3])
+                self._record_failure_pattern(
+                    test_path=test_path_str,
+                    feature_id=feature_id,
+                    error_message=error_message[:500],  # Truncate long errors
+                    issue_number=issue_number,
+                )
 
         if success:
             return AgentResult.success_result(output=result_output, cost_usd=self._total_cost)

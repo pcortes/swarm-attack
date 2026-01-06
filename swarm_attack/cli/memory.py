@@ -413,5 +413,263 @@ def analytics_command() -> None:
     )
 
 
+@memory_app.command("patterns")
+def patterns_command(
+    category: Optional[str] = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="Filter by category (e.g., schema_drift, test_failure)",
+    ),
+    min_occurrences: int = typer.Option(
+        3,
+        "--min-occurrences",
+        "-m",
+        help="Minimum pattern occurrences to display",
+    ),
+) -> None:
+    """
+    Show detected patterns in memory.
+
+    Displays recurring patterns from memory entries including:
+    - Schema drift patterns (classes that repeatedly drift)
+    - Fix patterns (fixes that are commonly applied)
+    - Failure clusters (tests that fail together)
+
+    Example:
+        swarm-attack memory patterns
+        swarm-attack memory patterns --category schema_drift
+        swarm-attack memory patterns --min-occurrences 5
+    """
+    from swarm_attack.memory.patterns import PatternDetector
+    from swarm_attack.memory.store import MemoryStore
+
+    store = MemoryStore.load()
+    detector = PatternDetector(store)
+
+    # Create table for results
+    table = Table(title="Detected Patterns")
+    table.add_column("Type", style="cyan")
+    table.add_column("Name/Target", style="green")
+    table.add_column("Occurrences", style="yellow")
+    table.add_column("Confidence", style="magenta")
+
+    pattern_count = 0
+
+    # Detect schema drift patterns
+    if category is None or category == "schema_drift":
+        drift_patterns = detector.detect_recurring_schema_drift(
+            min_occurrences=min_occurrences
+        )
+        for pattern in drift_patterns:
+            table.add_row(
+                "Schema Drift",
+                pattern.class_name,
+                str(pattern.occurrence_count),
+                f"{pattern.confidence_score:.2f}",
+            )
+            pattern_count += 1
+
+    # Detect fix patterns
+    if category is None or category == "fix_applied":
+        fix_patterns = detector.detect_common_fix_patterns(
+            min_occurrences=min_occurrences
+        )
+        for pattern in fix_patterns:
+            table.add_row(
+                "Fix Pattern",
+                pattern.fix_type,
+                str(pattern.occurrence_count),
+                f"{pattern.confidence_score:.2f}",
+            )
+            pattern_count += 1
+
+    # Detect failure clusters
+    if category is None or category == "test_failure":
+        failure_clusters = detector.detect_failure_clusters(
+            min_failures=min_occurrences
+        )
+        for cluster in failure_clusters:
+            table.add_row(
+                "Failure Cluster",
+                cluster.test_path,
+                str(cluster.failure_count),
+                "-",
+            )
+            pattern_count += 1
+
+    if pattern_count == 0:
+        console.print(
+            Panel(
+                f"[dim]No patterns found with min_occurrences={min_occurrences}.[/dim]",
+                title="Detected Patterns",
+                border_style="dim",
+            )
+        )
+    else:
+        console.print(table)
+        console.print(f"\n[dim]Found {pattern_count} patterns[/dim]")
+
+
+@memory_app.command("recommend")
+def recommend_command(
+    category: str = typer.Argument(..., help="Category for recommendations (e.g., schema_drift, test_failure)"),
+    context: str = typer.Option(
+        "{}",
+        "--context",
+        "-x",
+        help="JSON context string (e.g., '{\"class_name\": \"MyClass\"}')",
+    ),
+    limit: int = typer.Option(
+        5,
+        "--limit",
+        "-n",
+        help="Maximum number of recommendations to show",
+    ),
+) -> None:
+    """
+    Get recommendations for a category/context.
+
+    Uses the RecommendationEngine to find similar past issues
+    and suggest fixes based on historical patterns.
+
+    Example:
+        swarm-attack memory recommend schema_drift --context '{"class_name": "UserConfig"}'
+        swarm-attack memory recommend test_failure --context '{"test_path": "tests/test_auth.py"}'
+    """
+    import json as json_module
+
+    from swarm_attack.memory.recommendations import RecommendationEngine
+    from swarm_attack.memory.store import MemoryStore
+
+    store = MemoryStore.load()
+    engine = RecommendationEngine(store)
+
+    # Parse context JSON
+    try:
+        context_dict = json_module.loads(context)
+    except json_module.JSONDecodeError as e:
+        console.print(f"[red]Error: Invalid JSON context: {e}[/red]")
+        raise typer.Exit(1)
+
+    # Get recommendations - use category-specific method if available
+    if hasattr(engine, 'get_recommendations_by_category'):
+        recommendations = engine.get_recommendations_by_category(
+            category=category,
+            context=context_dict,
+            limit=limit,
+        )
+    else:
+        # Fall back to simpler API
+        context_dict["category"] = category
+        recommendations = engine.get_recommendations(
+            current_issue=context_dict,
+            limit=limit,
+        )
+
+    if not recommendations:
+        console.print(
+            Panel(
+                f"[dim]No recommendations found for category '{category}'.[/dim]",
+                title="Recommendations",
+                border_style="dim",
+            )
+        )
+        return
+
+    # Create table for recommendations
+    table = Table(title=f"Recommendations for {category}")
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Recommendation", style="green", max_width=60)
+    table.add_column("Confidence", style="magenta")
+
+    for i, rec in enumerate(recommendations, 1):
+        confidence_pct = f"{rec.confidence * 100:.0f}%"
+        table.add_row(
+            str(i),
+            rec.action,
+            confidence_pct,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Showing {len(recommendations)} recommendations[/dim]")
+
+
+@memory_app.command("search")
+def search_command(
+    query: str = typer.Argument(..., help="Search query"),
+    category: Optional[str] = typer.Option(
+        None,
+        "--category",
+        "-c",
+        help="Filter by category",
+    ),
+    limit: int = typer.Option(
+        10,
+        "--limit",
+        "-n",
+        help="Maximum results to show",
+    ),
+) -> None:
+    """
+    Search memory entries semantically.
+
+    Uses weighted keyword matching to find relevant memory entries.
+    Results are sorted by relevance score.
+
+    Example:
+        swarm-attack memory search "authentication error"
+        swarm-attack memory search "schema drift" --category schema_drift
+        swarm-attack memory search "test failure" --limit 5
+    """
+    from swarm_attack.memory.search import SemanticSearch
+    from swarm_attack.memory.store import MemoryStore
+
+    store = MemoryStore.load()
+    searcher = SemanticSearch(store)
+
+    # Perform search
+    results = searcher.search(
+        query=query,
+        category=category,
+        limit=limit,
+    )
+
+    if not results:
+        console.print(
+            Panel(
+                f"[dim]No results found for '{query}'.[/dim]",
+                title="Search Results",
+                border_style="dim",
+            )
+        )
+        return
+
+    # Create table for results
+    table = Table(title=f"Search Results for '{query}'")
+    table.add_column("Score", style="magenta", width=6)
+    table.add_column("Category", style="cyan", width=15)
+    table.add_column("Feature", style="green", width=15)
+    table.add_column("Keywords", style="yellow", max_width=30)
+    table.add_column("ID", style="dim", width=12)
+
+    for result in results:
+        score_str = f"{result.score:.2f}"
+        keywords_str = ", ".join(result.matched_keywords[:5])
+        if len(result.matched_keywords) > 5:
+            keywords_str += f" +{len(result.matched_keywords) - 5}"
+
+        table.add_row(
+            score_str,
+            result.entry.category,
+            result.entry.feature_id,
+            keywords_str,
+            result.entry.id[:12],
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Found {len(results)} matching entries[/dim]")
+
+
 # Alias for backwards compatibility
 app = memory_app
