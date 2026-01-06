@@ -1,0 +1,377 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<implementation_team_prompt>
+  <metadata>
+    <title>Auto-Fix Feature Implementation Team</title>
+    <created>2025-12-31T19:20:00Z</created>
+    <feature>auto-fix</feature>
+    <spec_path>specs/auto-fix/spec-final.md</spec_path>
+    <estimated_effort>9-14 hours</estimated_effort>
+  </metadata>
+
+  <objective>
+    Implement the Auto-Fix feature using swarm-attack's implementation pipeline.
+    Monitor progress, run tests, and catalogue any bugs discovered during implementation
+    into a timestamped bug log for the root cause team.
+  </objective>
+
+  <team_structure>
+    <agent role="Implementation Lead">
+      <responsibility>Orchestrate the implementation via swarm-attack commands</responsibility>
+      <responsibility>Monitor issue progress and handle blockers</responsibility>
+      <responsibility>Run verification tests after each issue</responsibility>
+    </agent>
+    <agent role="QA Monitor">
+      <responsibility>Run pytest after each implementation step</responsibility>
+      <responsibility>Run mypy type checks</responsibility>
+      <responsibility>Catalogue bugs into timestamped log</responsibility>
+    </agent>
+    <agent role="Bug Cataloguer">
+      <responsibility>Document bugs found during implementation</responsibility>
+      <responsibility>Write to .swarm/bugs/implementation-log-YYYYMMDD-HHMMSS.md</responsibility>
+      <responsibility>Include reproduction steps and context</responsibility>
+    </agent>
+  </team_structure>
+
+  <phase_1_setup>
+    <title>Setup Working Environment</title>
+    <description>
+      Choose whether to use a new worktree or the current integration worktree.
+      The current worktree at /Users/philipjcortes/Desktop/swarm-attack-integration
+      already has the spec approved and is ready for implementation.
+    </description>
+
+    <option_a name="Use Current Worktree (Recommended)">
+      <commands>
+        <![CDATA[
+# Verify we're in the right place
+cd /Users/philipjcortes/Desktop/swarm-attack-integration
+pwd
+git status
+
+# Verify spec is approved
+swarm-attack status auto-fix
+# Should show: Phase: SPEC_APPROVED
+
+# Initialize bug log
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+mkdir -p .swarm/bugs
+echo "# Auto-Fix Implementation Bug Log" > .swarm/bugs/implementation-log-${TIMESTAMP}.md
+echo "Started: $(date -Iseconds)" >> .swarm/bugs/implementation-log-${TIMESTAMP}.md
+echo "" >> .swarm/bugs/implementation-log-${TIMESTAMP}.md
+        ]]>
+      </commands>
+    </option_a>
+
+    <option_b name="Create New Worktree">
+      <commands>
+        <![CDATA[
+# Create fresh worktree for implementation
+cd /Users/philipjcortes/Desktop/swarm-attack-integration
+git worktree add ../swarm-attack-auto-fix-impl feature/auto-fix-impl -b feature/auto-fix-impl
+
+cd ../swarm-attack-auto-fix-impl
+
+# Copy spec and state from integration worktree
+cp -r ../swarm-attack-integration/specs/auto-fix ./specs/
+cp -r ../swarm-attack-integration/.swarm/state/auto-fix.json ./.swarm/state/
+
+# Initialize bug log
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+mkdir -p .swarm/bugs
+echo "# Auto-Fix Implementation Bug Log" > .swarm/bugs/implementation-log-${TIMESTAMP}.md
+echo "Started: $(date -Iseconds)" >> .swarm/bugs/implementation-log-${TIMESTAMP}.md
+        ]]>
+      </commands>
+    </option_b>
+  </phase_1_setup>
+
+  <phase_2_create_issues>
+    <title>Create Implementation Issues</title>
+    <commands>
+      <![CDATA[
+# Create GitHub issues from the approved spec
+swarm-attack issues auto-fix
+
+# Verify issues were created
+swarm-attack status auto-fix
+# Should show issues with their GitHub issue numbers
+      ]]>
+    </commands>
+    <expected_issues>
+      <issue>StaticBugDetector class implementation</issue>
+      <issue>AutoFixOrchestrator class implementation</issue>
+      <issue>CLI analyze commands</issue>
+      <issue>CLI auto-fix commands</issue>
+      <issue>Configuration schema update</issue>
+      <issue>Unit tests for StaticBugDetector</issue>
+      <issue>Unit tests for AutoFixOrchestrator</issue>
+    </expected_issues>
+  </phase_2_create_issues>
+
+  <phase_3_greenlight>
+    <title>Enable Implementation</title>
+    <commands>
+      <![CDATA[
+# Greenlight the feature for implementation
+swarm-attack greenlight auto-fix
+
+# Verify status
+swarm-attack status auto-fix
+# Should show: Phase: READY_TO_IMPLEMENT
+      ]]>
+    </commands>
+  </phase_3_greenlight>
+
+  <phase_4_implement>
+    <title>Run Implementation</title>
+    <description>
+      Run swarm-attack to implement each issue. After each issue, run tests
+      and log any bugs found.
+    </description>
+
+    <implementation_loop>
+      <![CDATA[
+# Run implementation for all issues
+swarm-attack run auto-fix
+
+# OR run issue by issue for more control:
+# swarm-attack run auto-fix --issue 1
+# [run tests, log bugs]
+# swarm-attack run auto-fix --issue 2
+# [run tests, log bugs]
+# etc.
+      ]]>
+    </implementation_loop>
+
+    <after_each_issue>
+      <![CDATA[
+# QA Monitor: After each issue completion, run verification
+pytest tests/ -v --tb=short 2>&1 | tee /tmp/pytest-output.txt
+mypy swarm_attack/ --ignore-missing-imports 2>&1 | tee /tmp/mypy-output.txt
+ruff check swarm_attack/ 2>&1 | tee /tmp/ruff-output.txt
+
+# Bug Cataloguer: If any failures, log them
+if [ $? -ne 0 ]; then
+  BUG_LOG=".swarm/bugs/implementation-log-*.md"
+  echo "" >> $BUG_LOG
+  echo "## Bug Found: $(date -Iseconds)" >> $BUG_LOG
+  echo "**Issue:** #N (issue being implemented)" >> $BUG_LOG
+  echo "**Phase:** implementation" >> $BUG_LOG
+  echo "**Tool:** pytest/mypy/ruff" >> $BUG_LOG
+  echo "" >> $BUG_LOG
+  echo "### Error Output" >> $BUG_LOG
+  echo '```' >> $BUG_LOG
+  cat /tmp/pytest-output.txt >> $BUG_LOG
+  echo '```' >> $BUG_LOG
+  echo "" >> $BUG_LOG
+  echo "### Context" >> $BUG_LOG
+  echo "- Last files changed: $(git diff --name-only HEAD~1)" >> $BUG_LOG
+  echo "- Relevant code: [link to file:line]" >> $BUG_LOG
+  echo "" >> $BUG_LOG
+fi
+      ]]>
+    </after_each_issue>
+  </phase_4_implement>
+
+  <phase_5_verify>
+    <title>Final Verification</title>
+    <commands>
+      <![CDATA[
+# Run full test suite
+pytest tests/ -v
+
+# Run type checks
+mypy swarm_attack/ --ignore-missing-imports
+
+# Run lint
+ruff check swarm_attack/
+
+# Test the new commands manually
+swarm-attack analyze --help
+swarm-attack qa auto-fix --help
+
+# If /tmp/buggy-api exists, test there
+if [ -d /tmp/buggy-api ]; then
+  cd /tmp/buggy-api
+  swarm-attack analyze all
+  swarm-attack qa auto-fix --dry-run
+fi
+      ]]>
+    </commands>
+  </phase_5_verify>
+
+  <bug_cataloguing_format>
+    <title>Bug Log Entry Format</title>
+    <template>
+      <![CDATA[
+## Bug: [SHORT_DESCRIPTION]
+
+**Timestamp:** YYYY-MM-DDTHH:MM:SSZ
+**Severity:** CRITICAL | MODERATE | MINOR
+**Phase:** setup | issue-creation | implementation | verification
+**Issue:** #N or "N/A"
+**Tool:** pytest | mypy | ruff | manual
+
+### Description
+[What happened]
+
+### Error Output
+```
+[paste error output]
+```
+
+### Reproduction Steps
+1. [step 1]
+2. [step 2]
+
+### Context
+- **File(s):** path/to/file.py:line
+- **Last commit:** [commit hash]
+- **Related issues:** #X, #Y
+
+### Initial Analysis
+[Your hypothesis about the root cause]
+
+---
+      ]]>
+    </template>
+
+    <example>
+      <![CDATA[
+## Bug: StaticBugDetector fails when pytest not installed
+
+**Timestamp:** 2025-12-31T19:30:00Z
+**Severity:** MODERATE
+**Phase:** implementation
+**Issue:** #42
+**Tool:** pytest
+
+### Description
+StaticBugDetector.detect_from_tests() raises FileNotFoundError instead of
+gracefully skipping when pytest is not installed.
+
+### Error Output
+```
+FileNotFoundError: [Errno 2] No such file or directory: 'pytest'
+```
+
+### Reproduction Steps
+1. Uninstall pytest: `pip uninstall pytest`
+2. Run: `swarm-attack analyze tests`
+
+### Context
+- **File(s):** swarm_attack/static_analysis/detector.py:45
+- **Last commit:** abc123
+- **Related issues:** #42
+
+### Initial Analysis
+The `_tool_available()` check is not being called before running subprocess.
+Need to wrap the subprocess call in the availability check.
+
+---
+      ]]>
+    </example>
+  </bug_cataloguing_format>
+
+  <monitoring_checklist>
+    <title>Implementation Monitoring Checklist</title>
+    <after_each_issue>
+      <check>All new tests pass</check>
+      <check>All existing tests still pass (no regressions)</check>
+      <check>mypy reports no new errors</check>
+      <check>ruff reports no new issues</check>
+      <check>New files follow existing patterns</check>
+      <check>Interface contracts from spec are satisfied</check>
+    </after_each_issue>
+    <if_check_fails>
+      <action>STOP implementation</action>
+      <action>Log bug to implementation-log-*.md</action>
+      <action>Attempt to fix if simple (< 5 min)</action>
+      <action>If not simple, create bug bash entry: swarm-attack bug init "description"</action>
+      <action>Continue with next issue OR wait for fix</action>
+    </if_check_fails>
+  </monitoring_checklist>
+
+  <success_criteria>
+    <criterion>All issues marked complete in swarm-attack status</criterion>
+    <criterion>pytest tests/ passes with 100% of tests</criterion>
+    <criterion>mypy reports no errors</criterion>
+    <criterion>ruff check passes</criterion>
+    <criterion>swarm-attack analyze all runs without error</criterion>
+    <criterion>swarm-attack qa auto-fix --dry-run shows expected output</criterion>
+    <criterion>Bug log documents all issues found (even if fixed)</criterion>
+  </success_criteria>
+
+  <handoff_to_root_cause_team>
+    <description>
+      When implementation is complete, the bug log at
+      .swarm/bugs/implementation-log-YYYYMMDD-HHMMSS.md
+      should be reviewed by the root cause team to:
+    </description>
+    <tasks>
+      <task>Identify patterns in bugs (common root causes)</task>
+      <task>Create bug bash entries for unfixed issues</task>
+      <task>Prioritize fixes based on severity</task>
+      <task>Track metrics: bugs found, bugs fixed during impl, bugs deferred</task>
+    </tasks>
+  </handoff_to_root_cause_team>
+
+  <emergency_procedures>
+    <if_stuck>
+      <![CDATA[
+# If implementation gets stuck
+swarm-attack unblock auto-fix
+
+# If specific issue is stuck
+swarm-attack unblock auto-fix --clear-locks
+
+# Check detailed status
+cat .swarm/state/auto-fix.json | python -m json.tool
+      ]]>
+    </if_stuck>
+    <if_tests_catastrophically_fail>
+      <![CDATA[
+# Revert last change
+git checkout HEAD~1 -- .
+
+# Log the catastrophic failure
+echo "## CATASTROPHIC FAILURE" >> .swarm/bugs/implementation-log-*.md
+echo "Reverted to previous state. Full investigation needed." >> .swarm/bugs/implementation-log-*.md
+
+# Create high-priority bug
+swarm-attack bug init "Catastrophic test failure during auto-fix implementation" \
+  --id catastrophic-auto-fix \
+  --test tests/ \
+  -e "All tests failing after implementation"
+      ]]>
+    </if_tests_catastrophically_fail>
+  </emergency_procedures>
+
+  <quick_start>
+    <![CDATA[
+# Quick start: Run these commands to begin implementation
+
+cd /Users/philipjcortes/Desktop/swarm-attack-integration
+
+# 1. Verify status
+swarm-attack status auto-fix
+
+# 2. Create issues
+swarm-attack issues auto-fix
+
+# 3. Greenlight
+swarm-attack greenlight auto-fix
+
+# 4. Initialize bug log
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+echo "# Auto-Fix Implementation Bug Log\nStarted: $(date -Iseconds)\n" > .swarm/bugs/implementation-log-${TIMESTAMP}.md
+
+# 5. Run implementation
+swarm-attack run auto-fix
+
+# 6. After completion, check status
+swarm-attack status auto-fix
+pytest tests/ -v
+    ]]>
+  </quick_start>
+</implementation_team_prompt>

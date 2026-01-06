@@ -174,6 +174,39 @@ class BugBashConfig:
 
 
 @dataclass
+class AutoFixConfig:
+    """Auto-fix configuration for automatic test failure remediation."""
+    enabled: bool = False                       # Whether auto-fix is enabled
+    max_iterations: int = 3                     # Maximum fix attempts per failure
+    auto_approve: bool = False                  # Auto-approve fixes without human review
+    dry_run: bool = False                       # Run analysis without applying fixes
+    watch_poll_seconds: int = 5                 # Polling interval for watch mode
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AutoFixConfig":
+        """Create config from dictionary."""
+        if not data:
+            return cls()
+        return cls(
+            enabled=data.get("enabled", False),
+            max_iterations=data.get("max_iterations", 3),
+            auto_approve=data.get("auto_approve", False),
+            dry_run=data.get("dry_run", False),
+            watch_poll_seconds=data.get("watch_poll_seconds", 5),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            "enabled": self.enabled,
+            "max_iterations": self.max_iterations,
+            "auto_approve": self.auto_approve,
+            "dry_run": self.dry_run,
+            "watch_poll_seconds": self.watch_poll_seconds,
+        }
+
+
+@dataclass
 class SwarmConfig:
     """
     Main configuration for Feature Swarm.
@@ -198,6 +231,7 @@ class SwarmConfig:
     git: GitConfig = field(default_factory=GitConfig)
     bug_bash: BugBashConfig = field(default_factory=BugBashConfig)
     chief_of_staff: ChiefOfStaffConfig = field(default_factory=ChiefOfStaffConfig)
+    auto_fix: AutoFixConfig = field(default_factory=AutoFixConfig)
 
     # Automatic issue splitting on timeout
     auto_split_on_timeout: bool = True  # Auto-split when coder times out
@@ -421,6 +455,11 @@ def _parse_chief_of_staff_config(data: dict[str, Any]) -> ChiefOfStaffConfig:
     return ChiefOfStaffConfig.from_dict(data)
 
 
+def _parse_auto_fix_config(data: dict[str, Any]) -> AutoFixConfig:
+    """Parse auto-fix configuration from dict."""
+    return AutoFixConfig.from_dict(data)
+
+
 def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = None) -> SwarmConfig:
     """
     Load configuration from config.yaml.
@@ -480,6 +519,7 @@ def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = No
     git_config = _parse_git_config(data.get("git", {}))
     bug_bash_config = _parse_bug_bash_config(data.get("bug_bash", {}))
     chief_of_staff_config = _parse_chief_of_staff_config(data.get("chief_of_staff", {}))
+    auto_fix_config = _parse_auto_fix_config(data.get("auto_fix", {}))
 
     # Use CLI repo_root override if provided, otherwise use config file value or "."
     actual_repo_root = repo_root if repo_root else data.get("repo_root", ".")
@@ -500,6 +540,7 @@ def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = No
         git=git_config,
         bug_bash=bug_bash_config,
         chief_of_staff=chief_of_staff_config,
+        auto_fix=auto_fix_config,
     )
 
 

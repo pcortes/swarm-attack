@@ -1,101 +1,55 @@
 {
   "spec_path": "specs/auto-fix/spec-draft.md",
   "prd_path": ".claude/prds/auto-fix.md",
-  "reviewed_at": "2025-12-31T18:35:00Z",
+  "reviewed_at": "2025-12-31T19:15:00Z",
   "scores": {
-    "clarity": 0.85,
-    "coverage": 0.75,
-    "architecture": 0.65,
-    "risk": 0.70
+    "clarity": 0.88,
+    "coverage": 0.90,
+    "architecture": 0.85,
+    "risk": 0.85
   },
   "issues": [
     {
-      "severity": "critical",
-      "dimension": "architecture",
-      "location": "Loop Prevention section",
-      "description": "OVER-ENGINEERING: 'Circuit breaker after 5 consecutive failures' is a Netflix/Hystrix enterprise pattern. We're a CLI tool, not a distributed system.",
-      "suggestion": "Remove circuit breaker. Just stop after max_iterations. Simple counter is enough."
-    },
-    {
-      "severity": "critical",
-      "dimension": "architecture",
-      "location": "Loop Prevention section",
-      "description": "OVER-ENGINEERING: 'Max 10 fixes per hour' rate limiting. Who is attacking our local CLI tool? This is enterprise paranoia.",
-      "suggestion": "Remove hourly rate limiting. max_iterations per run is sufficient."
-    },
-    {
-      "severity": "critical",
-      "dimension": "architecture",
-      "location": "Configuration section",
-      "description": "OVER-ENGINEERING: Scheduled triggers with cron syntax ('0 */4 * * *'). We don't need a cron scheduler in a CLI tool. Users can use actual cron if they want scheduled runs.",
-      "suggestion": "Remove scheduled triggers entirely. Users can run 'swarm-attack qa auto-fix' from cron themselves. Don't reinvent cron."
-    },
-    {
-      "severity": "critical",
-      "dimension": "architecture",
-      "location": "CLI Commands section",
-      "description": "OVER-ENGINEERING: 'swarm-attack qa auto-watch' daemon mode. We're building a CLI, not a background service. This adds complexity (process management, PID files, etc.).",
-      "suggestion": "Remove auto-watch. Stick to run-once CLI commands. Let users use 'watch' or cron if they need continuous monitoring."
-    },
-    {
-      "severity": "moderate",
-      "dimension": "architecture",
-      "location": "Configuration section",
-      "description": "Too many config options. 20+ configuration fields for a feature that should 'just work'. This is config-driven enterprise thinking.",
-      "suggestion": "Cut config to essentials: enabled, max_iterations, dry_run, auto_approve. Rest should be sensible hardcoded defaults."
-    },
-    {
-      "severity": "moderate",
-      "dimension": "architecture",
-      "location": "Safety Controls section",
-      "description": "8 eligibility criteria is too many gates. 'Architectural Impact', 'Est. Cost < $5.00', 'Files Affected ≤ 3' - who's measuring all this? Adds complexity.",
-      "suggestion": "Simplify to 3 criteria: severity ≤ MODERATE, not in blocklist, max_iterations not exceeded. That's it."
-    },
-    {
-      "severity": "moderate",
-      "dimension": "coverage",
-      "location": "Throughout",
-      "description": "No mention of what happens when pytest/mypy/ruff aren't installed. These are optional tools.",
-      "suggestion": "Add graceful degradation: if tool not found, skip it and log warning. Don't fail the whole pipeline."
-    },
-    {
-      "severity": "moderate",
-      "dimension": "architecture",
-      "location": "Event Flow section",
-      "description": "Event system (BUG_DETECTED, AUTO_APPROVAL_TRIGGERED, etc.) adds abstraction. Do we need pub/sub for a CLI tool?",
-      "suggestion": "Events are fine if they already exist, but don't build new event infrastructure just for this feature."
+      "severity": "minor",
+      "dimension": "clarity",
+      "location": "Architecture diagram",
+      "description": "Post-Test Hook shown in diagram but not explained in text. What triggers it? How does it integrate?",
+      "suggestion": "Either explain Post-Test Hook integration or remove from diagram if not in scope."
     },
     {
       "severity": "minor",
       "dimension": "clarity",
-      "location": "Files to Create section",
-      "description": "~400 LOC for StaticBugDetector seems high for wrapping 3 subprocess calls.",
-      "suggestion": "Target <200 LOC. Most of it should be parsing JSON output from tools."
+      "location": "Triage Phase",
+      "description": "Severity classification logic not specified. How does StaticBugDetector determine if a bug is CRITICAL vs MODERATE vs MINOR?",
+      "suggestion": "Add brief heuristic: e.g., pytest failures = CRITICAL, mypy type errors = MODERATE, ruff lint = MINOR. Or state that severity is determined by tool-specific rules."
     },
     {
       "severity": "minor",
-      "dimension": "coverage",
-      "location": "Success Criteria",
-      "description": "No manual testing instructions. How do I verify this works without running the whole pipeline?",
-      "suggestion": "Add: 'Run swarm-attack analyze tests on a repo with failing tests, verify it finds them.'"
+      "dimension": "architecture",
+      "location": "watch() method",
+      "description": "'Uses watchdog or simple polling' - non-committal. watchdog is a new dependency, polling is simpler.",
+      "suggestion": "Commit to simple polling. It's sufficient for this use case and avoids new dependencies. Mention poll interval (already in config: 5s)."
     }
   ],
   "strengths": [
-    "Reuses existing BugOrchestrator and QAOrchestrator - good code reuse",
+    "EXCELLENT simplification from original spec - removed all enterprise cruft (circuit breakers, rate limiting, cron, 20+ config options)",
+    "Only 5 config options with sensible defaults - this is how it should be",
+    "Reuses existing BugOrchestrator beautifully - no new infrastructure",
+    "~400 LOC total new code - appropriately scoped",
     "Identifies critical gap: qa create-bugs doesn't create BugState entries",
-    "Conservative default: auto_approve=False",
-    "Clear CLI interface design (swarm-attack analyze all)",
-    "Reasonable effort estimate (14-21 hours)",
-    "Good use of existing tools (pytest, mypy, ruff) instead of building custom linters"
+    "Clear 'What's NOT in This Spec' section - shows discipline",
+    "Manual testing instructions included - practical",
+    "Graceful degradation for missing tools - handles real edge case",
+    "9-14 hour estimate is realistic for this scope"
   ],
-  "summary": "Solid core idea with good code reuse, but significantly over-engineered. The spec proposes enterprise patterns (circuit breakers, rate limiting, cron scheduling, daemon mode) for a CLI tool. Simplify aggressively: remove auto-watch, remove scheduled triggers, cut config options by 75%, simplify safety criteria. The core feature (detect bugs → create bug entries → fix them) is valuable and can ship in a week if we strip the enterprise cruft.",
-  "recommendation": "REVISE",
-  "pass_threshold_met": false,
-  "overall_score": 0.74,
+  "summary": "This revised spec is dramatically improved. The enterprise cruft has been stripped away - no circuit breakers, no rate limiting, no cron scheduler, no 20+ config options. What remains is a focused, buildable feature: detect bugs with existing tools (pytest/mypy/ruff), create bug bash entries, fix them in a loop. The spec reuses existing BugOrchestrator (good code reuse), has only 5 config options, and can ship in about a week. Minor issues: clarify severity classification logic and commit to polling over watchdog. Ready to approve with minor edits.",
+  "recommendation": "APPROVE",
+  "pass_threshold_met": true,
+  "overall_score": 0.87,
   "startup_test_results": {
-    "solo_dev_one_week": "NO - too many features (watch mode, triggers, complex config)",
-    "new_infrastructure": "YES - proposes daemon mode, cron-like scheduler",
-    "building_for_real_users": "PARTIALLY - core feature is real, but triggers/watch are speculative",
-    "simplest_thing": "NO - could be 50% simpler"
+    "solo_dev_one_week": "YES - 9-14 hours estimate, ~400 LOC",
+    "new_infrastructure": "NO - reuses BugOrchestrator, just wraps existing tools",
+    "building_for_real_users": "YES - this solves the actual problem of detecting and fixing bugs automatically",
+    "simplest_thing": "YES - stripped to essentials, explicit about what's NOT included"
   }
 }
