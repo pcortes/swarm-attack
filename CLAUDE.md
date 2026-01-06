@@ -1260,8 +1260,19 @@ swarm-attack memory analytics                # Show analytics report
 
 ```yaml
 memory:
-  file_path: .swarm/memory/store.json  # Default location
+  file_path: .swarm/memory/memories.json  # Default location (fallback: store.json)
 ```
+
+### API Notes
+
+| Feature | Description |
+|---------|-------------|
+| `MemoryStore.__len__()` | Returns entry count; enables `len(store)` |
+| `save_to_file(path)` | Accepts `str` or `Path` objects |
+| `load_from_file(path)` | Accepts `str` or `Path` objects |
+| `get_memory_store()` | CLI helper to get configured store instance |
+| Dual key support | Pattern detection accepts both `"class"` and `"class_name"` keys |
+| Path fallback | CLI checks `memories.json` first, falls back to `store.json` for compatibility |
 
 ---
 
