@@ -249,13 +249,13 @@ class CodexCliRunner:
                     returncode=returncode,
                 )
             raise CodexAuthError(
-                "Codex authentication required",
+                "Claude CLI authentication required",
                 stderr=stderr,
             )
 
         if error_type == LLMErrorType.RATE_LIMIT:
             raise RateLimitError(
-                "Codex rate limit reached",
+                "Claude CLI rate limit reached",
                 stderr=stderr,
             )
 

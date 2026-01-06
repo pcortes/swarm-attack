@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -1004,6 +1005,17 @@ class Orchestrator:
                 },
             )
 
+            # Intra-round delay between critic and moderator
+            if round_num < max_rounds:
+                intra_delay = getattr(self.config.spec_debate, 'intra_round_delay_seconds', 0)
+                if intra_delay > 0:
+                    self._log("intra_round_delay", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "delay_seconds": intra_delay,
+                    })
+                    time.sleep(intra_delay)
+
             # Step 3: Moderator improves spec (if not last round)
             current_dispositions: Optional[list[dict[str, Any]]] = None
             # Extract disputed_issues from critic result for escalation
@@ -1155,6 +1167,17 @@ class Orchestrator:
                     rejected_issues=rejected_issues,
                 )
 
+            # Inter-round delay between rounds (not after final round)
+            if round_num < max_rounds:
+                inter_delay = getattr(self.config.spec_debate, 'inter_round_delay_seconds', 0)
+                if inter_delay > 0:
+                    self._log("inter_round_delay", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "delay_seconds": inter_delay,
+                    })
+                    time.sleep(inter_delay)
+
         # Reached max rounds - timeout
         self._log(
             "pipeline_timeout",
@@ -1273,6 +1296,17 @@ class Orchestrator:
                     "issue_counts": critic_retry_result.output.get("issue_counts", {}),
                 },
             )
+
+            # Intra-round delay between critic and moderator
+            if round_num < max_rounds:
+                intra_delay = getattr(self.config.spec_debate, 'intra_round_delay_seconds', 0)
+                if intra_delay > 0:
+                    self._log("intra_round_delay", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "delay_seconds": intra_delay,
+                    })
+                    time.sleep(intra_delay)
 
             # Step 2: Moderator improves spec (if not last round)
             current_dispositions: Optional[list[dict[str, Any]]] = None
@@ -1428,6 +1462,17 @@ class Orchestrator:
                     message="Architect and reviewer disagree on issues. Human review required.",
                     rejected_issues=rejected_issues,
                 )
+
+            # Inter-round delay between rounds (not after final round)
+            if round_num < max_rounds:
+                inter_delay = getattr(self.config.spec_debate, 'inter_round_delay_seconds', 0)
+                if inter_delay > 0:
+                    self._log("inter_round_delay", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "delay_seconds": inter_delay,
+                    })
+                    time.sleep(inter_delay)
 
         # Reached max rounds - timeout
         self._log(

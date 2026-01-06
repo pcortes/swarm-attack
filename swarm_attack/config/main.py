@@ -86,6 +86,15 @@ class RetryConfig:
 
 
 @dataclass
+class DebateRetryConfig:
+    """Retry configuration for debate loops (spec and bug debates)."""
+    max_retries: int = 3
+    backoff_base_seconds: float = 30.0  # 30s, not 5s
+    backoff_multiplier: float = 2.0
+    max_backoff_seconds: float = 300.0  # 300s (5 min), not 60s
+
+
+@dataclass
 class PreflightConfig:
     """Pre-flight check configuration."""
     enabled: bool = True                       # Whether to run pre-flight checks
@@ -109,6 +118,8 @@ class SpecDebateConfig:
         "architecture": 0.8,
         "risk": 0.7,
     })
+    inter_round_delay_seconds: float = 60.0   # Delay between rounds
+    intra_round_delay_seconds: float = 10.0   # Delay between critic and moderator
 
 
 @dataclass
@@ -191,6 +202,7 @@ class SwarmConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)  # DEPRECATED
     codex: CodexConfig = field(default_factory=CodexConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
+    debate_retry: DebateRetryConfig = field(default_factory=DebateRetryConfig)
     preflight: PreflightConfig = field(default_factory=PreflightConfig)
     spec_debate: SpecDebateConfig = field(default_factory=SpecDebateConfig)
     sessions: SessionConfig = field(default_factory=SessionConfig)
@@ -345,7 +357,19 @@ def _parse_spec_debate_config(data: dict[str, Any]) -> SpecDebateConfig:
         timeout_seconds=data.get("timeout_seconds", 900),  # 15 minutes default
         consecutive_stalemate_threshold=data.get("consecutive_stalemate_threshold", 2),
         disagreement_threshold=data.get("disagreement_threshold", 2),
-        rubric_thresholds={**default_thresholds, **thresholds}
+        rubric_thresholds={**default_thresholds, **thresholds},
+        inter_round_delay_seconds=data.get("inter_round_delay_seconds", 60.0),
+        intra_round_delay_seconds=data.get("intra_round_delay_seconds", 10.0),
+    )
+
+
+def _parse_debate_retry_config(data: dict[str, Any]) -> DebateRetryConfig:
+    """Parse debate retry configuration from dict."""
+    return DebateRetryConfig(
+        max_retries=data.get("max_retries", 3),
+        backoff_base_seconds=data.get("backoff_base_seconds", 30.0),
+        backoff_multiplier=data.get("backoff_multiplier", 2.0),
+        max_backoff_seconds=data.get("max_backoff_seconds", 300.0),
     )
 
 
@@ -473,6 +497,7 @@ def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = No
     openai_config = _parse_openai_config(data.get("openai", {}))
     codex_config = _parse_codex_config(data.get("codex", {}))
     retry_config = _parse_retry_config(data.get("retry", {}))
+    debate_retry_config = _parse_debate_retry_config(data.get("debate_retry", {}))
     preflight_config = _parse_preflight_config(data.get("preflight", {}))
     spec_debate_config = _parse_spec_debate_config(data.get("spec_debate", {}))
     session_config = _parse_session_config(data.get("sessions", {}))
@@ -493,6 +518,7 @@ def load_config(config_path: Optional[str] = None, repo_root: Optional[str] = No
         openai=openai_config,
         codex=codex_config,
         retry=retry_config,
+        debate_retry=debate_retry_config,
         preflight=preflight_config,
         spec_debate=spec_debate_config,
         sessions=session_config,

@@ -24,16 +24,17 @@ from swarm_attack.chief_of_staff.recovery import (
 
 if TYPE_CHECKING:
     from swarm_attack.agents.base import BaseAgent
+    from swarm_attack.config.main import DebateRetryConfig
 
 
 logger = logging.getLogger(__name__)
 
 
-# Default retry configuration
+# Default retry configuration - these are the NEW defaults
 DEFAULT_MAX_RETRIES = 3
-DEFAULT_BACKOFF_BASE_SECONDS = 5.0
+DEFAULT_BACKOFF_BASE_SECONDS = 30.0  # Was 5.0
 DEFAULT_BACKOFF_MULTIPLIER = 2.0
-DEFAULT_MAX_BACKOFF_SECONDS = 60.0
+DEFAULT_MAX_BACKOFF_SECONDS = 300.0  # Was 60.0
 
 
 @dataclass
@@ -76,6 +77,7 @@ class DebateRetryHandler:
 
     def __init__(
         self,
+        config: Optional["DebateRetryConfig"] = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         backoff_base_seconds: float = DEFAULT_BACKOFF_BASE_SECONDS,
         backoff_multiplier: float = DEFAULT_BACKOFF_MULTIPLIER,
@@ -84,15 +86,24 @@ class DebateRetryHandler:
         """Initialize the retry handler.
 
         Args:
+            config: Optional DebateRetryConfig object. If provided, overrides positional args.
             max_retries: Maximum number of retry attempts for transient errors.
             backoff_base_seconds: Initial backoff delay in seconds.
             backoff_multiplier: Multiplier for exponential backoff.
             max_backoff_seconds: Maximum backoff delay (cap).
         """
-        self.max_retries = max_retries
-        self.backoff_base_seconds = backoff_base_seconds
-        self.backoff_multiplier = backoff_multiplier
-        self.max_backoff_seconds = max_backoff_seconds
+        if config is not None:
+            # Config takes precedence over positional args
+            self.max_retries = config.max_retries
+            self.backoff_base_seconds = config.backoff_base_seconds
+            self.backoff_multiplier = config.backoff_multiplier
+            self.max_backoff_seconds = config.max_backoff_seconds
+        else:
+            # Use positional args (backward compatible)
+            self.max_retries = max_retries
+            self.backoff_base_seconds = backoff_base_seconds
+            self.backoff_multiplier = backoff_multiplier
+            self.max_backoff_seconds = max_backoff_seconds
 
     def _classify_error(self, error: Exception) -> ErrorCategory:
         """Classify an error to determine retry strategy.
