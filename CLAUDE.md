@@ -1204,23 +1204,59 @@ The error classifier follows strict rules to avoid false positives:
 | `tests/unit/test_codex_error_classification.py` | False positive prevention tests |
 | `tests/unit/test_codex_auth_patterns.py` | Auth pattern tests |
 
-## Memory Store
+## Memory System (Phase 5)
 
-Swarm Attack agents share a persistent memory store for cross-session learning.
+Persistent cross-session learning system with pattern detection, recommendations, and semantic search.
 
-### How It Works
-1. **VerifierAgent** records schema drift when LLM-generated code violates existing patterns
-2. **CoderAgent** queries memory before generating code to receive warnings about known issues
-3. Memory persists to JSON file between sessions
+See `docs/MEMORY.md` for full documentation.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **MemoryStore** | Core JSON persistence layer |
+| **PatternDetector** | Detects recurring issues (schema drift, fixes, failure clusters) |
+| **RecommendationEngine** | Provides contextual suggestions based on history |
+| **SemanticSearch** | Weighted keyword search with category boosting |
+| **MemoryIndex** | O(1) inverted index for fast lookups |
+
+### Agent Integration
+
+**CoderAgent** receives historical recommendations:
+- Extracts class names from issue body
+- Queries memory for prior schema drift conflicts
+- Injects warnings into prompt
+
+**VerifierAgent** records patterns:
+- Records success/failure patterns to memory
+- Links patterns to fixes for future recommendations
+- Tags entries with `schema_drift` and class names
 
 ### CLI Commands
-- `swarm-attack memory stats` - Show entry counts by category
-- `swarm-attack memory list --category=schema_drift` - List entries
-- `swarm-attack memory prune --older-than=30` - Remove old entries
+
+```bash
+# Basic commands
+swarm-attack memory stats                    # Show statistics
+swarm-attack memory list --category schema_drift  # List entries
+swarm-attack memory prune --older-than 30    # Remove old entries
+
+# Phase 5 commands
+swarm-attack memory patterns                 # Detect patterns
+swarm-attack memory patterns --category schema_drift  # Filter by category
+swarm-attack memory recommend schema_drift --context '{"class_name": "MyClass"}'
+swarm-attack memory search "MyClass error"   # Semantic search
+swarm-attack memory search "error" --category schema_drift --limit 5
+
+# Persistence commands
+swarm-attack memory save backup.json         # Save to file
+swarm-attack memory load backup.json         # Load from file
+swarm-attack memory export drift.json --category schema_drift
+swarm-attack memory import drift.json        # Merge entries
+swarm-attack memory compress                 # Deduplicate entries
+swarm-attack memory analytics                # Show analytics report
+```
 
 ### Configuration
-
-Memory file location can be configured in `config.yaml`:
 
 ```yaml
 memory:

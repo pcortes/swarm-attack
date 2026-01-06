@@ -379,6 +379,20 @@ git merge feature/user-notifications
 | `swarm-attack bug reject <bug-id>` | Reject (won't fix) |
 | `swarm-attack bug unblock <bug-id>` | Unblock stuck bug |
 
+### Memory Commands (v0.5.0)
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack memory stats` | Show memory store statistics |
+| `swarm-attack memory list [--category CAT]` | List memory entries |
+| `swarm-attack memory patterns [--category CAT]` | Detect recurring patterns |
+| `swarm-attack memory recommend <category> [--context JSON]` | Get recommendations |
+| `swarm-attack memory search <query> [--limit N]` | Semantic search |
+| `swarm-attack memory save <path>` | Save memory to file |
+| `swarm-attack memory load <path>` | Load memory from file |
+| `swarm-attack memory prune --older-than DAYS` | Remove old entries |
+| `swarm-attack memory analytics` | Show analytics report |
+
 ### Admin Commands
 
 | Command | Description |
