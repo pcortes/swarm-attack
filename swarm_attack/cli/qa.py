@@ -352,6 +352,11 @@ def semantic_test_command(
         "-p",
         help="Project root directory",
     ),
+    no_metrics: bool = typer.Option(
+        False,
+        "--no-metrics",
+        help="Skip recording metrics to .swarm/qa/metrics.json",
+    ),
 ) -> None:
     """
     Run semantic testing using Claude Code CLI.
@@ -405,19 +410,37 @@ def semantic_test_command(
 
     # Try to use SemanticTesterAgent if available
     try:
+        import time
         from swarm_attack.qa.agents.semantic_tester import SemanticTesterAgent, SemanticScope
 
+        start_time = time.time()
         with console.status("[yellow]Running semantic testing...[/yellow]"):
             agent = SemanticTesterAgent(config)
             # Convert CLI scope to agent scope
             agent_scope = SemanticScope(scope.value)
             context["test_scope"] = agent_scope
             result = agent.run(context)
+        execution_time_ms = (time.time() - start_time) * 1000
 
         if result.success:
             output = result.output or {}
             verdict = output.get("verdict", "UNKNOWN")
             verdict_color = "green" if verdict == "PASS" else "yellow" if verdict == "PARTIAL" else "red"
+
+            # Record metrics unless --no-metrics flag is set
+            if not no_metrics:
+                try:
+                    from swarm_attack.qa.metrics import SemanticQAMetrics
+                    metrics = SemanticQAMetrics()
+                    metrics.record_test(
+                        verdict=verdict,
+                        execution_time_ms=execution_time_ms,
+                        depth="semantic",
+                        scope=scope.value,
+                    )
+                    console.print(f"[dim]Metrics recorded to .swarm/qa/metrics.json[/dim]")
+                except Exception as e:
+                    console.print(f"[dim]Warning: Failed to record metrics: {e}[/dim]")
 
             evidence = output.get("evidence", [])
             evidence_text = ""
@@ -438,6 +461,20 @@ def semantic_test_command(
             if verdict == "FAIL":
                 raise typer.Exit(1)
         else:
+            # Record FAIL metrics for failed execution
+            if not no_metrics:
+                try:
+                    from swarm_attack.qa.metrics import SemanticQAMetrics
+                    metrics = SemanticQAMetrics()
+                    metrics.record_test(
+                        verdict="FAIL",
+                        execution_time_ms=execution_time_ms,
+                        depth="semantic",
+                        scope=scope.value,
+                    )
+                except Exception:
+                    pass  # Don't fail on metrics error
+
             error_text = "\n".join(f"  - {e}" for e in result.errors) if result.errors else "Unknown error"
             console.print(Panel(
                 f"[red]Semantic testing FAILED[/red]\n\n{error_text}",

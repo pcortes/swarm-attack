@@ -27,7 +27,7 @@ from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.bug_researcher import BugResearcherAgent
 from swarm_attack.agents.fix_planner import FixPlannerAgent
 from swarm_attack.agents.root_cause_analyzer import RootCauseAnalyzerAgent
-from swarm_attack.qa.agents import SemanticTesterAgent
+from swarm_attack.qa.hooks.semantic_hook import SemanticTestHook
 from swarm_attack.bug_models import (
     AgentCost,
     ApprovalRecord,
@@ -1134,31 +1134,32 @@ class BugOrchestrator:
             state.transition_to(BugPhase.VERIFYING, "auto")
             self._state_store.save(state)
 
-            # Run semantic tester before pytest verification
+            # Run semantic tester before pytest verification (using SemanticTestHook for consistency with feature pipeline)
             self._log("semantic_test_start", {"bug_id": bug_id})
             try:
-                semantic_tester = SemanticTesterAgent(self.config, self._logger)
+                semantic_hook = SemanticTestHook(self.config, self._logger)
+                # Build context matching feature pipeline pattern
                 semantic_context = {
                     "changes": f"Fix for {bug_id}: {state.fix_plan.summary}",
                     "expected_behavior": f"Bug {bug_id} should be fixed. Root cause: {state.root_cause.summary if state.root_cause else 'Unknown'}",
-                    "test_scope": "changes_only",
+                    "scope": "changes_only",
                 }
-                semantic_result = semantic_tester.run(semantic_context)
+                # Use hook.run() with context for consistency with feature pipeline
+                semantic_result = semantic_hook.run(
+                    feature_id=bug_id,
+                    issue_number=0,  # Bug fixes don't have issue numbers
+                    context=semantic_context,
+                )
 
-                # Check semantic test verdict
-                if semantic_result.output and semantic_result.output.get("verdict") == "FAIL":
+                # Check semantic test verdict using hook result structure
+                if semantic_result.should_block:
                     # Semantic validation failed - block and send back for re-analysis
-                    error_msg = (
-                        semantic_result.errors[0]
-                        if semantic_result.errors
-                        else "Semantic validation failed"
-                    )
-                    state.blocked_reason = f"Semantic test failed: {error_msg}"
+                    state.blocked_reason = f"Semantic test failed: {semantic_result.block_reason or 'Semantic validation failed'}"
                     state.transition_to(BugPhase.BLOCKED, "semantic_test_failed")
                     self._state_store.save(state)
                     self._log(
                         "semantic_test_failed",
-                        {"bug_id": bug_id, "error": error_msg},
+                        {"bug_id": bug_id, "error": semantic_result.block_reason, "verdict": semantic_result.verdict},
                         level="warning",
                     )
                     return BugPipelineResult(
@@ -1169,30 +1170,35 @@ class BugOrchestrator:
                         error=state.blocked_reason,
                     )
 
+                # Handle PARTIAL verdict (warn but continue, matching feature pipeline)
+                if semantic_result.verdict == "PARTIAL":
+                    self._log(
+                        "semantic_test_partial",
+                        {
+                            "bug_id": bug_id,
+                            "verdict": "PARTIAL",
+                            "warning": semantic_result.warning,
+                            "recommendations": semantic_result.recommendations,
+                        },
+                        level="warning",
+                    )
+
                 self._log(
                     "semantic_test_passed",
                     {
                         "bug_id": bug_id,
-                        "verdict": semantic_result.output.get("verdict") if semantic_result.output else "UNKNOWN",
+                        "verdict": semantic_result.verdict,
                     },
                 )
             except Exception as e:
-                # Semantic tester error - block the bug
-                state.blocked_reason = f"Semantic tester error: {e}"
-                state.transition_to(BugPhase.BLOCKED, "semantic_test_error")
-                self._state_store.save(state)
+                # Semantic tester error - use fail-open strategy (matching feature pipeline)
+                # Log warning but don't block the bug fix
                 self._log(
                     "semantic_test_error",
                     {"bug_id": bug_id, "error": str(e)},
-                    level="error",
+                    level="warning",
                 )
-                return BugPipelineResult(
-                    success=False,
-                    bug_id=bug_id,
-                    phase=BugPhase.BLOCKED,
-                    cost_usd=0.0,
-                    error=state.blocked_reason,
-                )
+                # Continue with pytest verification instead of blocking
 
             # Run pytest on original test if provided
             test_passed = True

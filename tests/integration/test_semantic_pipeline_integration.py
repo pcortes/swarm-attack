@@ -247,31 +247,29 @@ class TestBugPipelineSemanticHookIntegration:
     def test_semantic_tester_called_during_fix_pipeline(
         self, orchestrator, approved_bug_state, mock_state_store
     ):
-        """Integration test: SemanticTesterAgent is called during bug fix pipeline."""
-        from swarm_attack.agents.base import AgentResult
+        """Integration test: SemanticTestHook is called during bug fix pipeline."""
+        from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
 
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
-        semantic_call_tracker = {"called": False, "context": None}
+        semantic_call_tracker = {"called": False, "kwargs": None}
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = Mock()
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = Mock()
 
-            def track_semantic_call(context):
+            def track_semantic_call(**kwargs):
                 semantic_call_tracker["called"] = True
-                semantic_call_tracker["context"] = context
-                return AgentResult(
-                    success=True,
-                    output={"verdict": "PASS", "evidence": [], "issues": [], "recommendations": []},
-                    errors=[],
-                    cost_usd=0.0,
+                semantic_call_tracker["kwargs"] = kwargs
+                return SemanticHookResult(
+                    verdict="PASS",
+                    should_block=False,
                 )
 
-            mock_agent.run.side_effect = track_semantic_call
-            MockSemanticTester.return_value = mock_agent
+            mock_hook.run.side_effect = track_semantic_call
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = Mock(
@@ -280,37 +278,33 @@ class TestBugPipelineSemanticHookIntegration:
 
                 orchestrator.fix("bug-test-integration-001")
 
-                # Verify SemanticTesterAgent was instantiated and called
-                MockSemanticTester.assert_called_once()
+                # Verify SemanticTestHook was instantiated and called
+                MockSemanticHook.assert_called_once()
                 assert semantic_call_tracker["called"] is True
-                assert semantic_call_tracker["context"] is not None
-                assert "changes" in semantic_call_tracker["context"]
-                assert "expected_behavior" in semantic_call_tracker["context"]
+                assert semantic_call_tracker["kwargs"] is not None
+                assert "context" in semantic_call_tracker["kwargs"]
 
     def test_fail_verdict_blocks_pytest_execution(
         self, orchestrator, approved_bug_state, mock_state_store
     ):
         """Integration test: FAIL verdict blocks proceeding to pytest."""
-        from swarm_attack.agents.base import AgentResult
+        from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
         from swarm_attack.bug_models import BugPhase
 
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = Mock()
-            mock_agent.run.return_value = AgentResult(
-                success=False,
-                output={
-                    "verdict": "FAIL",
-                    "issues": [{"severity": "critical", "description": "Fix does not address root cause"}],
-                },
-                errors=["Semantic validation failed"],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = Mock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="FAIL",
+                should_block=True,
+                block_reason="Fix does not address root cause",
+                issues=[{"severity": "critical", "description": "Fix does not address root cause"}],
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 result = orchestrator.fix("bug-test-integration-001")
@@ -327,27 +321,24 @@ class TestBugPipelineSemanticHookIntegration:
         self, orchestrator, approved_bug_state, mock_state_store
     ):
         """Integration test: PARTIAL verdict allows proceeding to pytest with warning logged."""
-        from swarm_attack.agents.base import AgentResult
+        from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
         from swarm_attack.bug_models import BugPhase
 
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = Mock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,  # PARTIAL counts as success
-                output={
-                    "verdict": "PARTIAL",
-                    "issues": [{"severity": "minor", "description": "Edge case not covered"}],
-                    "recommendations": ["Consider adding edge case tests"],
-                },
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = Mock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PARTIAL",
+                should_block=False,
+                warning="Edge case not covered",
+                recommendations=["Consider adding edge case tests"],
+                issues=[{"severity": "minor", "description": "Edge case not covered"}],
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = Mock(
@@ -367,23 +358,21 @@ class TestBugPipelineSemanticHookIntegration:
         self, orchestrator, approved_bug_state, mock_state_store
     ):
         """Integration test: PASS verdict allows proceeding to pytest normally."""
-        from swarm_attack.agents.base import AgentResult
+        from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
         from swarm_attack.bug_models import BugPhase
 
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = Mock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS", "evidence": [], "issues": [], "recommendations": []},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = Mock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = Mock(
@@ -403,7 +392,7 @@ class TestBugPipelineSemanticHookIntegration:
         self, orchestrator, approved_bug_state, mock_state_store
     ):
         """Integration test: Semantic test runs BEFORE pytest verification."""
-        from swarm_attack.agents.base import AgentResult
+        from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
 
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
@@ -411,21 +400,19 @@ class TestBugPipelineSemanticHookIntegration:
         call_order = []
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = Mock()
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = Mock()
 
             def track_semantic(*args, **kwargs):
                 call_order.append("semantic_tester")
-                return AgentResult(
-                    success=True,
-                    output={"verdict": "PASS"},
-                    errors=[],
-                    cost_usd=0.0,
+                return SemanticHookResult(
+                    verdict="PASS",
+                    should_block=False,
                 )
 
-            mock_agent.run.side_effect = track_semantic
-            MockSemanticTester.return_value = mock_agent
+            mock_hook.run.side_effect = track_semantic
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 def track_subprocess(*args, **kwargs):

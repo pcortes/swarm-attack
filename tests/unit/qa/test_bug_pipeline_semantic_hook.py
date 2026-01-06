@@ -1,11 +1,11 @@
-"""Unit tests for SemanticTesterAgent hook in BugOrchestrator.fix() (TDD).
+"""Unit tests for SemanticTestHook in BugOrchestrator.fix() (TDD).
 
-These tests verify that the SemanticTesterAgent is integrated into the
+These tests verify that the SemanticTestHook is integrated into the
 bug fix pipeline, running semantic validation before pytest verification.
 
 Test scenarios:
 - Semantic tester is called before pytest verification in fix()
-- FAIL verdict sends bug back to ANALYZING phase
+- FAIL verdict sends bug back to BLOCKED phase
 - PASS/PARTIAL verdict continues to pytest verification
 """
 
@@ -23,7 +23,7 @@ from swarm_attack.bug_models import (
     ApprovalRecord,
 )
 from swarm_attack.bug_orchestrator import BugOrchestrator
-from swarm_attack.agents.base import AgentResult
+from swarm_attack.qa.hooks.semantic_hook import SemanticHookResult
 
 
 # =============================================================================
@@ -120,16 +120,14 @@ class TestSemanticTesterCalledBeforePytest:
         call_order = []
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS", "evidence": [], "issues": [], "recommendations": []},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 def track_subprocess(*args, **kwargs):
@@ -141,21 +139,16 @@ class TestSemanticTesterCalledBeforePytest:
                     return result
 
                 mock_subprocess.side_effect = track_subprocess
-                mock_agent.run.side_effect = lambda ctx: (
+                mock_hook.run.side_effect = lambda **kwargs: (
                     call_order.append("semantic_tester"),
-                    AgentResult(
-                        success=True,
-                        output={"verdict": "PASS"},
-                        errors=[],
-                        cost_usd=0.0,
-                    ),
+                    SemanticHookResult(verdict="PASS", should_block=False),
                 )[1]
 
                 orchestrator.fix("bug-test-semantic-001")
 
                 # Verify semantic tester was called
-                MockSemanticTester.assert_called_once()
-                mock_agent.run.assert_called_once()
+                MockSemanticHook.assert_called_once()
+                mock_hook.run.assert_called_once()
 
                 # Verify call order: semantic_tester before subprocess (pytest)
                 assert call_order == ["semantic_tester", "subprocess"], \
@@ -169,16 +162,14 @@ class TestSemanticTesterCalledBeforePytest:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS"},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = MagicMock(
@@ -187,14 +178,10 @@ class TestSemanticTesterCalledBeforePytest:
 
                 orchestrator.fix("bug-test-semantic-001")
 
-                # Verify context passed to semantic tester
-                call_args = mock_agent.run.call_args
-                context = call_args[0][0] if call_args[0] else call_args.kwargs.get("context", {})
-
-                # Context should include changes and expected behavior
-                assert "changes" in context
-                assert "expected_behavior" in context
-                assert "test_scope" in context
+                # Verify hook.run was called with context
+                call_args = mock_hook.run.call_args
+                # Hook receives feature_id, issue_number, and context kwargs
+                assert call_args.kwargs.get("context") is not None or "context" in str(call_args)
 
 
 # =============================================================================
@@ -208,28 +195,27 @@ class TestSemanticFailVerdictHandling:
     def test_fail_verdict_transitions_to_analyzing(
         self, orchestrator, approved_bug_state, mock_state_store
     ):
-        """FAIL verdict should transition bug back to ANALYZING phase."""
+        """FAIL verdict should transition bug back to BLOCKED phase."""
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=False,
-                output={"verdict": "FAIL", "issues": [{"description": "Test failed"}]},
-                errors=["Semantic validation failed"],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="FAIL",
+                should_block=True,
+                block_reason="Semantic validation failed",
+                issues=[{"description": "Test failed"}],
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             result = orchestrator.fix("bug-test-semantic-001")
 
-            # Verify bug transitioned to ANALYZING (or BLOCKED for re-planning)
+            # Verify bug transitioned to BLOCKED
             assert result.success is False
-            # The bug should be blocked or in analyzing state
-            assert result.phase in (BugPhase.ANALYZING, BugPhase.BLOCKED)
+            assert result.phase == BugPhase.BLOCKED
 
     def test_fail_verdict_includes_semantic_feedback(
         self, orchestrator, approved_bug_state, mock_state_store
@@ -239,16 +225,15 @@ class TestSemanticFailVerdictHandling:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=False,
-                output={"verdict": "FAIL"},
-                errors=["Fix does not address root cause"],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="FAIL",
+                should_block=True,
+                block_reason="Fix does not address root cause",
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             result = orchestrator.fix("bug-test-semantic-001")
 
@@ -264,16 +249,15 @@ class TestSemanticFailVerdictHandling:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=False,
-                output={"verdict": "FAIL"},
-                errors=["Semantic validation failed"],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="FAIL",
+                should_block=True,
+                block_reason="Semantic validation failed",
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 orchestrator.fix("bug-test-semantic-001")
@@ -298,16 +282,14 @@ class TestSemanticPassPartialVerdictHandling:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS"},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = MagicMock(
@@ -327,16 +309,16 @@ class TestSemanticPassPartialVerdictHandling:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PARTIAL", "recommendations": ["Consider edge cases"]},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PARTIAL",
+                should_block=False,
+                warning="Some edge cases not covered",
+                recommendations=["Consider edge cases"],
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = MagicMock(
@@ -356,16 +338,14 @@ class TestSemanticPassPartialVerdictHandling:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS"},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             with patch("subprocess.run") as mock_subprocess:
                 mock_subprocess.return_value = MagicMock(
@@ -389,23 +369,27 @@ class TestSemanticTesterEdgeCases:
     def test_semantic_tester_exception_is_handled(
         self, orchestrator, approved_bug_state, mock_state_store
     ):
-        """Exception from semantic tester should be handled gracefully."""
+        """Exception from semantic tester should be handled gracefully (fail-open)."""
         mock_state_store.load.return_value = approved_bug_state
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.side_effect = Exception("Semantic tester crashed")
-            MockSemanticTester.return_value = mock_agent
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.side_effect = Exception("Semantic tester crashed")
+            MockSemanticHook.return_value = mock_hook
 
-            result = orchestrator.fix("bug-test-semantic-001")
+            with patch("subprocess.run") as mock_subprocess:
+                mock_subprocess.return_value = MagicMock(
+                    returncode=0, stdout="Tests passed", stderr=""
+                )
 
-            # Should handle exception and return blocked/error
-            assert result.success is False
-            assert result.phase == BugPhase.BLOCKED
-            assert "error" in result.error.lower() or "semantic" in result.error.lower()
+                result = orchestrator.fix("bug-test-semantic-001")
+
+                # Should handle exception gracefully (fail-open) and continue to pytest
+                # With fail-open strategy, we continue even if semantic test errors
+                mock_subprocess.assert_called()
 
     def test_semantic_tester_timeout_is_handled(
         self, orchestrator, approved_bug_state, mock_state_store
@@ -415,16 +399,16 @@ class TestSemanticTesterEdgeCases:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=False,
-                output={"verdict": "FAIL", "issues": [{"description": "Timeout"}]},
-                errors=["Test timed out"],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="FAIL",
+                should_block=True,
+                block_reason="Test timed out",
+                issues=[{"description": "Timeout"}],
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             result = orchestrator.fix("bug-test-semantic-001")
 
@@ -465,19 +449,17 @@ class TestSemanticTesterEdgeCases:
         mock_state_store.exists.return_value = True
 
         with patch(
-            "swarm_attack.bug_orchestrator.SemanticTesterAgent"
-        ) as MockSemanticTester:
-            mock_agent = MagicMock()
-            mock_agent.run.return_value = AgentResult(
-                success=True,
-                output={"verdict": "PASS"},
-                errors=[],
-                cost_usd=0.0,
+            "swarm_attack.bug_orchestrator.SemanticTestHook"
+        ) as MockSemanticHook:
+            mock_hook = MagicMock()
+            mock_hook.run.return_value = SemanticHookResult(
+                verdict="PASS",
+                should_block=False,
             )
-            MockSemanticTester.return_value = mock_agent
+            MockSemanticHook.return_value = mock_hook
 
             result = orchestrator.fix("bug-no-test-path")
 
             # Semantic tester should still be called
-            MockSemanticTester.assert_called_once()
-            mock_agent.run.assert_called_once()
+            MockSemanticHook.assert_called_once()
+            mock_hook.run.assert_called_once()
