@@ -95,8 +95,8 @@ class TestMemoryStatsCommand:
         """Should display total entry count in stats output."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(memory_app, ["stats"])
 
@@ -108,8 +108,8 @@ class TestMemoryStatsCommand:
         """Should display entries by category breakdown."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(memory_app, ["stats"])
 
@@ -131,8 +131,8 @@ class TestMemoryListCommand:
         """Should display memory entries."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(memory_app, ["list"])
 
@@ -144,8 +144,8 @@ class TestMemoryListCommand:
         """Should filter entries when --category is provided."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(memory_app, ["list", "--category", "schema_drift"])
 
@@ -201,8 +201,8 @@ class TestMemoryPruneCommand:
         store.add(recent_entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(memory_app, ["prune", "--older-than", "30"])
 
@@ -314,8 +314,8 @@ class TestSaveCommand:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "output" / "saved_memory.json"
 
-            with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-                mock_load.return_value = memory_store
+            with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+                mock_get_store.return_value = memory_store
 
                 result = runner.invoke(memory_app, ["save", str(output_path)])
 
@@ -344,8 +344,8 @@ class TestLoadCommand:
             # Create a new empty store to load into
             new_store = MemoryStore(store_path=temp_store_path)
 
-            with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-                mock_load.return_value = new_store
+            with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+                mock_get_store.return_value = new_store
 
                 result = runner.invoke(memory_app, ["load", str(input_path)])
 
@@ -376,8 +376,8 @@ class TestExportCommand:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "exported.json"
 
-            with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-                mock_load.return_value = memory_store
+            with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+                mock_get_store.return_value = memory_store
 
                 result = runner.invoke(memory_app, ["export", str(output_path)])
 
@@ -397,8 +397,8 @@ class TestExportCommand:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "filtered.json"
 
-            with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-                mock_load.return_value = memory_store
+            with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+                mock_get_store.return_value = memory_store
 
                 result = runner.invoke(
                     memory_app,
@@ -451,8 +451,8 @@ class TestImportCommand:
             with open(import_path, "w") as f:
                 json.dump(export_data, f)
 
-            with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-                mock_load.return_value = memory_store
+            with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+                mock_get_store.return_value = memory_store
 
                 result = runner.invoke(memory_app, ["import", str(import_path)])
 
@@ -490,8 +490,8 @@ class TestCompressCommand:
             store.add(entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(memory_app, ["compress", "--threshold", "0.5"])
 
@@ -511,8 +511,8 @@ class TestAnalyticsCommand:
         """Should display analytics report."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(memory_app, ["analytics"])
 
@@ -557,8 +557,8 @@ class TestPatternsCommand:
             store.add(entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(memory_app, ["patterns", "--min-occurrences", "3"])
 
@@ -590,8 +590,8 @@ class TestPatternsCommand:
             store.add(entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(
                 memory_app,
@@ -647,8 +647,8 @@ class TestRecommendCommand:
         store.add(entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(
                 memory_app,
@@ -666,7 +666,7 @@ class TestRecommendCommand:
         """Should handle invalid JSON context gracefully."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load"):
+        with patch("swarm_attack.cli.memory.get_memory_store"):
             result = runner.invoke(
                 memory_app,
                 ["recommend", "schema_drift", "--context", "invalid json"]
@@ -695,8 +695,8 @@ class TestSearchCommand:
         """Should find entries matching the search query."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             # Search for something that exists in the fixture data
             result = runner.invoke(memory_app, ["search", "checkpoint decision"])
@@ -729,8 +729,8 @@ class TestSearchCommand:
             store.add(entry)
         store.save()
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = store
 
             result = runner.invoke(memory_app, ["search", "test message", "--limit", "5"])
 
@@ -745,8 +745,8 @@ class TestSearchCommand:
         """Should filter results by category when --category is provided."""
         from swarm_attack.cli.memory import memory_app
 
-        with patch("swarm_attack.memory.store.MemoryStore.load") as mock_load:
-            mock_load.return_value = memory_store
+        with patch("swarm_attack.cli.memory.get_memory_store") as mock_get_store:
+            mock_get_store.return_value = memory_store
 
             result = runner.invoke(
                 memory_app,

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from swarm_attack.logger import SwarmLogger
 
 
-class TestCategory(Enum):
+class AdversarialCategory(Enum):
     """Categories of generated tests."""
 
     HAPPY_PATH = "happy_path"
@@ -38,7 +38,7 @@ class TestCategory(Enum):
     TYPE_COERCION = "type_coercion"
 
 
-class TestGenerationError(Exception):
+class GenerationError(Exception):
     """Raised when test generation fails."""
 
     pass
@@ -86,7 +86,7 @@ class GeneratedTest:
     """A generated test case."""
 
     name: str
-    category: TestCategory
+    category: AdversarialCategory
     code: str
     description: str
     target_method: str
@@ -108,7 +108,7 @@ class GeneratedTest:
         """Create from dictionary."""
         return cls(
             name=data["name"],
-            category=TestCategory(data["category"]),
+            category=AdversarialCategory(data["category"]),
             code=data["code"],
             description=data["description"],
             target_method=data["target_method"],
@@ -117,7 +117,7 @@ class GeneratedTest:
 
 
 @dataclass
-class TestGenerationResult:
+class GenerationResult:
     """Result of test generation."""
 
     success: bool
@@ -134,9 +134,9 @@ class TestGenerationResult:
             "errors": self.errors,
         }
 
-    def get_test_counts_by_category(self) -> dict[TestCategory, int]:
+    def get_test_counts_by_category(self) -> dict[AdversarialCategory, int]:
         """Get count of tests per category."""
-        counts: dict[TestCategory, int] = {}
+        counts: dict[AdversarialCategory, int] = {}
         for test in self.tests:
             counts[test.category] = counts.get(test.category, 0) + 1
         return counts
@@ -225,7 +225,7 @@ class AdversarialTestGenerator(BaseAgent):
         self,
         spec: InterfaceSpec,
         forbidden_context: Optional[dict[str, Any]] = None,
-    ) -> TestGenerationResult:
+    ) -> GenerationResult:
         """
         Generate tests from an interface specification.
 
@@ -235,13 +235,13 @@ class AdversarialTestGenerator(BaseAgent):
                 NOT be used (e.g., implementation details).
 
         Returns:
-            TestGenerationResult with generated tests.
+            GenerationResult with generated tests.
 
         Raises:
-            TestGenerationError: If spec is invalid.
+            GenerationError: If spec is invalid.
         """
         if spec is None:
-            raise TestGenerationError("Spec cannot be None")
+            raise GenerationError("Spec cannot be None")
 
         try:
             # Build prompt - intentionally excluding any implementation details
@@ -252,7 +252,7 @@ class AdversarialTestGenerator(BaseAgent):
 
             if not llm_result.success:
                 error_msg = getattr(llm_result, "error", "Unknown LLM error")
-                return TestGenerationResult(
+                return GenerationResult(
                     success=False,
                     tests=[],
                     spec_name=spec.name,
@@ -262,21 +262,21 @@ class AdversarialTestGenerator(BaseAgent):
             # Parse tests from output
             tests = self._parse_tests(llm_result.output)
 
-            return TestGenerationResult(
+            return GenerationResult(
                 success=True,
                 tests=tests,
                 spec_name=spec.name,
             )
 
         except TimeoutError as e:
-            return TestGenerationResult(
+            return GenerationResult(
                 success=False,
                 tests=[],
                 spec_name=spec.name,
                 errors=[f"Timeout error: {str(e)}"],
             )
         except Exception as e:
-            return TestGenerationResult(
+            return GenerationResult(
                 success=False,
                 tests=[],
                 spec_name=spec.name,
@@ -460,16 +460,16 @@ class AdversarialTestGenerator(BaseAgent):
 
         return tests
 
-    def _extract_category(self, comments: str) -> TestCategory:
+    def _extract_category(self, comments: str) -> AdversarialCategory:
         """Extract test category from comments."""
         match = re.search(r"#\s*CATEGORY:\s*(\w+)", comments, re.IGNORECASE)
         if match:
             category_str = match.group(1).lower()
             try:
-                return TestCategory(category_str)
+                return AdversarialCategory(category_str)
             except ValueError:
                 pass
-        return TestCategory.HAPPY_PATH  # Default
+        return AdversarialCategory.HAPPY_PATH  # Default
 
     def _extract_target(self, comments: str) -> str:
         """Extract target method from comments."""
