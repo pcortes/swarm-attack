@@ -226,7 +226,8 @@ class Orchestrator:
         self._progress_callback = progress_callback
 
         # Memory store for cross-session learning (create default if not provided)
-        self._memory_store = memory_store or MemoryStore.load()
+        # Use explicit None check to support empty mock stores in tests
+        self._memory_store = memory_store if memory_store is not None else MemoryStore.load()
 
         # Spec debate agents
         self._author = author or SpecAuthorAgent(config, logger)

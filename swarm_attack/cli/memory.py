@@ -24,6 +24,42 @@ memory_app = typer.Typer(
 
 console = get_console()
 
+# Standard store file names to check (in priority order)
+# These are relative to cwd, evaluated at runtime
+DEFAULT_STORE_FILENAMES = [
+    ".swarm/memory/store.json",
+    ".swarm/memory/memories.json",
+]
+
+
+def get_memory_store() -> "MemoryStore":
+    """Get memory store, loading from default path if exists.
+
+    Checks multiple standard locations for the store file:
+    1. .swarm/memory/store.json (preferred)
+    2. .swarm/memory/memories.json (legacy)
+    3. Falls back to MemoryStore.load() for backward compatibility
+
+    Returns:
+        MemoryStore instance with entries loaded from file if found.
+    """
+    from swarm_attack.memory.store import MemoryStore
+
+    # Try each default path in priority order (resolved at runtime)
+    cwd = Path.cwd()
+    for filename in DEFAULT_STORE_FILENAMES:
+        default_path = cwd / filename
+        if default_path.exists():
+            store = MemoryStore()
+            store.load_from_file(default_path)
+            # Update store_path to use the found path for saving
+            store.store_path = default_path
+            return store
+
+    # Fallback to MemoryStore.load() for backward compatibility with tests
+    # that mock MemoryStore.load()
+    return MemoryStore.load()
+
 
 @memory_app.command("stats")
 def stats_command() -> None:
@@ -39,9 +75,7 @@ def stats_command() -> None:
     Example:
         swarm-attack memory stats
     """
-    from swarm_attack.memory.store import MemoryStore
-
-    store = MemoryStore.load()
+    store = get_memory_store()
     stats = store.get_stats()
 
     # Build stats display
@@ -103,9 +137,7 @@ def list_command(
         swarm-attack memory list --category schema_drift
         swarm-attack memory list --feature my-feature --limit 10
     """
-    from swarm_attack.memory.store import MemoryStore
-
-    store = MemoryStore.load()
+    store = get_memory_store()
     entries = store.query(category=category, feature_id=feature_id, limit=limit)
 
     if not entries:
@@ -189,9 +221,7 @@ def prune_command(
         swarm-attack memory prune --older-than 60 --category checkpoint_decision
         swarm-attack memory prune --older-than 30 --dry-run
     """
-    from swarm_attack.memory.store import MemoryStore
-
-    store = MemoryStore.load()
+    store = get_memory_store()
 
     # Calculate cutoff date
     cutoff_date = datetime.now() - timedelta(days=older_than)
@@ -263,9 +293,7 @@ def save_command(
     path: Path = typer.Argument(..., help="Path to save memory file")
 ) -> None:
     """Save memory to file."""
-    from swarm_attack.memory.store import MemoryStore
-
-    store = MemoryStore.load()
+    store = get_memory_store()
     store.save_to_file(path)
 
     console.print(
@@ -282,13 +310,11 @@ def load_command(
     path: Path = typer.Argument(..., help="Path to load memory from")
 ) -> None:
     """Load memory from file."""
-    from swarm_attack.memory.store import MemoryStore
-
     if not path.exists():
         console.print(f"[red]Error: File not found: {path}[/red]")
         raise typer.Exit(1)
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     store.load_from_file(path)
     store.save()
 
@@ -310,9 +336,8 @@ def export_command(
 ) -> None:
     """Export memory to file."""
     from swarm_attack.memory.export import MemoryExporter
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     exporter = MemoryExporter()
 
     categories = [category] if category else None
@@ -338,13 +363,12 @@ def import_command(
 ) -> None:
     """Import memory from file."""
     from swarm_attack.memory.export import MemoryExporter
-    from swarm_attack.memory.store import MemoryStore
 
     if not path.exists():
         console.print(f"[red]Error: File not found: {path}[/red]")
         raise typer.Exit(1)
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     exporter = MemoryExporter()
 
     count = exporter.import_json(store, path, merge=merge)
@@ -366,9 +390,8 @@ def compress_command(
 ) -> None:
     """Compress similar memory entries."""
     from swarm_attack.memory.compression import MemoryCompressor
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     compressor = MemoryCompressor()
 
     original_count = len(store._entries)
@@ -397,9 +420,8 @@ def compress_command(
 def analytics_command() -> None:
     """Show memory analytics report."""
     from swarm_attack.memory.analytics import MemoryAnalytics
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     analytics = MemoryAnalytics(store)
 
     report = analytics.generate_report()
@@ -442,9 +464,8 @@ def patterns_command(
         swarm-attack memory patterns --min-occurrences 5
     """
     from swarm_attack.memory.patterns import PatternDetector
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     detector = PatternDetector(store)
 
     # Create table for results
@@ -540,9 +561,8 @@ def recommend_command(
     import json as json_module
 
     from swarm_attack.memory.recommendations import RecommendationEngine
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     engine = RecommendationEngine(store)
 
     # Parse context JSON
@@ -623,9 +643,8 @@ def search_command(
         swarm-attack memory search "test failure" --limit 5
     """
     from swarm_attack.memory.search import SemanticSearch
-    from swarm_attack.memory.store import MemoryStore
 
-    store = MemoryStore.load()
+    store = get_memory_store()
     searcher = SemanticSearch(store)
 
     # Perform search

@@ -19,7 +19,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from swarm_attack.memory.relevance import RelevanceScorer
 
@@ -104,6 +104,10 @@ class MemoryStore:
         self.store_path = store_path
         self._entries: dict[str, MemoryEntry] = {}
         self._query_count = 0
+
+    def __len__(self) -> int:
+        """Return number of entries in the store."""
+        return len(self._entries)
 
     def add(self, entry: MemoryEntry) -> None:
         """Add a memory entry to the store.
@@ -357,7 +361,7 @@ class MemoryStore:
         """Get schema drift entries for the given class names.
 
         Searches for schema_drift category entries that have a class_name
-        in their content matching any of the provided class names.
+        or class in their content matching any of the provided class names.
 
         Args:
             class_names: List of class names to search for.
@@ -375,8 +379,9 @@ class MemoryStore:
             if entry.category != "schema_drift":
                 continue
 
-            # Check if the entry's class_name matches any in the list
-            entry_class_name = entry.content.get("class_name")
+            # Check if the entry's class_name or class matches any in the list
+            # Support both "class_name" and "class" keys (common variations)
+            entry_class_name = entry.content.get("class_name") or entry.content.get("class")
             if entry_class_name and entry_class_name in class_names_set:
                 entry.hit_count += 1
                 results.append(entry)
@@ -638,15 +643,16 @@ class MemoryStore:
 
         return results
 
-    def save_to_file(self, path: Path) -> None:
+    def save_to_file(self, path: Union[str, Path]) -> None:
         """Save memory store to JSON file.
 
         Creates parent directories if they don't exist.
         Format matches existing save() method.
 
         Args:
-            path: Path to save the JSON file to.
+            path: Path to save the JSON file to (str or Path object).
         """
+        path = Path(path)  # Convert to Path if string
         path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
@@ -661,15 +667,16 @@ class MemoryStore:
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
 
-    def load_from_file(self, path: Path) -> None:
+    def load_from_file(self, path: Union[str, Path]) -> None:
         """Load memory store from JSON file.
 
         Adds entries to existing store (doesn't replace).
         Handles corrupted/missing files gracefully.
 
         Args:
-            path: Path to the JSON file to load from.
+            path: Path to the JSON file to load from (str or Path object).
         """
+        path = Path(path)  # Convert to Path if string
         if not path.exists():
             return
 

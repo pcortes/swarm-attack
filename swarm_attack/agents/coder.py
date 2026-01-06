@@ -290,7 +290,7 @@ class CoderAgent(BaseAgent):
         """
         warnings: list[dict[str, Any]] = []
 
-        if not self._memory:
+        if self._memory is None:
             return warnings
 
         for class_name in class_names:

@@ -109,7 +109,8 @@ class BugOrchestrator:
         self._logger = logger
 
         # Memory store for cross-session learning (create default if not provided)
-        self._memory_store = memory_store or MemoryStore.load()
+        # Use explicit None check to support empty mock stores in tests
+        self._memory_store = memory_store if memory_store is not None else MemoryStore.load()
 
         # Initialize state store
         bugs_path = Path(config.repo_root) / ".swarm" / "bugs"

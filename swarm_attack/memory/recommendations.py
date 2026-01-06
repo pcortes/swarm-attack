@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -451,10 +451,13 @@ class RecommendationEngine:
         occurrence_score = min(1.0, math.log10(len(entries) + 1) / math.log10(11))
 
         # Recency score (more recent = higher confidence)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         recency_scores = []
         for entry in entries:
             created = datetime.fromisoformat(entry.created_at)
+            # Ensure both datetimes are timezone-aware
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             age_days = (now - created).days
             # Decay: 0 days = 1.0, 30 days = 0.5, 60 days = 0.25
             recency = 0.5 ** (age_days / 30) if age_days >= 0 else 1.0

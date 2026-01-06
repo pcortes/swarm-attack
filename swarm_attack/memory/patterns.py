@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List, Optional
 from uuid import uuid4
@@ -164,6 +164,20 @@ class PatternDetector:
         self.store = store
         self.time_window_days = time_window_days
 
+    def _parse_datetime_with_tz(self, created_at: str) -> datetime:
+        """Parse datetime string ensuring timezone awareness.
+
+        Args:
+            created_at: ISO format datetime string.
+
+        Returns:
+            Timezone-aware datetime object.
+        """
+        entry_date = datetime.fromisoformat(created_at)
+        if entry_date.tzinfo is None:
+            entry_date = entry_date.replace(tzinfo=timezone.utc)
+        return entry_date
+
     def _is_within_time_window(
         self,
         entry: MemoryEntry,
@@ -181,8 +195,11 @@ class PatternDetector:
         if time_window_days is None:
             return True
 
-        cutoff = datetime.now() - timedelta(days=time_window_days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=time_window_days)
         entry_date = datetime.fromisoformat(entry.created_at)
+        # Ensure both datetimes are timezone-aware for comparison
+        if entry_date.tzinfo is None:
+            entry_date = entry_date.replace(tzinfo=timezone.utc)
         return entry_date >= cutoff
 
     def _calculate_confidence_score(
@@ -210,10 +227,13 @@ class PatternDetector:
         occurrence_score = min(len(entries) / max_occurrences, 1.0)
 
         # Recency-based score (average age in days, inverted)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         ages = []
         for entry in entries:
             entry_date = datetime.fromisoformat(entry.created_at)
+            # Ensure both datetimes are timezone-aware for comparison
+            if entry_date.tzinfo is None:
+                entry_date = entry_date.replace(tzinfo=timezone.utc)
             age_days = (now - entry_date).days
             ages.append(age_days)
 
@@ -257,7 +277,8 @@ class PatternDetector:
         groups: dict[tuple, List[MemoryEntry]] = defaultdict(list)
 
         for entry in filtered_entries:
-            class_name = entry.content.get("class_name")
+            # Support both "class_name" and "class" keys (common variations)
+            class_name = entry.content.get("class_name") or entry.content.get("class")
             if not class_name:
                 continue
 
@@ -475,7 +496,7 @@ class PatternDetector:
             issue_number=issue_number,
             content=pattern.to_dict(),
             outcome="success",
-            created_at=datetime.now().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             tags=tags or [],
         )
 
@@ -519,7 +540,7 @@ class PatternDetector:
             issue_number=issue_number,
             content=pattern.to_dict(),
             outcome="failure",
-            created_at=datetime.now().isoformat(),
+            created_at=datetime.now(timezone.utc).isoformat(),
             tags=tags or [],
         )
 
@@ -614,10 +635,10 @@ class PatternDetector:
         all_entries = list(self.store._entries.values())
 
         if days is not None:
-            cutoff = datetime.now() - timedelta(days=days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
             all_entries = [
                 e for e in all_entries
-                if datetime.fromisoformat(e.created_at) >= cutoff
+                if self._parse_datetime_with_tz(e.created_at) >= cutoff
             ]
 
         if not all_entries:
