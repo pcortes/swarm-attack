@@ -180,6 +180,7 @@ class RecoveryManager:
         checkpoint_system: "CheckpointSystem",
         backoff_base_seconds: int = DEFAULT_BACKOFF_BASE_SECONDS,
         backoff_multiplier: int = DEFAULT_BACKOFF_MULTIPLIER,
+        level2_analyzer: Optional[Any] = None,
     ) -> None:
         """Initialize RecoveryManager.
 
@@ -187,10 +188,12 @@ class RecoveryManager:
             checkpoint_system: CheckpointSystem for creating escalation checkpoints.
             backoff_base_seconds: Base delay for exponential backoff (default: 5).
             backoff_multiplier: Multiplier for exponential backoff (default: 2).
+            level2_analyzer: Optional Level2Analyzer for intelligent recovery (extension point).
         """
         self.checkpoint_system = checkpoint_system
         self.backoff_base_seconds = backoff_base_seconds
         self.backoff_multiplier = backoff_multiplier
+        self.level2_analyzer = level2_analyzer
 
     def _log_level2_fallthrough(
         self,
@@ -303,16 +306,62 @@ class RecoveryManager:
                         break
 
                 elif category == ErrorCategory.SYSTEMATIC:
-                    # Level 2: ALTERNATIVE - Extension point, falls through to Level 4
-                    # Log explicit fallthrough message for audit trail and future extension
+                    # Level 2: ALTERNATIVE - Use analyzer if available, otherwise fall through
                     error_type = getattr(e, "error_type", None)
-                    self._log_level2_fallthrough(
-                        goal_id=goal.goal_id,
-                        error_type=error_type,
-                        error_message=last_error,
-                    )
-                    recovery_level = RetryStrategy.ESCALATE.value
-                    break
+
+                    if self.level2_analyzer is not None:
+                        # Use Level 2 analyzer for intelligent recovery
+                        from swarm_attack.chief_of_staff.level2_recovery import RecoveryActionType
+
+                        try:
+                            analysis = await self.level2_analyzer.analyze(
+                                goal=goal,
+                                error=e,
+                            )
+
+                            if analysis.action_type == RecoveryActionType.ALTERNATIVE:
+                                # Retry with the hint from analysis
+                                recovery_level = RetryStrategy.ALTERNATIVE.value
+                                # Store hint on goal for retry context
+                                goal.recovery_hint = analysis.hint
+                                logger.info(
+                                    f"Level 2 (ALTERNATIVE): Retrying with hint: {analysis.hint}"
+                                )
+                                # Continue to retry loop for next attempt
+                                continue
+                            elif analysis.action_type == RecoveryActionType.DIAGNOSTICS:
+                                # Run diagnostics before escalating
+                                recovery_level = RetryStrategy.ESCALATE.value
+                                logger.info(
+                                    f"Level 2 (DIAGNOSTICS): Running diagnostics before escalation"
+                                )
+                                break
+                            elif analysis.action_type == RecoveryActionType.UNBLOCK:
+                                # Suggest unblocking steps
+                                recovery_level = RetryStrategy.ESCALATE.value
+                                logger.info(
+                                    f"Level 2 (UNBLOCK): Suggesting unblock steps"
+                                )
+                                break
+                            else:
+                                # Escalate as fallback
+                                recovery_level = RetryStrategy.ESCALATE.value
+                                break
+                        except Exception as analyzer_error:
+                            logger.warning(
+                                f"Level 2 analyzer failed: {analyzer_error}, falling through to Level 4"
+                            )
+                            recovery_level = RetryStrategy.ESCALATE.value
+                            break
+                    else:
+                        # No analyzer available - log fallthrough
+                        self._log_level2_fallthrough(
+                            goal_id=goal.goal_id,
+                            error_type=error_type,
+                            error_message=last_error,
+                        )
+                        recovery_level = RetryStrategy.ESCALATE.value
+                        break
 
                 elif category == ErrorCategory.FATAL:
                     # Level 4: ESCALATE - Immediate escalation

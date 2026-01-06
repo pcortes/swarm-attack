@@ -55,6 +55,9 @@ def mock_checkpoint_system(mock_config):
     system.config = mock_config
     system.update_daily_cost = MagicMock()
     system.reset_daily_cost = MagicMock()
+    # Add store attribute with cleanup method that the AutopilotRunner.start() calls
+    system.store = MagicMock()
+    system.store.cleanup_stale_checkpoints_sync = MagicMock()
     return system
 
 

@@ -41,6 +41,13 @@ from swarm_attack.config.model_variants import (
     get_task_queue_for_project,
 )
 
+# Export autopilot features configuration
+from swarm_attack.config.autopilot_features import (
+    SelfHealingConfig,
+    LearningConfig,
+    AutopilotFeaturesConfig,
+)
+
 __all__ = [
     # Main configuration
     "ConfigError",
@@ -70,4 +77,8 @@ __all__ = [
     "ModelVariantsConfig",
     "get_model_for_project",
     "get_task_queue_for_project",
+    # Autopilot features
+    "SelfHealingConfig",
+    "LearningConfig",
+    "AutopilotFeaturesConfig",
 ]
