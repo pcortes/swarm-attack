@@ -219,12 +219,14 @@ Always output results as JSON with: verdict, evidence, issues, recommendations."
                 errors=["Required field 'changes' is missing or empty"],
             )
 
+        # Support both 'scope' and 'test_scope' keys (scope takes precedence)
+        scope_value = context.get("scope") or context.get("test_scope", SemanticScope.CHANGES_ONLY)
         self._log(
             "semantic_test_start",
             {
-                "scope": context.get("test_scope", SemanticScope.CHANGES_ONLY).value
-                if isinstance(context.get("test_scope"), SemanticScope)
-                else context.get("test_scope", "changes_only"),
+                "scope": scope_value.value
+                if isinstance(scope_value, SemanticScope)
+                else scope_value,
                 "has_scenarios": bool(context.get("test_scenarios")),
             },
         )
@@ -335,7 +337,8 @@ Always output results as JSON with: verdict, evidence, issues, recommendations."
         """
         changes = context.get("changes", "")
         expected = context.get("expected_behavior", "")
-        scope = context.get("test_scope", SemanticScope.CHANGES_ONLY)
+        # Support both 'scope' and 'test_scope' keys (scope takes precedence)
+        scope = context.get("scope") or context.get("test_scope", SemanticScope.CHANGES_ONLY)
         scenarios = context.get("test_scenarios", [])
 
         skill_section = self.skill_prompt if include_skill else ""
