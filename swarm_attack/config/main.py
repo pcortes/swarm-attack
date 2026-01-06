@@ -92,6 +92,7 @@ class DebateRetryConfig:
     backoff_base_seconds: float = 30.0  # 30s, not 5s
     backoff_multiplier: float = 2.0
     max_backoff_seconds: float = 300.0  # 300s (5 min), not 60s
+    rate_limit_calls_per_minute: int = 20  # 0 to disable preemption
 
 
 @dataclass
@@ -370,6 +371,7 @@ def _parse_debate_retry_config(data: dict[str, Any]) -> DebateRetryConfig:
         backoff_base_seconds=data.get("backoff_base_seconds", 30.0),
         backoff_multiplier=data.get("backoff_multiplier", 2.0),
         max_backoff_seconds=data.get("max_backoff_seconds", 300.0),
+        rate_limit_calls_per_minute=data.get("rate_limit_calls_per_minute", 20),
     )
 
 

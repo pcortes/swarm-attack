@@ -58,6 +58,9 @@ class TestStartResetsDailyCost:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -92,6 +95,9 @@ class TestCheckBeforeExecution:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -144,6 +150,9 @@ class TestCheckBeforeExecution:
                 checkpoint=mock_checkpoint,
             )
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -181,6 +190,9 @@ class TestUpdateDailyCost:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -261,6 +273,9 @@ class TestExecutionLoopBreaksOnCheckpointPending:
 
         checkpoint_system = MagicMock(spec=CheckpointSystem)
         checkpoint_system.check_before_execution = mock_check
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -325,6 +340,9 @@ class TestCheckpointCallback:
                 checkpoint=mock_checkpoint,
             )
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 

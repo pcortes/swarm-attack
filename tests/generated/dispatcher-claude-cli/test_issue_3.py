@@ -178,7 +178,9 @@ class TestRunAgent:
                 "Review this commit",
             )
 
-            assert any("json" in record.message.lower() or "invalid" in record.message.lower() for record in caplog.records)
+            # The implementation logs "Agent failed for {sha}: {e}" where e is the JSONDecodeError message
+            # JSONDecodeError message format is "{msg}: line {lineno} column {colno} (char {pos})"
+            assert any("failed" in record.message.lower() and sample_commit.sha in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_run_agent_returns_empty_list_on_exception(self, dispatcher, sample_commit):

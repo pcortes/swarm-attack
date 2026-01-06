@@ -15,6 +15,7 @@ from unittest.mock import patch, MagicMock
 from swarm_attack.chief_of_staff.checkpoints import (
     CheckpointSystem,
     CheckpointTrigger,
+    CheckpointTriggerKind,
     Checkpoint,
     CheckpointOption,
     CheckpointStore,
@@ -557,7 +558,7 @@ class TestProceedRecommended:
             estimated_minutes=30,
         )
 
-        for trigger in CheckpointTrigger:
+        for trigger in CheckpointTriggerKind:
             options = system._build_options(goal, trigger)
             recommended_count = sum(1 for opt in options if opt.is_recommended)
             assert recommended_count == 1, f"Expected 1 recommended option for {trigger}, got {recommended_count}"

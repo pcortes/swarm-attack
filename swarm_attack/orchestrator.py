@@ -925,22 +925,25 @@ class Orchestrator:
             # Step 1: Author generates spec (only on first round)
             if round_num == 1:
                 self._emit_progress("author_start", {"feature_id": feature_id})
-                self._author.reset()
-                author_result = self._author.run({"feature_id": feature_id})
-                total_cost += author_result.cost_usd
+                # Use retry handler for transient error recovery (rate limits, timeouts)
+                author_retry_result = self._debate_retry_handler.run_with_retry(
+                    self._author,
+                    {"feature_id": feature_id},
+                )
+                total_cost += author_retry_result.cost_usd
 
-                if author_result.success:
-                    spec_path = author_result.output.get("spec_path", "")
+                if author_retry_result.success:
+                    spec_path = author_retry_result.output.get("spec_path", "")
                     self._emit_progress("author_complete", {
                         "feature_id": feature_id,
                         "spec_path": spec_path,
-                        "cost_usd": author_result.cost_usd,
+                        "cost_usd": author_retry_result.cost_usd,
                     })
 
-                if not author_result.success:
+                if not author_retry_result.success:
                     self._log(
                         "author_failure",
-                        {"feature_id": feature_id, "error": author_result.errors},
+                        {"feature_id": feature_id, "error": author_retry_result.errors},
                         level="error",
                     )
                     self._update_phase(feature_id, FeaturePhase.BLOCKED)
@@ -950,8 +953,19 @@ class Orchestrator:
                         rounds_completed=0,
                         final_scores={},
                         total_cost_usd=total_cost,
-                        error=f"Spec author failed: {author_result.errors[0] if author_result.errors else 'Unknown error'}",
+                        error=f"Spec author failed: {author_retry_result.errors[0] if author_retry_result.errors else 'Unknown error'}",
                     )
+
+                # Intra-round delay after author completes (before critic) to prevent rapid API calls
+                intra_delay = getattr(self.config.spec_debate, 'intra_round_delay_seconds', 0)
+                if intra_delay > 0:
+                    self._log("intra_round_delay", {
+                        "feature_id": feature_id,
+                        "round": round_num,
+                        "delay_seconds": intra_delay,
+                        "after": "author",
+                    })
+                    time.sleep(intra_delay)
 
             # Step 2: Critic reviews spec (with rejection context for round 2+)
             self._emit_progress("critic_start", {"feature_id": feature_id, "round": round_num})

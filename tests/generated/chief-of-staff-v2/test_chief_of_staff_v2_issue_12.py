@@ -24,7 +24,6 @@ from swarm_attack.chief_of_staff.checkpoints import (
     CheckpointStore,
     CheckpointTrigger,
 )
-from swarm_attack.chief_of_staff.checkpoint_ux import CheckpointDecision
 from swarm_attack.chief_of_staff.config import ChiefOfStaffConfig
 from swarm_attack.chief_of_staff.goal_tracker import DailyGoal, GoalPriority, GoalStatus
 from swarm_attack.chief_of_staff.autopilot import AutopilotState
@@ -59,6 +58,9 @@ class TestStartResetsDailyCost:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -93,6 +95,9 @@ class TestCheckBeforeExecution:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -145,6 +150,9 @@ class TestCheckBeforeExecution:
                 checkpoint=mock_checkpoint,
             )
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -152,14 +160,6 @@ class TestCheckBeforeExecution:
             config=config,
             checkpoint_system=checkpoint_system,
             session_store=session_store,
-        )
-
-        # Mock checkpoint_ux to return pause decision (avoids stdin input)
-        runner.checkpoint_ux.prompt_and_wait = MagicMock(
-            return_value=CheckpointDecision(
-                checkpoint_id="chk-test",
-                chosen_option="pause",
-            )
         )
 
         goals = [
@@ -190,6 +190,9 @@ class TestUpdateDailyCost:
         checkpoint_system.check_before_execution = AsyncMock(
             return_value=CheckpointResult(requires_approval=False, approved=True)
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -270,6 +273,9 @@ class TestExecutionLoopBreaksOnCheckpointPending:
 
         checkpoint_system = MagicMock(spec=CheckpointSystem)
         checkpoint_system.check_before_execution = mock_check
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -277,14 +283,6 @@ class TestExecutionLoopBreaksOnCheckpointPending:
             config=config,
             checkpoint_system=checkpoint_system,
             session_store=session_store,
-        )
-
-        # Mock checkpoint_ux to return pause decision (avoids stdin input)
-        runner.checkpoint_ux.prompt_and_wait = MagicMock(
-            return_value=CheckpointDecision(
-                checkpoint_id="chk-ui",
-                chosen_option="pause",
-            )
         )
 
         goals = [
@@ -342,6 +340,9 @@ class TestCheckpointCallback:
                 checkpoint=mock_checkpoint,
             )
         )
+        # Mock the store attribute that cleanup_stale_checkpoints_sync needs
+        checkpoint_system.store = MagicMock()
+        checkpoint_system.store.cleanup_stale_checkpoints_sync = MagicMock()
         session_store = MagicMock()
         session_store.save = MagicMock()
 
@@ -355,14 +356,6 @@ class TestCheckpointCallback:
             checkpoint_system=checkpoint_system,
             session_store=session_store,
             on_checkpoint=on_checkpoint,
-        )
-
-        # Mock checkpoint_ux to return pause decision (avoids stdin input)
-        runner.checkpoint_ux.prompt_and_wait = MagicMock(
-            return_value=CheckpointDecision(
-                checkpoint_id="chk-test",
-                chosen_option="pause",
-            )
         )
 
         goals = [
@@ -403,14 +396,6 @@ class TestIntegrationWithCheckpointSystem:
             config=config,
             checkpoint_system=checkpoint_system,
             session_store=session_store,
-        )
-
-        # Mock checkpoint_ux to return pause decision (avoids stdin input)
-        runner.checkpoint_ux.prompt_and_wait = MagicMock(
-            return_value=CheckpointDecision(
-                checkpoint_id="chk-cost",
-                chosen_option="pause",
-            )
         )
 
         # Create a goal that will trigger COST_SINGLE

@@ -11,6 +11,7 @@ import shutil
 
 from swarm_attack.chief_of_staff.checkpoints import (
     CheckpointTrigger,
+    CheckpointTriggerKind,
     CheckpointOption,
     Checkpoint,
     CheckpointResult,
@@ -119,7 +120,7 @@ class TestCheckpoint:
     def test_has_trigger_field(self):
         cp = self._make_checkpoint()
         assert hasattr(cp, 'trigger')
-        assert isinstance(cp.trigger, CheckpointTrigger)
+        assert isinstance(cp.trigger, CheckpointTriggerKind)
 
     def test_has_context_field(self):
         cp = self._make_checkpoint()

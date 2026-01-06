@@ -25,6 +25,7 @@ from swarm_attack.chief_of_staff.recovery import (
 if TYPE_CHECKING:
     from swarm_attack.agents.base import BaseAgent
     from swarm_attack.config.main import DebateRetryConfig
+    from swarm_attack.rate_limit_tracker import RateLimitTracker
 
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,7 @@ class DebateRetryHandler:
     def __init__(
         self,
         config: Optional["DebateRetryConfig"] = None,
+        rate_limiter: Optional["RateLimitTracker"] = None,
         max_retries: int = DEFAULT_MAX_RETRIES,
         backoff_base_seconds: float = DEFAULT_BACKOFF_BASE_SECONDS,
         backoff_multiplier: float = DEFAULT_BACKOFF_MULTIPLIER,
@@ -87,6 +89,7 @@ class DebateRetryHandler:
 
         Args:
             config: Optional DebateRetryConfig object. If provided, overrides positional args.
+            rate_limiter: Optional RateLimitTracker for preemptive rate limiting.
             max_retries: Maximum number of retry attempts for transient errors.
             backoff_base_seconds: Initial backoff delay in seconds.
             backoff_multiplier: Multiplier for exponential backoff.
@@ -104,6 +107,8 @@ class DebateRetryHandler:
             self.backoff_base_seconds = backoff_base_seconds
             self.backoff_multiplier = backoff_multiplier
             self.max_backoff_seconds = max_backoff_seconds
+
+        self.rate_limiter = rate_limiter
 
     def _classify_error(self, error: Exception) -> ErrorCategory:
         """Classify an error to determine retry strategy.
@@ -152,6 +157,14 @@ class DebateRetryHandler:
             try:
                 # Reset agent state before each attempt
                 agent.reset()
+
+                # Preemptive rate limit check
+                if self.rate_limiter:
+                    should_wait, wait_time = self.rate_limiter.should_delay()
+                    if should_wait:
+                        logger.info("Preemptive rate limit delay: %.1fs", wait_time)
+                        time.sleep(wait_time)
+                    self.rate_limiter.record_call()
 
                 # Run the agent
                 result = agent.run(context)

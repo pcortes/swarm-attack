@@ -1,6 +1,6 @@
 # Swarm Attack
 
-**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack`
+**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2`
 **Branch:** `master`
 
 ---
@@ -10,8 +10,8 @@
 **Before reading further, run these commands:**
 
 ```bash
-cd /Users/philipjcortes/Desktop/swarm-attack
-pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack
+cd /Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack-autopilot-phase2
 git branch   # Must show: * master
 ```
 
@@ -520,6 +520,31 @@ The handler is automatically used by:
 |------|---------|
 | `swarm_attack/debate_retry.py` | DebateRetryHandler implementation |
 | `tests/unit/test_debate_retry.py` | Comprehensive unit tests (20 tests) |
+
+### Rate Limit Preemption (v0.3.2)
+
+Proactive rate limiting to prevent hitting Claude API limits.
+
+**Configuration:**
+```yaml
+debate_retry:
+  rate_limit_calls_per_minute: 20  # 0 to disable preemption
+```
+
+**How it works:**
+- Tracks API call timestamps over rolling 1-minute window
+- Before each call, checks if at limit (20 calls/minute default)
+- If at limit, preemptively delays until oldest call ages out
+- Prevents 429 errors instead of reacting to them
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `swarm_attack/rate_limit_tracker.py` | RateLimitTracker class |
+| `tests/unit/test_rate_limit_tracker.py` | Unit tests (20 tests) |
+
+**SpecAuthor Retry:**
+The SpecAuthor step now uses the same retry handler as Critic/Moderator, providing consistent error handling across the entire pipeline.
 
 ## Bug Fixer Agent (v0.4.0)
 

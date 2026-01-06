@@ -17,10 +17,10 @@ from swarm_attack.testing.adversarial_test_generator import (
     AdversarialTestGenerator,
     InterfaceSpec,
     GeneratedTest,
-    TestGenerationResult,
-    TestCategory,
+    AdversarialGenerationResult,
+    AdversarialCategory,
     MutationTestResult,
-    TestGenerationError,
+    AdversarialGenerationError,
 )
 from swarm_attack.config import SwarmConfig
 
@@ -175,44 +175,44 @@ class TestGeneratedTest:
         """Test creating a GeneratedTest."""
         test = GeneratedTest(
             name="test_add_positive_numbers",
-            category=TestCategory.HAPPY_PATH,
+            category=AdversarialCategory.HAPPY_PATH,
             code="def test_add_positive_numbers():\n    assert add(2, 3) == 5",
             description="Test adding two positive numbers",
             target_method="add",
         )
         assert test.name == "test_add_positive_numbers"
-        assert test.category == TestCategory.HAPPY_PATH
+        assert test.category == AdversarialCategory.HAPPY_PATH
         assert "assert add(2, 3) == 5" in test.code
 
     def test_generated_test_with_edge_case(self):
         """Test creating an edge case test."""
         test = GeneratedTest(
             name="test_add_negative_numbers",
-            category=TestCategory.EDGE_CASE,
+            category=AdversarialCategory.EDGE_CASE,
             code="def test_add_negative_numbers():\n    assert add(-1, -2) == -3",
             description="Test adding negative numbers",
             target_method="add",
         )
-        assert test.category == TestCategory.EDGE_CASE
+        assert test.category == AdversarialCategory.EDGE_CASE
 
     def test_generated_test_with_error_condition(self):
         """Test creating an error condition test."""
         test = GeneratedTest(
             name="test_divide_by_zero",
-            category=TestCategory.ERROR_CONDITION,
+            category=AdversarialCategory.ERROR_CONDITION,
             code="def test_divide_by_zero():\n    with pytest.raises(ZeroDivisionError):\n        divide(10, 0)",
             description="Test that division by zero raises error",
             target_method="divide",
             expected_exception="ZeroDivisionError",
         )
-        assert test.category == TestCategory.ERROR_CONDITION
+        assert test.category == AdversarialCategory.ERROR_CONDITION
         assert test.expected_exception == "ZeroDivisionError"
 
     def test_generated_test_to_dict(self):
         """Test converting GeneratedTest to dictionary."""
         test = GeneratedTest(
             name="test_example",
-            category=TestCategory.HAPPY_PATH,
+            category=AdversarialCategory.HAPPY_PATH,
             code="def test_example(): pass",
             description="Example test",
             target_method="example",
@@ -233,53 +233,53 @@ class TestGeneratedTest:
         }
         test = GeneratedTest.from_dict(data)
         assert test.name == "test_foo"
-        assert test.category == TestCategory.EDGE_CASE
+        assert test.category == AdversarialCategory.EDGE_CASE
 
 
 # ============================================================================
-# TestCategory Tests
+# AdversarialCategory Tests
 # ============================================================================
 
 
-class TestTestCategory:
-    """Tests for TestCategory enum."""
+class TestAdversarialCategory:
+    """Tests for AdversarialCategory enum."""
 
     def test_happy_path_category(self):
         """Test HAPPY_PATH category."""
-        assert TestCategory.HAPPY_PATH.value == "happy_path"
+        assert AdversarialCategory.HAPPY_PATH.value == "happy_path"
 
     def test_edge_case_category(self):
         """Test EDGE_CASE category."""
-        assert TestCategory.EDGE_CASE.value == "edge_case"
+        assert AdversarialCategory.EDGE_CASE.value == "edge_case"
 
     def test_error_condition_category(self):
         """Test ERROR_CONDITION category."""
-        assert TestCategory.ERROR_CONDITION.value == "error_condition"
+        assert AdversarialCategory.ERROR_CONDITION.value == "error_condition"
 
     def test_boundary_category(self):
         """Test BOUNDARY category."""
-        assert TestCategory.BOUNDARY.value == "boundary"
+        assert AdversarialCategory.BOUNDARY.value == "boundary"
 
     def test_null_empty_category(self):
         """Test NULL_EMPTY category."""
-        assert TestCategory.NULL_EMPTY.value == "null_empty"
+        assert AdversarialCategory.NULL_EMPTY.value == "null_empty"
 
     def test_type_coercion_category(self):
         """Test TYPE_COERCION category."""
-        assert TestCategory.TYPE_COERCION.value == "type_coercion"
+        assert AdversarialCategory.TYPE_COERCION.value == "type_coercion"
 
 
 # ============================================================================
-# TestGenerationResult Tests
+# AdversarialGenerationResult Tests
 # ============================================================================
 
 
-class TestTestGenerationResult:
-    """Tests for TestGenerationResult dataclass."""
+class TestAdversarialGenerationResult:
+    """Tests for AdversarialGenerationResult dataclass."""
 
     def test_create_result(self):
-        """Test creating a TestGenerationResult."""
-        result = TestGenerationResult(
+        """Test creating a AdversarialGenerationResult."""
+        result = AdversarialGenerationResult(
             success=True,
             tests=[],
             spec_name="Calculator",
@@ -293,13 +293,13 @@ class TestTestGenerationResult:
         tests = [
             GeneratedTest(
                 name="test_add",
-                category=TestCategory.HAPPY_PATH,
+                category=AdversarialCategory.HAPPY_PATH,
                 code="def test_add(): pass",
                 description="Test add",
                 target_method="add",
             ),
         ]
-        result = TestGenerationResult(
+        result = AdversarialGenerationResult(
             success=True,
             tests=tests,
             spec_name="Calculator",
@@ -309,7 +309,7 @@ class TestTestGenerationResult:
 
     def test_result_with_errors(self):
         """Test result with errors."""
-        result = TestGenerationResult(
+        result = AdversarialGenerationResult(
             success=False,
             tests=[],
             spec_name="Broken",
@@ -323,39 +323,39 @@ class TestTestGenerationResult:
         tests = [
             GeneratedTest(
                 name="test1",
-                category=TestCategory.HAPPY_PATH,
+                category=AdversarialCategory.HAPPY_PATH,
                 code="",
                 description="",
                 target_method="",
             ),
             GeneratedTest(
                 name="test2",
-                category=TestCategory.HAPPY_PATH,
+                category=AdversarialCategory.HAPPY_PATH,
                 code="",
                 description="",
                 target_method="",
             ),
             GeneratedTest(
                 name="test3",
-                category=TestCategory.EDGE_CASE,
+                category=AdversarialCategory.EDGE_CASE,
                 code="",
                 description="",
                 target_method="",
             ),
         ]
-        result = TestGenerationResult(
+        result = AdversarialGenerationResult(
             success=True,
             tests=tests,
             spec_name="Test",
         )
         counts = result.get_test_counts_by_category()
-        assert counts[TestCategory.HAPPY_PATH] == 2
-        assert counts[TestCategory.EDGE_CASE] == 1
-        assert counts.get(TestCategory.ERROR_CONDITION, 0) == 0
+        assert counts[AdversarialCategory.HAPPY_PATH] == 2
+        assert counts[AdversarialCategory.EDGE_CASE] == 1
+        assert counts.get(AdversarialCategory.ERROR_CONDITION, 0) == 0
 
     def test_result_to_dict(self):
         """Test converting result to dictionary."""
-        result = TestGenerationResult(
+        result = AdversarialGenerationResult(
             success=True,
             tests=[],
             spec_name="Test",
@@ -370,20 +370,20 @@ class TestTestGenerationResult:
         tests = [
             GeneratedTest(
                 name="test_a",
-                category=TestCategory.HAPPY_PATH,
+                category=AdversarialCategory.HAPPY_PATH,
                 code="def test_a():\n    pass",
                 description="",
                 target_method="",
             ),
             GeneratedTest(
                 name="test_b",
-                category=TestCategory.EDGE_CASE,
+                category=AdversarialCategory.EDGE_CASE,
                 code="def test_b():\n    pass",
                 description="",
                 target_method="",
             ),
         ]
-        result = TestGenerationResult(
+        result = AdversarialGenerationResult(
             success=True,
             tests=tests,
             spec_name="Test",
@@ -477,7 +477,7 @@ def test_add_large_numbers():
             )
             result = generator.generate(sample_spec)
 
-            edge_cases = [t for t in result.tests if t.category == TestCategory.EDGE_CASE]
+            edge_cases = [t for t in result.tests if t.category == AdversarialCategory.EDGE_CASE]
             assert len(edge_cases) > 0
 
     def test_generate_includes_error_conditions(self, generator, sample_spec):
@@ -499,7 +499,7 @@ def test_divide_by_zero():
             result = generator.generate(sample_spec)
 
             error_tests = [
-                t for t in result.tests if t.category == TestCategory.ERROR_CONDITION
+                t for t in result.tests if t.category == AdversarialCategory.ERROR_CONDITION
             ]
             assert len(error_tests) > 0
 
@@ -588,7 +588,7 @@ def test_add_basic():
         tests = generator._parse_tests(output)
         assert len(tests) == 1
         assert tests[0].name == "test_add_basic"
-        assert tests[0].category == TestCategory.HAPPY_PATH
+        assert tests[0].category == AdversarialCategory.HAPPY_PATH
         assert tests[0].target_method == "add"
 
     def test_parse_multiple_tests(self, generator):
@@ -621,7 +621,7 @@ def test_boundary():
 [/TESTS]
 """
         tests = generator._parse_tests(output)
-        assert tests[0].category == TestCategory.BOUNDARY
+        assert tests[0].category == AdversarialCategory.BOUNDARY
 
     def test_parse_extracts_exception(self, generator):
         """Test that parser extracts expected exception."""
@@ -715,7 +715,7 @@ class TestAdversarialTestGeneratorMutation:
         tests = [
             GeneratedTest(
                 name="test_add",
-                category=TestCategory.HAPPY_PATH,
+                category=AdversarialCategory.HAPPY_PATH,
                 code="def test_add():\n    assert add(1, 2) == 3",
                 description="Test add",
                 target_method="add",
@@ -842,10 +842,10 @@ def test_add_max_int():
 
             # Verify categories
             categories = [t.category for t in result.tests]
-            assert TestCategory.HAPPY_PATH in categories
-            assert TestCategory.EDGE_CASE in categories
-            assert TestCategory.ERROR_CONDITION in categories
-            assert TestCategory.BOUNDARY in categories
+            assert AdversarialCategory.HAPPY_PATH in categories
+            assert AdversarialCategory.EDGE_CASE in categories
+            assert AdversarialCategory.ERROR_CONDITION in categories
+            assert AdversarialCategory.BOUNDARY in categories
 
     def test_generate_and_verify_quality(self, generator, sample_spec):
         """Test generating tests and verifying quality with mutation testing."""
@@ -886,8 +886,8 @@ class TestAdversarialTestGeneratorErrors:
     """Tests for error handling."""
 
     def test_raises_error_on_invalid_spec(self, generator):
-        """Test that invalid spec raises TestGenerationError."""
-        with pytest.raises(TestGenerationError):
+        """Test that invalid spec raises AdversarialGenerationError."""
+        with pytest.raises(AdversarialGenerationError):
             generator.generate(None)
 
     def test_handles_llm_timeout(self, generator, sample_spec):

@@ -120,8 +120,6 @@ class TestCheckpoint:
     def test_has_trigger_field(self):
         cp = self._make_checkpoint()
         assert hasattr(cp, 'trigger')
-        # CheckpointTrigger is aliased to TriggerCheckResult dataclass;
-        # cp.trigger is CheckpointTriggerKind enum value
         assert isinstance(cp.trigger, CheckpointTriggerKind)
 
     def test_has_context_field(self):
