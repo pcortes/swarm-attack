@@ -405,12 +405,12 @@ def semantic_test_command(
 
     # Try to use SemanticTesterAgent if available
     try:
-        from swarm_attack.qa.agents.semantic_tester import SemanticTesterAgent, TestScope
+        from swarm_attack.qa.agents.semantic_tester import SemanticTesterAgent, SemanticScope
 
         with console.status("[yellow]Running semantic testing...[/yellow]"):
             agent = SemanticTesterAgent(config)
             # Convert CLI scope to agent scope
-            agent_scope = TestScope(scope.value)
+            agent_scope = SemanticScope(scope.value)
             context["test_scope"] = agent_scope
             result = agent.run(context)
 
