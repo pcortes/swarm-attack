@@ -43,3 +43,6 @@ htmlcov/
 .DS_Store
 *.log
 worktrees/
+
+# Swarm Attack runtime state
+.swarm/memory/

@@ -1,7 +1,7 @@
-# Swarm Attack QA Agent
+# Swarm Attack
 
-**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack-qa-agent`
-**Branch:** `feature/adaptive-qa-agent`
+**Working Directory:** `/Users/philipjcortes/Desktop/swarm-attack`
+**Branch:** `master`
 
 ---
 
@@ -10,9 +10,9 @@
 **Before reading further, run these commands:**
 
 ```bash
-cd /Users/philipjcortes/Desktop/swarm-attack-qa-agent
-pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack-qa-agent
-git branch   # Must show: * feature/adaptive-qa-agent
+cd /Users/philipjcortes/Desktop/swarm-attack
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack
+git branch   # Must show: * master
 ```
 
 **STOP if you're not in the correct worktree.**

@@ -1,0 +1,546 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Autopilot Orchestration Implementation
+
+  Created: 2026-01-05
+  Previous Session: Partially completed Phase 1-4 tests and implementations
+  Purpose: Continue implementing autopilot orchestration with parallel subagents
+
+  STATUS: Phase 1 ~80% complete, Phase 2-4 tests written but implementations pending
+-->
+<continuation_prompt>
+  <metadata>
+    <title>Continue Autopilot Orchestration Implementation</title>
+    <original_spec>specs/2026-01-05_autopilot-orchestration-IMPLEMENTATION_PROMPT.xml</original_spec>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration</working_directory>
+    <branch>feature/autopilot-orchestration</branch>
+    <created>2026-01-05</created>
+    <execution_model>parallel_subagents</execution_model>
+    <max_concurrent_agents>20</max_concurrent_agents>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- CURRENT STATE SUMMARY                                        -->
+  <!-- ============================================================ -->
+  <current_state>
+    <description>
+      Previous session spawned 13 subagents for TDD implementation.
+      Phase 1 is mostly complete with tests passing.
+      Phase 2-4 have tests written but need implementations.
+    </description>
+
+    <worktree_status>
+      <path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration</path>
+      <branch>feature/autopilot-orchestration</branch>
+      <uncommitted_files>17 new directories/files (untracked)</uncommitted_files>
+    </worktree_status>
+
+    <!-- PHASE 1: COMPLETED -->
+    <completed_phase1>
+      <module name="SafetyNetHook" status="COMPLETE">
+        <test_file>tests/unit/hooks/test_safety_net.py</test_file>
+        <impl_file>swarm_attack/hooks/safety_net.py</impl_file>
+        <test_count>87+ tests</test_count>
+        <notes>Blocks rm -rf, git push --force, DROP TABLE, etc. Override via SAFETY_NET_OVERRIDE=1</notes>
+      </module>
+
+      <module name="ContinuityLedger" status="COMPLETE">
+        <test_file>tests/unit/continuity/test_ledger.py</test_file>
+        <impl_file>swarm_attack/continuity/ledger.py</impl_file>
+        <test_count>57 tests</test_count>
+        <notes>Goals, decisions, blockers, handoff notes. Session continuation works.</notes>
+      </module>
+
+      <module name="HandoffManager" status="COMPLETE">
+        <test_file>tests/unit/continuity/test_handoff.py</test_file>
+        <impl_file>swarm_attack/continuity/handoff.py</impl_file>
+        <test_count>~30 tests</test_count>
+        <notes>generate_handoff(), on_precompact(), inject_into_ledger() working</notes>
+      </module>
+
+      <module name="ContextMonitor" status="COMPLETE">
+        <test_file>tests/unit/statusline/test_context_monitor.py</test_file>
+        <impl_file>swarm_attack/statusline/context_monitor.py</impl_file>
+        <test_count>40 tests</test_count>
+        <notes>70/80/90% warning levels, 85% handoff suggestion</notes>
+      </module>
+    </completed_phase1>
+
+    <!-- PHASE 2-4: TESTS WRITTEN, IMPLEMENTATIONS NEEDED -->
+    <pending_implementations>
+      <module name="AutoVerifyHook" phase="2" priority="HIGH">
+        <test_file>tests/unit/hooks/test_auto_verify.py</test_file>
+        <impl_file>swarm_attack/hooks/auto_verify.py</impl_file>
+        <test_count>~80 tests across 13 classes</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          PostToolUse hook that runs pytest and ruff after file changes.
+          Creates verification records in .swarm/verification/
+        </description>
+        <exports_required>
+          - AutoVerifyHook
+          - VerificationResult (dataclass)
+          - VerificationRecord (dataclass)
+          - VerificationError (exception)
+        </exports_required>
+      </module>
+
+      <module name="PVIPipeline" phase="2" priority="HIGH">
+        <test_file>tests/unit/orchestration/test_pvi_pipeline.py</test_file>
+        <impl_file>swarm_attack/orchestration/pvi_pipeline.py</impl_file>
+        <test_count>~100 tests</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Plan-Validate-Implement pipeline with 3 stages.
+          Each stage produces handoff for next stage.
+        </description>
+      </module>
+
+      <module name="CommandHistory" phase="2" priority="MEDIUM">
+        <test_file>tests/unit/logging/test_command_history.py</test_file>
+        <impl_file>swarm_attack/logging/command_history.py</impl_file>
+        <test_count>~70 tests</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Logs commands, reasoning, outcomes per commit.
+          Stored in .swarm/history/ with commit SHA reference.
+          Searchable, redacts secrets.
+        </description>
+      </module>
+
+      <module name="StatuslineHUD" phase="3" priority="MEDIUM">
+        <test_file>tests/unit/statusline/test_hud.py</test_file>
+        <impl_file>swarm_attack/statusline/hud.py</impl_file>
+        <test_count>~50 tests</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Shows model, context %, active agent, task, todo progress.
+          Uses Claude Code native statusline API.
+        </description>
+      </module>
+
+      <module name="DashboardStatusView" phase="3" priority="MEDIUM">
+        <test_file>tests/unit/dashboard/test_status_view.py</test_file>
+        <impl_file>swarm_attack/dashboard/status_view.py</impl_file>
+        <test_count>~60 tests</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          JSON-based status file at .swarm/status.json
+          Updates on agent transitions and task completions.
+        </description>
+      </module>
+
+      <module name="ModelVariants" phase="4" priority="LOW">
+        <test_file>tests/unit/config/test_model_variants.py</test_file>
+        <impl_file>swarm_attack/config/model_variants.py</impl_file>
+        <test_count>~50 tests</test_count>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Model per project in config.yaml.
+          Isolate task queues by project.
+          Support Opus 4.5 and alternates.
+        </description>
+      </module>
+
+      <module name="PrioritySync" phase="4" priority="LOW">
+        <test_file>tests/unit/coo_integration/test_priority_sync.py</test_file>
+        <impl_file>swarm_attack/coo_integration/priority_sync.py</impl_file>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Sync with COO priority board.
+          Push completed specs, pull priorities, enforce budgets.
+        </description>
+      </module>
+
+      <module name="SpecArchival" phase="4" priority="LOW">
+        <test_file>tests/unit/coo_integration/test_spec_archival.py</test_file>
+        <impl_file>swarm_attack/coo_integration/spec_archival.py</impl_file>
+        <status>TESTS WRITTEN - NEEDS IMPLEMENTATION</status>
+        <description>
+          Auto-archive specs to COO format.
+          Include timestamps and traceability metadata.
+        </description>
+      </module>
+    </pending_implementations>
+
+    <!-- STILL RUNNING AGENTS (may have completed by continuation time) -->
+    <running_agents>
+      <agent id="afa316b" task="Implement AutoVerifyHook">
+        <tokens_used>1,800,000+</tokens_used>
+        <status>Running - implementing auto_verify.py</status>
+        <output_file>/tmp/claude/-Users-philipjcortes-Desktop-coo/tasks/afa316b.output</output_file>
+        <notes>Check output to see if implementation completed</notes>
+      </agent>
+      <agent id="af30c89" task="Implement SafetyNetHook">
+        <tokens_used>350,000+</tokens_used>
+        <status>Running - may have completed safety_net.py</status>
+        <output_file>/tmp/claude/-Users-philipjcortes-Desktop-coo/tasks/af30c89.output</output_file>
+      </agent>
+    </running_agents>
+  </current_state>
+
+  <!-- ============================================================ -->
+  <!-- VERIFICATION COMMANDS - RUN FIRST                           -->
+  <!-- ============================================================ -->
+  <verification_commands><![CDATA[
+# STEP 1: Verify worktree exists and navigate
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+pwd      # Must show: /Users/.../autopilot-orchestration
+git branch   # Must show: * feature/autopilot-orchestration
+
+# STEP 2: Check what implementations exist
+ls -la swarm_attack/hooks/
+ls -la swarm_attack/continuity/
+ls -la swarm_attack/statusline/
+ls -la swarm_attack/orchestration/
+ls -la swarm_attack/logging/
+ls -la swarm_attack/dashboard/
+ls -la swarm_attack/coo_integration/
+ls -la swarm_attack/config/
+
+# STEP 3: Run Phase 1 tests to verify state
+PYTHONPATH=. python -m pytest tests/unit/hooks/test_safety_net.py -v --tb=short -q 2>&1 | tail -20
+PYTHONPATH=. python -m pytest tests/unit/continuity/ -v --tb=short -q 2>&1 | tail -20
+PYTHONPATH=. python -m pytest tests/unit/statusline/test_context_monitor.py -v --tb=short -q 2>&1 | tail -20
+
+# STEP 4: Check if running agents completed their work
+ls -la swarm_attack/hooks/auto_verify.py 2>/dev/null || echo "auto_verify.py NOT CREATED"
+  ]]></verification_commands>
+
+  <!-- ============================================================ -->
+  <!-- PARALLEL EXECUTION PLAN                                      -->
+  <!-- ============================================================ -->
+  <execution_plan>
+    <description>
+      Spawn up to 20 subagents to implement remaining modules.
+      All tests are already written - just need GREEN phase implementations.
+      Each agent reads its test file and implements to pass tests.
+    </description>
+
+    <wave id="1" name="HIGH Priority Implementations">
+      <description>Implement Phase 2 modules first (orchestration and verification)</description>
+      <spawn_parallel>
+        <subagent id="impl-1" name="Implement AutoVerifyHook">
+          <skip_if>swarm_attack/hooks/auto_verify.py exists and has content</skip_if>
+          <task><![CDATA[
+Implement AutoVerifyHook in swarm_attack/hooks/auto_verify.py
+
+Read the test file first:
+  tests/unit/hooks/test_auto_verify.py
+
+Required exports:
+- AutoVerifyHook: PostToolUse hook that runs pytest and ruff
+- VerificationResult: Dataclass with success, tests_passed, tests_failed, lint_errors, output, error, errors
+- VerificationRecord: Dataclass for .swarm/verification/ records
+- VerificationError: Exception raised on verification failure
+
+Key methods:
+- __init__(config, logger=None, linter="ruff")
+- run_tests(test_files) -> VerificationResult
+- run_linter(files) -> VerificationResult
+- verify(modified_files, test_files, fail_fast=True) -> VerificationResult
+- should_trigger(event_type, file_path) -> bool
+- on_post_tool_use(tool_name, tool_args, tool_result)
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/hooks/test_auto_verify.py -v --tb=short
+          ]]></task>
+        </subagent>
+
+        <subagent id="impl-2" name="Implement PVIPipeline">
+          <task><![CDATA[
+Implement Plan-Validate-Implement pipeline in swarm_attack/orchestration/pvi_pipeline.py
+
+Read the test file first:
+  tests/unit/orchestration/test_pvi_pipeline.py
+
+This is a 3-stage orchestration pipeline:
+1. Plan stage: Creates implementation plan with steps
+2. Validate stage: Runs checks (tests exist, deps resolved)
+3. Implement stage: Executes with verification gates
+
+Each stage produces artifacts/handoff for next stage.
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/orchestration/test_pvi_pipeline.py -v --tb=short
+          ]]></task>
+        </subagent>
+
+        <subagent id="impl-3" name="Implement CommandHistory">
+          <task><![CDATA[
+Implement command logging in swarm_attack/logging/command_history.py
+
+Read the test file first:
+  tests/unit/logging/test_command_history.py
+
+Features:
+- Log command, timestamp, outcome, reasoning
+- Link to git commit SHA when available
+- Searchable by date, command type, or outcome
+- Redact secrets from logged commands
+- Store in .swarm/history/
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/logging/test_command_history.py -v --tb=short
+          ]]></task>
+        </subagent>
+      </spawn_parallel>
+    </wave>
+
+    <wave id="2" name="MEDIUM Priority Implementations">
+      <description>Implement Phase 3 observability modules</description>
+      <wait_for>wave_1</wait_for>
+      <spawn_parallel>
+        <subagent id="impl-4" name="Implement StatuslineHUD">
+          <task><![CDATA[
+Implement statusline HUD in swarm_attack/statusline/hud.py
+
+Read the test file first:
+  tests/unit/statusline/test_hud.py
+
+Features:
+- Display model name and context percentage
+- Show active agent and current task
+- Show todo progress (X/Y completed)
+- Works on macOS, Linux, Windows without bash
+- Uses Claude Code native statusline API
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/statusline/test_hud.py -v --tb=short
+          ]]></task>
+        </subagent>
+
+        <subagent id="impl-5" name="Implement DashboardStatusView">
+          <task><![CDATA[
+Implement dashboard status view in swarm_attack/dashboard/status_view.py
+
+Read the test file first:
+  tests/unit/dashboard/test_status_view.py
+
+Features:
+- Write .swarm/status.json on state changes
+- Include: agents, tasks, context, last_update timestamp
+- Support terminal-based viewer (optional)
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/dashboard/test_status_view.py -v --tb=short
+          ]]></task>
+        </subagent>
+      </spawn_parallel>
+    </wave>
+
+    <wave id="3" name="LOW Priority Implementations">
+      <description>Implement Phase 4 COO integration modules</description>
+      <wait_for>wave_2</wait_for>
+      <spawn_parallel>
+        <subagent id="impl-6" name="Implement ModelVariants">
+          <task><![CDATA[
+Implement model variants config in swarm_attack/config/model_variants.py
+
+Read the test file first:
+  tests/unit/config/test_model_variants.py
+
+Features:
+- Configure model per project in config.yaml
+- Isolate task queues by project
+- Support Opus 4.5 and alternate providers
+
+NOTE: A swarm_attack/config/ directory may conflict with swarm_attack/config.py
+If so, use a different approach or rename.
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/config/test_model_variants.py -v --tb=short
+          ]]></task>
+        </subagent>
+
+        <subagent id="impl-7" name="Implement PrioritySync">
+          <task><![CDATA[
+Implement COO priority sync in swarm_attack/coo_integration/priority_sync.py
+
+Read the test file first:
+  tests/unit/coo_integration/test_priority_sync.py
+
+Features:
+- Push completed specs to COO archive
+- Pull priority rankings from COO board
+- Enforce budget limits from COO config
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/coo_integration/test_priority_sync.py -v --tb=short
+          ]]></task>
+        </subagent>
+
+        <subagent id="impl-8" name="Implement SpecArchival">
+          <task><![CDATA[
+Implement spec archival in swarm_attack/coo_integration/spec_archival.py
+
+Read the test file first:
+  tests/unit/coo_integration/test_spec_archival.py
+
+Features:
+- Archive approved specs to COO/projects/{project}/specs/
+- Archive test reports to COO/projects/{project}/qa/
+- Include creation date, author, and approval status
+
+Run tests after implementation:
+  PYTHONPATH=. python -m pytest tests/unit/coo_integration/test_spec_archival.py -v --tb=short
+          ]]></task>
+        </subagent>
+      </spawn_parallel>
+    </wave>
+
+    <wave id="4" name="Integration and Verification">
+      <description>Run full test suite and commit</description>
+      <wait_for>wave_3</wait_for>
+      <spawn_parallel>
+        <subagent id="verify-1" name="Run Full Test Suite">
+          <task><![CDATA[
+Run full test suite for all new modules:
+
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+
+# Run all new tests
+PYTHONPATH=. python -m pytest tests/unit/hooks/ tests/unit/continuity/ tests/unit/statusline/ tests/unit/orchestration/ tests/unit/logging/ tests/unit/dashboard/ tests/unit/coo_integration/ tests/unit/config/ -v --tb=short 2>&1 | tail -100
+
+# Count passed/failed
+PYTHONPATH=. python -m pytest tests/unit/hooks/ tests/unit/continuity/ tests/unit/statusline/ tests/unit/orchestration/ tests/unit/logging/ tests/unit/dashboard/ tests/unit/coo_integration/ tests/unit/config/ --co -q 2>&1 | tail -5
+
+Report any failures for fixing.
+          ]]></task>
+        </subagent>
+
+        <subagent id="verify-2" name="Update Module Exports">
+          <task><![CDATA[
+Update __init__.py files with proper exports for all modules:
+
+1. swarm_attack/hooks/__init__.py - export SafetyNetHook, AutoVerifyHook
+2. swarm_attack/continuity/__init__.py - export ContinuityLedger, Handoff, HandoffManager
+3. swarm_attack/statusline/__init__.py - export ContextMonitor, StatuslineHUD
+4. swarm_attack/orchestration/__init__.py - export PVIPipeline
+5. swarm_attack/logging/__init__.py - export CommandHistory
+6. swarm_attack/dashboard/__init__.py - export DashboardStatusView
+7. swarm_attack/coo_integration/__init__.py - export PrioritySync, SpecArchival
+
+Verify all imports work:
+  python -c "from swarm_attack.hooks import SafetyNetHook, AutoVerifyHook"
+  python -c "from swarm_attack.continuity import ContinuityLedger, Handoff"
+  python -c "from swarm_attack.statusline import ContextMonitor"
+          ]]></task>
+        </subagent>
+      </spawn_parallel>
+    </wave>
+
+    <wave id="5" name="Commit and PR">
+      <description>Commit all changes and create PR</description>
+      <wait_for>wave_4</wait_for>
+      <single_agent id="commit-1" name="Commit and Push">
+        <task><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/autopilot-orchestration
+
+# Stage all new files
+git add -A
+
+# Check what's staged
+git status
+
+# Commit with comprehensive message
+git commit -m "$(cat <<'EOF'
+feat(autopilot): implement autopilot orchestration best practices
+
+Phase 1 - Safety and Continuity:
+- SafetyNetHook: blocks destructive commands (rm -rf /, git push --force, DROP TABLE)
+- ContinuityLedger: tracks goals, decisions, blockers across sessions
+- HandoffManager: auto-generates handoffs on context compaction
+- ContextMonitor: warns at 70/80/90% context usage
+
+Phase 2 - Orchestration and Verification:
+- AutoVerifyHook: runs pytest/ruff after file changes
+- PVIPipeline: plan-validate-implement orchestration
+- CommandHistory: logs commands with reasoning
+
+Phase 3 - Observability:
+- StatuslineHUD: displays model, context%, task progress
+- DashboardStatusView: JSON status at .swarm/status.json
+
+Phase 4 - COO Integration:
+- ModelVariants: per-project model configuration
+- PrioritySync: syncs with COO priority board
+- SpecArchival: auto-archives specs to COO format
+
+All implementations follow TDD with comprehensive test coverage.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+
+# Push branch
+git push origin feature/autopilot-orchestration
+
+# Report status
+echo "Branch pushed. Ready for PR."
+        ]]></task>
+      </single_agent>
+    </wave>
+  </execution_plan>
+
+  <!-- ============================================================ -->
+  <!-- TDD PROTOCOL REMINDER                                        -->
+  <!-- ============================================================ -->
+  <tdd_protocol>
+    <phase name="GREEN">Tests already exist. Implement minimal code to pass tests.</phase>
+    <phase name="REFACTOR">After tests pass, refine without changing behavior.</phase>
+    <rule>Read the test file FIRST before implementing.</rule>
+    <rule>Match expected exports, class names, and method signatures from tests.</rule>
+    <rule>Run tests after implementation to verify GREEN.</rule>
+  </tdd_protocol>
+
+  <!-- ============================================================ -->
+  <!-- EXPERT TEAM STRUCTURE                                        -->
+  <!-- ============================================================ -->
+  <team_structure>
+    <expert role="Chief Architect" focus="Orchestration boundaries, hook lifecycle"/>
+    <expert role="QA Director" focus="Test coverage, integration testing"/>
+    <expert role="Security Lead" focus="Command blocking, secrets hygiene"/>
+    <expert role="COO" focus="Spec archival, priority alignment"/>
+    <expert role="Platform Engineer" focus="Cross-platform compatibility"/>
+    <expert role="Delivery Manager" focus="Completion promises, release readiness"/>
+  </team_structure>
+
+  <!-- ============================================================ -->
+  <!-- COMPLETION CRITERIA                                          -->
+  <!-- ============================================================ -->
+  <completion_criteria>
+    <criterion>All module tests pass (unit + integration)</criterion>
+    <criterion>All __init__.py files have proper exports</criterion>
+    <criterion>Safety net blocks destructive commands in live test</criterion>
+    <criterion>Continuity survives simulated compaction</criterion>
+    <criterion>Statusline works on macOS without bash dependency</criterion>
+    <criterion>Changes committed to feature branch</criterion>
+    <criterion>Branch pushed to origin</criterion>
+  </completion_criteria>
+
+  <!-- ============================================================ -->
+  <!-- START INSTRUCTIONS                                           -->
+  <!-- ============================================================ -->
+  <start_instructions><![CDATA[
+1. Run verification_commands to confirm worktree state
+2. Check which implementations already exist
+3. Spawn Wave 1 agents in parallel for HIGH priority modules
+4. Wait for Wave 1 to complete
+5. Spawn Wave 2 agents for MEDIUM priority modules
+6. Continue through waves until complete
+7. Run full test suite
+8. Commit and push
+
+For each implementation:
+1. Read the test file FIRST
+2. Note required exports, methods, and behavior
+3. Implement minimal code to pass tests
+4. Run tests to verify GREEN
+5. Report completion
+
+If tests fail, fix the implementation before moving on.
+  ]]></start_instructions>
+</continuation_prompt>

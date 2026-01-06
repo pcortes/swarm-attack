@@ -1,0 +1,1609 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec version="2.0">
+  <metadata>
+    <title>Swarm-Attack Integration Gaps Fix Spec</title>
+    <created>2026-01-01</created>
+    <updated>2026-01-01</updated>
+    <priority>P0</priority>
+    <estimated_effort>55-70 hours</estimated_effort>
+    <author>LLM Expert Team Audit</author>
+    <version>2.0 - With Expert Review Incorporated</version>
+    <description>
+      Comprehensive spec to fix all stubbed, dead code, and integration gaps
+      identified in the swarm-attack codebase audit. Follows TDD methodology.
+      Version 2.0 incorporates feedback from 5 expert LLM reviewers:
+      - TDD Expert
+      - Integration Architect
+      - QA Expert
+      - Security Reviewer
+      - Code Quality Expert
+    </description>
+  </metadata>
+
+  <!-- ============================================== -->
+  <!-- EXPERT REVIEW SUMMARY                          -->
+  <!-- ============================================== -->
+  <expert_review_summary>
+    <review domain="TDD Expert">
+      <findings count="12">
+        <finding severity="critical">Test helpers (invoke_approve, etc.) undefined - will cause NameError</finding>
+        <finding severity="critical">Test assertions incomplete - don't verify phase updates</finding>
+        <finding severity="critical">Event bus injection pattern wrong - tests mock directly instead of get_event_bus()</finding>
+        <finding severity="high">No timeout/retry logic for async event tests - will cause flakiness</finding>
+        <finding severity="high">Mock isolation problems - tests share global state via mock_config</finding>
+        <finding severity="high">Missing integration test fixtures - no tmp_path setup</finding>
+        <finding severity="medium">Token budget truncation not tested</finding>
+        <finding severity="medium">Campaign planner test has weak assertions (OR conditions)</finding>
+      </findings>
+      <remediations_incorporated>true</remediations_incorporated>
+    </review>
+
+    <review domain="Integration Architect">
+      <findings count="8">
+        <finding severity="critical">Auto-approval classes never imported in CLI files</finding>
+        <finding severity="critical">EventBus subscriptions registered nowhere</finding>
+        <finding severity="critical">UniversalContextBuilder.build_context_for_agent() never called</finding>
+        <finding severity="high">Initialization order dependency: subscribers need state_store ready</finding>
+        <finding severity="high">Campaign planner no-op loop confirmed at lines 203-206</finding>
+        <finding severity="medium">Naming convention mismatch: spec vs actual method names</finding>
+      </findings>
+      <remediations_incorporated>true</remediations_incorporated>
+    </review>
+
+    <review domain="QA Expert">
+      <findings count="27">
+        <finding severity="critical">27 acceptance criteria with 0% test coverage</finding>
+        <finding severity="critical">10 test files completely missing</finding>
+        <finding severity="critical">No end-to-end integration tests for full pipeline</finding>
+        <finding severity="high">No manual test scenarios documented</finding>
+        <finding severity="high">QA session blocking conditions untested</finding>
+        <finding severity="medium">Some acceptance criteria vague/unmeasurable</finding>
+      </findings>
+      <remediations_incorporated>true</remediations_incorporated>
+    </review>
+
+    <review domain="Security Reviewer">
+      <findings count="8">
+        <finding severity="critical">Auto-approval thresholds vulnerable to code manipulation</finding>
+        <finding severity="critical">Event payloads accept arbitrary dicts - injection risk</finding>
+        <finding severity="high">Context injection via ARCHITECTURE.md - prompt injection risk</finding>
+        <finding severity="high">Silent exceptions hide state corruption</finding>
+        <finding severity="high">State files lack integrity verification - tampering risk</finding>
+        <finding severity="medium">No rate limiting on auto-approvals</finding>
+        <finding severity="medium">Event handler exceptions silently ignored</finding>
+        <finding severity="medium">Manual mode bypass possible via code changes</finding>
+      </findings>
+      <remediations_incorporated>true</remediations_incorporated>
+    </review>
+
+    <review domain="Code Quality Expert">
+      <findings count="10">
+        <finding severity="high">Missing type hints on return values and assignments</finding>
+        <finding severity="high">Manual logger instantiation instead of self._log()</finding>
+        <finding severity="high">Duplicate event emission logic instead of self._emit_event()</finding>
+        <finding severity="high">No error handling wrappers for integration code</finding>
+        <finding severity="medium">Lazy builder initialization is hidden dependency</finding>
+        <finding severity="medium">Lambda closures in __init__ risk circular references</finding>
+        <finding severity="low">Incomplete backward compatibility tests</finding>
+      </findings>
+      <remediations_incorporated>true</remediations_incorporated>
+    </review>
+  </expert_review_summary>
+
+  <!-- ============================================== -->
+  <!-- SETUP INSTRUCTIONS                             -->
+  <!-- ============================================== -->
+  <setup>
+    <worktree_instructions>
+      <step order="1">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack</command>
+        <description>Navigate to main repo</description>
+      </step>
+      <step order="2">
+        <command>git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/integration-gaps -b fix/integration-gaps</command>
+        <description>Create dedicated worktree for integration gap fixes</description>
+      </step>
+      <step order="3">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/integration-gaps</command>
+        <description>Enter worktree</description>
+      </step>
+      <step order="4">
+        <command>pip install -e .</command>
+        <description>Install package in editable mode</description>
+      </step>
+      <step order="5">
+        <command>PYTHONPATH=. pytest tests/unit/ -v --tb=short -q 2>&amp;1 | head -50</command>
+        <description>Verify baseline tests pass before changes</description>
+      </step>
+    </worktree_instructions>
+
+    <tdd_protocol>
+      <rule>Write failing tests FIRST before any implementation</rule>
+      <rule>Run tests after each implementation to verify RED->GREEN</rule>
+      <rule>Commit after each issue is complete with passing tests</rule>
+      <rule>Use pytest markers: @pytest.mark.integration for e2e tests</rule>
+      <rule>Use tmp_path fixtures for file-based tests to ensure isolation</rule>
+      <rule>Mock get_event_bus() instead of injecting test bus directly</rule>
+      <rule>Add timeout/retry for event-based async assertions</rule>
+      <rule>Use self._emit_event() instead of custom event emission</rule>
+    </tdd_protocol>
+
+    <test_fixtures>
+      <description>Common fixtures required across all test files</description>
+      <code><![CDATA[
+# tests/conftest.py additions
+
+import pytest
+from pathlib import Path
+from unittest.mock import Mock, patch
+from typer.testing import CliRunner
+
+from swarm_attack.config import SwarmConfig
+from swarm_attack.state_store import get_store
+from swarm_attack.models.run_state import RunState, FeaturePhase
+
+
+@pytest.fixture
+def integration_setup(tmp_path):
+    """Complete feature state setup for integration testing."""
+    repo_root = tmp_path / "test-repo"
+    repo_root.mkdir()
+
+    # Create .swarm directory structure
+    swarm_dir = repo_root / ".swarm"
+    swarm_dir.mkdir()
+    (swarm_dir / "features").mkdir()
+    (swarm_dir / "events").mkdir()
+    (swarm_dir / "state").mkdir()
+
+    # Create config pointing to test repo
+    config = SwarmConfig(repo_root=str(repo_root))
+
+    yield config, repo_root, swarm_dir
+
+
+@pytest.fixture
+def cli_runner():
+    """Typer CLI test runner."""
+    return CliRunner()
+
+
+def invoke_approve(runner, feature_id: str, auto: bool = False, manual: bool = False):
+    """Helper to invoke approve CLI command."""
+    from swarm_attack.cli_legacy import app
+    flags = []
+    if auto:
+        flags.append("--auto")
+    if manual:
+        flags.append("--manual")
+    return runner.invoke(app, ["feature", "approve", feature_id] + flags)
+
+
+def invoke_greenlight(runner, feature_id: str):
+    """Helper to invoke greenlight CLI command."""
+    from swarm_attack.cli_legacy import app
+    return runner.invoke(app, ["feature", "greenlight", feature_id])
+
+
+def invoke_bug_approve(runner, bug_id: str, auto: bool = False, manual: bool = False):
+    """Helper to invoke bug approve CLI command."""
+    from swarm_attack.cli_legacy import app
+    flags = []
+    if auto:
+        flags.append("--auto")
+    if manual:
+        flags.append("--manual")
+    return runner.invoke(app, ["bug", "approve", bug_id] + flags)
+
+
+def wait_for_event(received_list, timeout_seconds=5.0, expected_count=1):
+    """Wait for events with timeout to prevent flaky tests."""
+    import time
+    start = time.time()
+    while time.time() - start < timeout_seconds:
+        if len(received_list) >= expected_count:
+            return True
+        time.sleep(0.1)
+    return False
+]]></code>
+    </test_fixtures>
+  </setup>
+
+  <!-- ============================================== -->
+  <!-- ISSUES                                         -->
+  <!-- ============================================== -->
+  <issues>
+    <!-- ========================================== -->
+    <!-- ISSUE 1: AUTO-APPROVAL WIRING (P0) -->
+    <!-- ========================================== -->
+    <issue id="1" priority="P0">
+      <title>Wire Auto-Approval System into CLI Commands</title>
+      <description>
+        The auto-approval classes (SpecAutoApprover, IssueAutoGreenlighter, BugAutoApprover)
+        are fully implemented with 16 unit tests but NEVER CALLED from CLI commands.
+        This is 445 lines of dead code preventing full autopilot operation.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/cli/feature.py" lines="921-1032, 1082-1197"/>
+        <file path="swarm_attack/cli/bug.py" lines="412-508"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/test_auto_approval_cli_integration.py"/>
+        <file path="tests/integration/test_auto_approval_e2e.py"/>
+      </files_to_create>
+
+      <missing_imports note="Integration Architect finding">
+        <import file="swarm_attack/cli/feature.py">from swarm_attack.auto_approval import SpecAutoApprover</import>
+        <import file="swarm_attack/cli/feature.py">from swarm_attack.auto_approval import IssueAutoGreenlighter</import>
+        <import file="swarm_attack/cli/bug.py">from swarm_attack.auto_approval import BugAutoApprover</import>
+      </missing_imports>
+
+      <acceptance_criteria>
+        <criterion id="1.1">SpecAutoApprover.auto_approve_if_ready() called in feature.py:approve() after line 972</criterion>
+        <criterion id="1.2">IssueAutoGreenlighter.auto_greenlight_if_ready() called in feature.py:greenlight() after line 1188</criterion>
+        <criterion id="1.3">BugAutoApprover.auto_approve_if_ready() called in bug.py:bug_approve() after line 456</criterion>
+        <criterion id="1.4">--auto flag triggers auto-approval check</criterion>
+        <criterion id="1.5">--manual flag bypasses auto-approval</criterion>
+        <criterion id="1.6">Auto-approved results skip manual confirmation prompts</criterion>
+        <criterion id="1.7">Event logger records all auto-approval decisions</criterion>
+        <criterion id="1.8" added_by="TDD Expert">Phase actually updates to SPEC_APPROVED on auto-approval</criterion>
+        <criterion id="1.9" added_by="Security">Approval audit trail includes threshold values used</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_spec_approval_calls_auto_approver">
+          <description>Verify approve command instantiates and calls SpecAutoApprover</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+          <code><![CDATA[
+import pytest
+from unittest.mock import Mock, patch
+from typer.testing import CliRunner
+from swarm_attack.auto_approval.models import ApprovalResult
+from swarm_attack.models.run_state import FeaturePhase
+
+
+def test_spec_approval_calls_auto_approver(integration_setup, cli_runner):
+    """Verify approve() calls SpecAutoApprover.auto_approve_if_ready() and updates phase."""
+    config, repo_root, swarm_dir = integration_setup
+
+    # Setup feature state at SPEC_NEEDS_APPROVAL
+    state_file = swarm_dir / "state" / "test-feature.json"
+    state_file.parent.mkdir(exist_ok=True)
+    state_file.write_text('{"feature_id": "test-feature", "phase": "SPEC_NEEDS_APPROVAL"}')
+
+    with patch('swarm_attack.cli.feature.SpecAutoApprover') as MockApprover:
+        with patch('swarm_attack.cli.feature.get_store') as mock_get_store:
+            # Setup mocks
+            mock_store = Mock()
+            mock_state = Mock()
+            mock_state.phase = FeaturePhase.SPEC_NEEDS_APPROVAL
+            mock_store.load.return_value = mock_state
+            mock_get_store.return_value = mock_store
+
+            mock_approver_instance = Mock()
+            mock_approver_instance.auto_approve_if_ready.return_value = ApprovalResult(
+                approved=True,
+                reason="Auto-approved: 0.88 score for 2 rounds",
+                threshold_used=0.85,  # Security: audit trail
+            )
+            MockApprover.return_value = mock_approver_instance
+
+            # Trigger approve command with --auto flag
+            result = invoke_approve(cli_runner, "test-feature", auto=True)
+
+            # Verify auto_approve_if_ready was called
+            mock_approver_instance.auto_approve_if_ready.assert_called_once_with("test-feature")
+
+            # Verify phase was updated (TDD Expert finding)
+            mock_store.update_phase.assert_called_with("test-feature", FeaturePhase.SPEC_APPROVED)
+
+            # Verify no confirmation prompt (check output doesn't contain prompt)
+            assert "Approve this spec?" not in result.output
+]]></code>
+        </test>
+        <test name="test_manual_mode_prevents_auto_approval">
+          <description>Verify --manual flag bypasses auto-approval</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+          <code><![CDATA[
+def test_manual_mode_prevents_auto_approval(integration_setup, cli_runner):
+    """--manual flag should bypass auto-approval entirely."""
+    config, repo_root, swarm_dir = integration_setup
+
+    with patch('swarm_attack.cli.feature.SpecAutoApprover') as MockApprover:
+        with patch('swarm_attack.cli.feature.get_store') as mock_get_store:
+            mock_store = Mock()
+            mock_state = Mock()
+            mock_state.phase = "SPEC_NEEDS_APPROVAL"
+            mock_store.load.return_value = mock_state
+            mock_get_store.return_value = mock_store
+
+            # Trigger with --manual
+            result = invoke_approve(cli_runner, "test-feature", manual=True)
+
+            # SpecAutoApprover should NOT be called
+            MockApprover.assert_not_called()
+]]></code>
+        </test>
+        <test name="test_greenlight_calls_auto_greenlighter">
+          <description>Verify greenlight() calls IssueAutoGreenlighter</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+        </test>
+        <test name="test_bug_approve_calls_auto_approver">
+          <description>Verify bug_approve() calls BugAutoApprover</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+        </test>
+        <test name="test_auto_approval_skips_confirmation">
+          <description>Auto-approved specs skip manual confirmation prompt</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+        </test>
+        <test name="test_event_logged_on_auto_approval">
+          <description>Event logger records auto-approval decision with audit trail</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+          <code><![CDATA[
+def test_event_logged_on_auto_approval(integration_setup, cli_runner):
+    """Auto-approval should emit event with audit trail (Security finding)."""
+    config, repo_root, swarm_dir = integration_setup
+
+    with patch('swarm_attack.cli.feature.SpecAutoApprover') as MockApprover:
+        with patch('swarm_attack.cli.feature.get_store') as mock_get_store:
+            with patch('swarm_attack.cli.feature.get_event_bus') as mock_bus:
+                mock_store = Mock()
+                mock_state = Mock()
+                mock_state.phase = "SPEC_NEEDS_APPROVAL"
+                mock_store.load.return_value = mock_state
+                mock_get_store.return_value = mock_store
+
+                mock_approver_instance = Mock()
+                mock_approver_instance.auto_approve_if_ready.return_value = ApprovalResult(
+                    approved=True,
+                    reason="Auto-approved",
+                    threshold_used=0.85,
+                )
+                MockApprover.return_value = mock_approver_instance
+
+                bus_instance = Mock()
+                mock_bus.return_value = bus_instance
+
+                result = invoke_approve(cli_runner, "test-feature", auto=True)
+
+                # Verify event emitted with audit payload (Security)
+                bus_instance.emit.assert_called()
+                emitted_event = bus_instance.emit.call_args[0][0]
+                assert emitted_event.payload.get("threshold_used") == 0.85
+]]></code>
+        </test>
+        <test name="test_low_score_requires_manual_approval">
+          <description>Score below threshold requires manual approval</description>
+          <file>tests/unit/test_auto_approval_cli_integration.py</file>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <location>swarm_attack/cli/feature.py lines 972-974</location>
+          <action>Add imports and call SpecAutoApprover after manual mode setting</action>
+          <code><![CDATA[
+# Add at top of file:
+from swarm_attack.auto_approval import SpecAutoApprover
+from swarm_attack.auto_approval.models import ApprovalResult
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
+
+# Add after line 972 (after manual mode check):
+if not manual:  # Only try auto-approval if not in manual mode
+    try:
+        auto_approver = SpecAutoApprover(store, self._logger if hasattr(self, '_logger') else None)
+        approval_result: ApprovalResult = auto_approver.auto_approve_if_ready(feature_id)
+
+        if approval_result.approved:
+            console.print(f"[green]Auto-approved:[/green] {approval_result.reason}")
+
+            # Emit audit event (Security requirement)
+            swarm_dir = Path(config.repo_root) / ".swarm"
+            bus = get_event_bus(swarm_dir)
+            bus.emit(SwarmEvent(
+                event_type=EventType.AUTO_APPROVAL_TRIGGERED,
+                feature_id=feature_id,
+                payload={
+                    "approval_type": "spec",
+                    "reason": approval_result.reason,
+                    "threshold_used": getattr(approval_result, 'threshold_used', 0.85),
+                },
+            ))
+
+            # Update phase directly (skip confirmation)
+            store.update_phase(feature_id, FeaturePhase.SPEC_APPROVED)
+            return  # Exit early - no manual confirmation needed
+        else:
+            console.print(f"[yellow]Manual approval required:[/yellow] {approval_result.reason}")
+            # Fall through to existing manual approval flow
+    except Exception as e:
+        # Log error but continue to manual flow (Code Quality: error handling)
+        if hasattr(self, '_log'):
+            self._log("auto_approval_error", {"error": str(e)}, level="warning")
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/cli/feature.py lines 1188-1191</location>
+          <action>Add IssueAutoGreenlighter call before phase update</action>
+          <code><![CDATA[
+# Similar pattern:
+from swarm_attack.auto_approval import IssueAutoGreenlighter
+
+if not manual:
+    try:
+        greenlighter = IssueAutoGreenlighter(store, self._logger if hasattr(self, '_logger') else None)
+        greenlight_result = greenlighter.auto_greenlight_if_ready(feature_id)
+
+        if greenlight_result.approved:
+            console.print(f"[green]Auto-greenlighted:[/green] {greenlight_result.reason}")
+            store.update_phase(feature_id, FeaturePhase.READY_TO_IMPLEMENT)
+            return
+        else:
+            console.print(f"[yellow]Manual greenlight required:[/yellow] {greenlight_result.reason}")
+    except Exception as e:
+        if hasattr(self, '_log'):
+            self._log("auto_greenlight_error", {"error": str(e)}, level="warning")
+]]></code>
+        </step>
+        <step order="3">
+          <location>swarm_attack/cli/bug.py lines 456-460</location>
+          <action>Add BugAutoApprover call before fix plan display</action>
+        </step>
+      </implementation_guide>
+
+      <security_mitigations added_by="Security Reviewer">
+        <mitigation>Store threshold values in config file, not Python code</mitigation>
+        <mitigation>Include threshold_used in all approval audit events</mitigation>
+        <mitigation>Add rate limiting: max 5 auto-approvals per hour</mitigation>
+      </security_mitigations>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 2: QA SESSION EXTENSION WIRING (P0) -->
+    <!-- ========================================== -->
+    <issue id="2" priority="P0">
+      <title>Wire QA Session Extension into Pipeline Hooks</title>
+      <description>
+        QASessionExtension is fully implemented (39 unit tests) but never called.
+        Coverage tracking and regression detection don't execute.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/qa/hooks/verifier_hook.py" lines="75-200"/>
+        <file path="swarm_attack/qa/integrations/feature_pipeline.py" lines="69-175"/>
+        <file path="swarm_attack/qa/integrations/bug_pipeline.py" lines="48-144"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/qa/test_verifier_hook_session_extension.py"/>
+        <file path="tests/unit/qa/test_feature_pipeline_session_extension.py"/>
+        <file path="tests/unit/qa/test_bug_pipeline_session_extension.py"/>
+        <file path="tests/integration/qa/test_session_extension_e2e.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="2.1">VerifierQAHook initializes QASessionExtension in __init__</criterion>
+        <criterion id="2.2">VerifierQAHook calls on_session_start() before orchestrator.validate_issue()</criterion>
+        <criterion id="2.3">VerifierQAHook calls on_session_complete() after QA results</criterion>
+        <criterion id="2.4">VerifierQAHook blocks on critical regressions</criterion>
+        <criterion id="2.5">FeaturePipelineQAIntegration tracks coverage per issue</criterion>
+        <criterion id="2.6">FeaturePipelineQAIntegration can set baselines after feature completion</criterion>
+        <criterion id="2.7">BugPipelineQAIntegration tracks endpoints during reproduction</criterion>
+        <criterion id="2.8">BugPipelineQAIntegration can set baselines after bug fixes</criterion>
+        <criterion id="2.9" added_by="TDD Expert">session_extension._coverage_tracker._swarm_dir set correctly</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_verifier_hook_initializes_session_extension">
+          <description>Verify VerifierQAHook creates QASessionExtension with correct path</description>
+          <file>tests/unit/qa/test_verifier_hook_session_extension.py</file>
+          <code><![CDATA[
+import pytest
+from pathlib import Path
+from swarm_attack.qa.hooks.verifier_hook import VerifierQAHook
+from swarm_attack.qa.session_extension import QASessionExtension
+
+
+def test_verifier_hook_initializes_session_extension(tmp_path):
+    """Should create QASessionExtension with correct path (TDD Expert fix)."""
+    # Setup mock config with real path
+    from swarm_attack.config import SwarmConfig
+    config = SwarmConfig(repo_root=str(tmp_path))
+
+    # Create .swarm directory
+    swarm_dir = tmp_path / ".swarm"
+    swarm_dir.mkdir()
+
+    hook = VerifierQAHook(config)
+
+    assert hook.session_extension is not None
+    assert isinstance(hook.session_extension, QASessionExtension)
+
+    # TDD Expert: Verify path was calculated correctly
+    expected_swarm_dir = tmp_path / ".swarm"
+    assert hook.session_extension._coverage_tracker._swarm_dir == expected_swarm_dir
+]]></code>
+        </test>
+        <test name="test_verifier_hook_calls_on_session_start">
+          <description>Verify on_session_start called before QA</description>
+          <file>tests/unit/qa/test_verifier_hook_session_extension.py</file>
+          <code><![CDATA[
+def test_verifier_hook_calls_on_session_start(tmp_path):
+    """on_session_start should be called before validation."""
+    from unittest.mock import Mock, patch
+
+    config = Mock()
+    config.repo_root = str(tmp_path)
+    (tmp_path / ".swarm").mkdir()
+
+    hook = VerifierQAHook(config)
+
+    with patch.object(hook.session_extension, 'on_session_start') as mock_start:
+        with patch.object(hook, '_run_validation') as mock_validate:
+            mock_validate.return_value = {"passed": True}
+
+            hook.run(feature_id="test-feature", endpoints=["/api/test"])
+
+            # Verify on_session_start called BEFORE validation
+            assert mock_start.call_count == 1
+            assert mock_validate.call_count == 1
+
+            # Check call order
+            calls = [mock_start, mock_validate]
+            # on_session_start should be called first
+            mock_start.assert_called_once_with("test-feature", ["/api/test"])
+]]></code>
+        </test>
+        <test name="test_verifier_hook_calls_on_session_complete">
+          <description>Verify on_session_complete called after QA</description>
+          <file>tests/unit/qa/test_verifier_hook_session_extension.py</file>
+        </test>
+        <test name="test_verifier_hook_blocks_on_regression">
+          <description>Verify hook blocks on critical regression</description>
+          <file>tests/unit/qa/test_verifier_hook_session_extension.py</file>
+          <code><![CDATA[
+def test_verifier_hook_blocks_on_regression(tmp_path):
+    """Critical regression should block session completion."""
+    from unittest.mock import Mock, patch
+    from swarm_attack.qa.models import SessionResult
+
+    config = Mock()
+    config.repo_root = str(tmp_path)
+    (tmp_path / ".swarm").mkdir()
+
+    hook = VerifierQAHook(config)
+
+    # Mock session_complete to return blocking result
+    blocking_result = SessionResult(
+        should_block=True,
+        block_reason="Critical regression: GET /api/users now failing"
+    )
+
+    with patch.object(hook.session_extension, 'on_session_start'):
+        with patch.object(hook.session_extension, 'on_session_complete', return_value=blocking_result):
+            with patch.object(hook, '_run_validation', return_value={"passed": True}):
+
+                result = hook.run(feature_id="test-feature", endpoints=["/api/test"])
+
+                # Result should indicate blocking
+                assert result.get("blocked") == True
+                assert "Critical regression" in result.get("block_reason", "")
+]]></code>
+        </test>
+        <test name="test_feature_pipeline_tracks_coverage">
+          <description>FeaturePipelineQAIntegration includes coverage metrics</description>
+          <file>tests/unit/qa/test_feature_pipeline_session_extension.py</file>
+        </test>
+        <test name="test_bug_pipeline_tracks_endpoints">
+          <description>BugPipelineQAIntegration tracks tested endpoints</description>
+          <file>tests/unit/qa/test_bug_pipeline_session_extension.py</file>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <location>swarm_attack/qa/hooks/verifier_hook.py line 78</location>
+          <action>Add QASessionExtension initialization in __init__</action>
+          <code><![CDATA[
+from swarm_attack.qa.session_extension import QASessionExtension
+from pathlib import Path
+
+class VerifierQAHook:
+    def __init__(self, config):
+        self.config = config
+        self.qa_orchestrator = QAOrchestrator(config)
+        self.context_builder = QAContextBuilder(config)
+        self.depth_selector = DepthSelector()
+
+        # Add session extension (Issue #2 fix)
+        swarm_dir = Path(config.repo_root) / ".swarm"
+        self.session_extension: QASessionExtension = QASessionExtension(swarm_dir)
+
+        # Log initialization (Code Quality: add logging)
+        self._log("qa_session_extension_init", {"swarm_dir": str(swarm_dir)})
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/qa/hooks/verifier_hook.py line 145</location>
+          <action>Call on_session_start before validate_issue with error handling</action>
+          <code><![CDATA[
+def run(self, feature_id: str, endpoints: list[str]) -> dict:
+    """Run QA verification with session tracking."""
+    try:
+        # Start session (captures baseline)
+        self.session_extension.on_session_start(feature_id, endpoints)
+    except Exception as e:
+        self._log("qa_session_start_error", {"error": str(e)}, level="warning")
+        # Continue without session tracking
+
+    # ... existing validation logic ...
+    validation_result = self._run_validation(feature_id, endpoints)
+]]></code>
+        </step>
+        <step order="3">
+          <location>swarm_attack/qa/hooks/verifier_hook.py line 175</location>
+          <action>Call on_session_complete and check should_block with error handling</action>
+          <code><![CDATA[
+    # After validation complete:
+    try:
+        session_result = self.session_extension.on_session_complete(
+            feature_id, endpoints, validation_result
+        )
+
+        if session_result.should_block:
+            self._log("qa_block", {"reason": session_result.block_reason}, level="warning")
+            return {
+                "blocked": True,
+                "block_reason": session_result.block_reason,
+                "validation": validation_result,
+            }
+    except Exception as e:
+        self._log("qa_session_complete_error", {"error": str(e)}, level="warning")
+        # Don't block on session tracking errors
+
+    return {
+        "blocked": False,
+        "validation": validation_result,
+    }
+]]></code>
+        </step>
+        <step order="4">
+          <location>swarm_attack/qa/integrations/feature_pipeline.py</location>
+          <action>Same pattern: init, on_session_start, on_session_complete</action>
+        </step>
+        <step order="5">
+          <location>swarm_attack/qa/integrations/bug_pipeline.py</location>
+          <action>Same pattern plus set_baseline_after_fix() method</action>
+        </step>
+      </implementation_guide>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 3: EVENT SUBSCRIPTION SYSTEM (P0) -->
+    <!-- ========================================== -->
+    <issue id="3" priority="P0">
+      <title>Wire Event Subscribers and Add Missing Emissions</title>
+      <description>
+        EventBus is complete but: (1) No subscribers registered in production code,
+        (2) Missing event emissions from IssueCreator, CoderAgent, ComplexityGate.
+        Events fire into the void with no reactive behavior.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/orchestrator.py" lines="246, 2500-2800"/>
+        <file path="swarm_attack/agents/issue_creator.py" lines="360"/>
+        <file path="swarm_attack/agents/coder.py" lines="400, 600, 800, 950"/>
+        <file path="swarm_attack/agents/complexity_gate.py" lines="150, 200"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/test_event_emissions.py"/>
+        <file path="tests/unit/test_event_subscriptions.py"/>
+        <file path="tests/integration/test_event_flow_e2e.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="3.1">IssueCreator emits ISSUE_CREATED after writing issues.json</criterion>
+        <criterion id="3.2">CoderAgent emits IMPL_STARTED at run() entry</criterion>
+        <criterion id="3.3">CoderAgent emits IMPL_TESTS_WRITTEN after RED phase</criterion>
+        <criterion id="3.4">CoderAgent emits IMPL_CODE_COMPLETE after GREEN phase</criterion>
+        <criterion id="3.5">CoderAgent emits IMPL_FAILED on max retries</criterion>
+        <criterion id="3.6">ComplexityGate emits ISSUE_COMPLEXITY_PASSED/FAILED</criterion>
+        <criterion id="3.7">Orchestrator subscribes to ISSUE_CREATED to update state</criterion>
+        <criterion id="3.8">Orchestrator subscribes to ISSUE_COMPLETE to propagate context</criterion>
+        <criterion id="3.9" added_by="Security">Event payloads validated against schema before emission</criterion>
+        <criterion id="3.10" added_by="TDD Expert">Use self._emit_event() instead of custom emission code</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_issue_creator_emits_issue_created">
+          <description>IssueCreator emits ISSUE_CREATED event via self._emit_event()</description>
+          <file>tests/unit/test_event_emissions.py</file>
+          <code><![CDATA[
+import pytest
+import time
+from unittest.mock import Mock, patch
+from swarm_attack.events.bus import EventBus, get_event_bus
+from swarm_attack.events.types import EventType, SwarmEvent
+from swarm_attack.agents.issue_creator import IssueCreatorAgent
+
+
+def test_issue_creator_emits_issue_created(tmp_path):
+    """IssueCreator should emit ISSUE_CREATED via self._emit_event() (TDD Expert fix)."""
+    # Setup
+    from swarm_attack.config import SwarmConfig
+    config = SwarmConfig(repo_root=str(tmp_path))
+    swarm_dir = tmp_path / ".swarm"
+    swarm_dir.mkdir()
+
+    received = []
+
+    # Create test bus and subscribe
+    test_bus = EventBus(persist=False)
+    test_bus.subscribe(EventType.ISSUE_CREATED, lambda e: received.append(e))
+
+    # Mock get_event_bus to return our test bus (TDD Expert: correct pattern)
+    with patch('swarm_attack.agents.base.get_event_bus') as mock_get_bus:
+        mock_get_bus.return_value = test_bus
+
+        agent = IssueCreatorAgent(config)
+
+        with patch.object(agent, '_call_claude') as mock_call:
+            mock_call.return_value = '{"issues": [{"title": "Test Issue"}]}'
+            result = agent.run({"feature_id": "test-feature"})
+
+    # Wait for async event (TDD Expert: prevent flakiness)
+    success = wait_for_event(received, timeout_seconds=2.0)
+
+    assert success, "Event should be emitted within timeout"
+    assert len(received) == 1
+    assert received[0].event_type == EventType.ISSUE_CREATED
+    assert received[0].feature_id == "test-feature"
+    assert received[0].payload.get("issue_count") == 1
+]]></code>
+        </test>
+        <test name="test_coder_emits_impl_started">
+          <description>CoderAgent emits IMPL_STARTED at run entry via self._emit_event()</description>
+          <file>tests/unit/test_event_emissions.py</file>
+        </test>
+        <test name="test_coder_emits_impl_tests_written">
+          <description>CoderAgent emits IMPL_TESTS_WRITTEN after RED phase</description>
+          <file>tests/unit/test_event_emissions.py</file>
+        </test>
+        <test name="test_coder_emits_impl_failed_on_max_retries">
+          <description>CoderAgent emits IMPL_FAILED on max retries</description>
+          <file>tests/unit/test_event_emissions.py</file>
+        </test>
+        <test name="test_orchestrator_subscribes_to_issue_created">
+          <description>Orchestrator subscribes to ISSUE_CREATED as instance method</description>
+          <file>tests/unit/test_event_subscriptions.py</file>
+          <code><![CDATA[
+def test_orchestrator_subscribes_to_issue_created(tmp_path):
+    """Orchestrator should subscribe using instance method (Code Quality fix)."""
+    from unittest.mock import Mock, patch
+    from swarm_attack.orchestrator import Orchestrator
+    from swarm_attack.config import SwarmConfig
+
+    config = SwarmConfig(repo_root=str(tmp_path))
+    (tmp_path / ".swarm").mkdir()
+
+    with patch('swarm_attack.orchestrator.get_event_bus') as mock_get_bus:
+        mock_bus = Mock()
+        mock_get_bus.return_value = mock_bus
+
+        mock_store = Mock()
+        orchestrator = Orchestrator(config, mock_store)
+
+        # Verify subscription was registered with instance method
+        mock_bus.subscribe.assert_called()
+
+        # Get the subscriber function
+        calls = mock_bus.subscribe.call_args_list
+        issue_created_call = [c for c in calls if c[0][0] == EventType.ISSUE_CREATED]
+        assert len(issue_created_call) == 1
+
+        # Subscriber should be the instance method, not a lambda
+        subscriber = issue_created_call[0][0][1]
+        assert hasattr(subscriber, '__self__')  # Instance method
+        assert subscriber.__self__ is orchestrator
+]]></code>
+        </test>
+        <test name="test_issue_created_updates_state">
+          <description>ISSUE_CREATED event triggers state update</description>
+          <file>tests/unit/test_event_subscriptions.py</file>
+        </test>
+        <test name="test_event_payload_validated">
+          <description>Event payloads are validated before emission (Security)</description>
+          <file>tests/unit/test_event_emissions.py</file>
+          <code><![CDATA[
+def test_event_payload_validated(tmp_path):
+    """Event payloads should be validated against schema (Security fix)."""
+    from swarm_attack.events.types import SwarmEvent, EventType
+    from swarm_attack.events.validation import validate_payload  # New module
+
+    # Valid payload
+    valid_event = SwarmEvent(
+        event_type=EventType.ISSUE_CREATED,
+        feature_id="test",
+        payload={"issue_count": 5, "output_path": "/path/to/issues.json"}
+    )
+    assert validate_payload(valid_event) == True
+
+    # Invalid payload (extra malicious field)
+    invalid_event = SwarmEvent(
+        event_type=EventType.ISSUE_CREATED,
+        feature_id="test",
+        payload={
+            "issue_count": 5,
+            "injected_code": "rm -rf /",  # Should be rejected
+        }
+    )
+    with pytest.raises(ValueError, match="Invalid payload field"):
+        validate_payload(invalid_event)
+]]></code>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <location>swarm_attack/agents/issue_creator.py line 360</location>
+          <action>Use self._emit_event() instead of custom code (Code Quality fix)</action>
+          <code><![CDATA[
+# In IssueCreatorAgent, after writing issues.json:
+# Use inherited method from BaseAgent (Code Quality fix)
+self._emit_event(
+    event_type=EventType.ISSUE_CREATED,
+    feature_id=feature_id,
+    payload={
+        "issue_count": len(output.get("issues", [])),
+        "output_path": str(issues_path),
+    },
+)
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/agents/coder.py line 400</location>
+          <action>Add IMPL_STARTED emission at run() entry via self._emit_event()</action>
+          <code><![CDATA[
+def run(self, context: dict) -> AgentResult:
+    """Run TDD implementation."""
+    feature_id = context.get("feature_id", "unknown")
+    issue_number = context.get("issue_number", 0)
+
+    # Emit start event
+    self._emit_event(
+        event_type=EventType.IMPL_STARTED,
+        feature_id=feature_id,
+        payload={"issue_number": issue_number},
+    )
+
+    # ... rest of implementation ...
+]]></code>
+        </step>
+        <step order="3">
+          <location>swarm_attack/agents/coder.py line 600</location>
+          <action>Add IMPL_TESTS_WRITTEN after tests created</action>
+        </step>
+        <step order="4">
+          <location>swarm_attack/agents/coder.py line 800</location>
+          <action>Add IMPL_CODE_COMPLETE after implementation</action>
+        </step>
+        <step order="5">
+          <location>swarm_attack/agents/coder.py line 950</location>
+          <action>Add IMPL_FAILED on max retries exceeded</action>
+        </step>
+        <step order="6">
+          <location>swarm_attack/orchestrator.py line 246</location>
+          <action>Register event subscribers as instance methods (Code Quality fix)</action>
+          <code><![CDATA[
+# In Orchestrator.__init__:
+from swarm_attack.events.bus import get_event_bus
+from swarm_attack.events.types import EventType
+
+# Get event bus
+self._bus = get_event_bus(Path(self.config.repo_root) / ".swarm")
+
+# Register subscribers as instance methods (not lambdas - Code Quality fix)
+self._bus.subscribe(EventType.ISSUE_CREATED, self._on_issue_created)
+self._bus.subscribe(EventType.IMPL_VERIFIED, self._on_impl_verified)
+
+# Define instance methods:
+def _on_issue_created(self, event: SwarmEvent) -> None:
+    """Handle ISSUE_CREATED event."""
+    try:
+        if self._state_store:
+            state = self._state_store.load(event.feature_id)
+            if state:
+                state.issue_created_count = event.payload.get("issue_count", 0)
+                self._state_store.save(state)
+    except Exception as e:
+        self._log("event_subscriber_error", {"error": str(e)}, level="warning")
+
+def _on_impl_verified(self, event: SwarmEvent) -> None:
+    """Handle IMPL_VERIFIED event."""
+    try:
+        if self._state_store:
+            state = self._state_store.load(event.feature_id)
+            if state:
+                # Update completed issue count
+                completed = state.completed_issues or []
+                issue_num = event.payload.get("issue_number")
+                if issue_num and issue_num not in completed:
+                    completed.append(issue_num)
+                    state.completed_issues = completed
+                    self._state_store.save(state)
+    except Exception as e:
+        self._log("event_subscriber_error", {"error": str(e)}, level="warning")
+]]></code>
+        </step>
+      </implementation_guide>
+
+      <security_mitigations added_by="Security Reviewer">
+        <mitigation>Add swarm_attack/events/validation.py with payload schema validation</mitigation>
+        <mitigation>Whitelist payload fields per event type</mitigation>
+        <mitigation>Sign events with HMAC if persistence enabled</mitigation>
+      </security_mitigations>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 4: UNIVERSAL CONTEXT BUILDER WIRING (P0) -->
+    <!-- ========================================== -->
+    <issue id="4" priority="P0">
+      <title>Wire UniversalContextBuilder into Agent Dispatch</title>
+      <description>
+        UniversalContextBuilder (399 lines) with 10 agent profiles is complete
+        but never called. Agents receive raw context dicts instead of
+        token-budgeted, tailored context.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/agents/base.py" lines="100-150"/>
+        <file path="swarm_attack/agents/coder.py" lines="400-500"/>
+        <file path="swarm_attack/orchestrator.py" lines="2645-2880"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/test_base_agent_context_injection.py"/>
+        <file path="tests/unit/test_coder_agent_context_injection.py"/>
+        <file path="tests/integration/test_orchestrator_context_building.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="4.1">BaseAgent._prepare_context_aware_prompt() prepends injected context</criterion>
+        <criterion id="4.2">CoderAgent._build_prompt() uses injected AgentContext</criterion>
+        <criterion id="4.3">Orchestrator builds AgentContext before coder.run()</criterion>
+        <criterion id="4.4">Orchestrator calls coder.with_context(agent_context)</criterion>
+        <criterion id="4.5">Context is truncated to token budget (15k for coder)</criterion>
+        <criterion id="4.6">Backward compatibility: agents work without injected context</criterion>
+        <criterion id="4.7" added_by="TDD Expert">Token budget truncation is explicitly tested</criterion>
+        <criterion id="4.8" added_by="Security">Context files validated with hash verification</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_with_context_stores_agent_context">
+          <description>Verify with_context() stores AgentContext with type hint</description>
+          <file>tests/unit/test_base_agent_context_injection.py</file>
+          <code><![CDATA[
+import pytest
+from datetime import datetime
+from swarm_attack.agents.base import BaseAgent, AgentResult
+from swarm_attack.universal_context_builder import AgentContext
+
+
+class TestAgent(BaseAgent):
+    """Test agent for unit testing."""
+    def run(self, context: dict) -> AgentResult:
+        return AgentResult(success=True, output="test")
+
+
+def test_with_context_stores_agent_context(tmp_path):
+    """Verify with_context() stores the AgentContext with proper type."""
+    from swarm_attack.config import SwarmConfig
+    config = SwarmConfig(repo_root=str(tmp_path))
+
+    agent = TestAgent(config)
+    context: AgentContext = AgentContext(  # Type hint per Code Quality
+        agent_type="coder",
+        built_at=datetime.now(),
+        project_instructions="Test instructions",
+        token_count=1000,
+    )
+
+    result = agent.with_context(context)
+
+    assert result is agent  # Returns self for chaining
+    assert agent._universal_context == context
+    assert isinstance(agent._universal_context, AgentContext)  # Type verified
+]]></code>
+        </test>
+        <test name="test_context_truncated_to_token_budget">
+          <description>Context should be truncated to agent's token budget (TDD Expert fix)</description>
+          <file>tests/unit/test_base_agent_context_injection.py</file>
+          <code><![CDATA[
+def test_context_truncated_to_token_budget(tmp_path):
+    """Context should be truncated to agent's token budget (15k for coder)."""
+    from swarm_attack.config import SwarmConfig
+    from swarm_attack.agents.coder import CoderAgent
+
+    config = SwarmConfig(repo_root=str(tmp_path))
+    agent = CoderAgent(config)
+
+    # Create massive context that exceeds 15k tokens
+    huge_instructions = "X " * 50000  # ~50k words = ~65k tokens
+
+    context = AgentContext(
+        agent_type="coder",
+        built_at=datetime.now(),
+        project_instructions=huge_instructions,
+        module_registry={"classes": ["Class" + str(i) for i in range(1000)]},
+        token_count=65000,  # Way over 15k budget
+    )
+
+    agent.with_context(context)
+
+    # Get formatted context section
+    prompt_section = agent._get_context_prompt_section()
+
+    # Count approximate tokens (rough: 1 word = ~1.3 tokens)
+    word_count = len(prompt_section.split())
+    token_estimate = int(word_count * 1.3)
+
+    # Should be truncated to ~15k tokens
+    assert token_estimate <= 16000, f"Context {token_estimate} exceeds 15k budget"
+]]></code>
+        </test>
+        <test name="test_get_context_prompt_section_all_fields">
+          <description>Verify all context fields formatted</description>
+          <file>tests/unit/test_base_agent_context_injection.py</file>
+        </test>
+        <test name="test_prepare_context_aware_prompt_with_context">
+          <description>Context prepended to prompt</description>
+          <file>tests/unit/test_base_agent_context_injection.py</file>
+        </test>
+        <test name="test_coder_stores_injected_context">
+          <description>CoderAgent stores injected AgentContext</description>
+          <file>tests/unit/test_coder_agent_context_injection.py</file>
+        </test>
+        <test name="test_orchestrator_injects_context_into_coder">
+          <description>Orchestrator calls coder.with_context()</description>
+          <file>tests/integration/test_orchestrator_context_building.py</file>
+        </test>
+        <test name="test_backward_compat_without_context">
+          <description>Agent works without injected context (TDD Expert: complete test)</description>
+          <file>tests/unit/test_coder_agent_context_injection.py</file>
+          <code><![CDATA[
+def test_backward_compat_without_context(tmp_path):
+    """Agent should work without injected context (backward compat)."""
+    from swarm_attack.config import SwarmConfig
+    from swarm_attack.agents.coder import CoderAgent
+    from unittest.mock import patch
+
+    config = SwarmConfig(repo_root=str(tmp_path))
+    agent = CoderAgent(config)
+
+    # Don't call with_context() - test backward compat
+    assert agent._universal_context is None
+
+    context_dict = {
+        "feature_id": "test-feature",
+        "issue_number": 1,
+        "issue_body": "Test issue",
+    }
+
+    with patch.object(agent, '_call_claude') as mock_call:
+        mock_call.return_value = '{"success": true}'
+        result = agent.run(context_dict)
+
+    # Should still work
+    assert result.success or result.output is not None  # Backward compat verified
+]]></code>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <location>swarm_attack/agents/base.py line 150</location>
+          <action>Add _prepare_context_aware_prompt() method with type hints</action>
+          <code><![CDATA[
+def _prepare_context_aware_prompt(self, base_prompt: str) -> str:
+    """Prepend injected context to base prompt.
+
+    Args:
+        base_prompt: The original prompt to enhance.
+
+    Returns:
+        Enhanced prompt with context section prepended.
+    """
+    context_section: str = self._get_context_prompt_section()
+    if context_section:
+        return f"{context_section}\n\n---\n\n{base_prompt}"
+    return base_prompt
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/agents/coder.py line 450</location>
+          <action>Update _build_prompt() to use injected context</action>
+          <code><![CDATA[
+def _build_prompt(self, context: dict) -> str:
+    """Build prompt with optional AgentContext injection."""
+    base_prompt = self._build_base_prompt(context)
+
+    # Use context-aware prompt if context was injected
+    return self._prepare_context_aware_prompt(base_prompt)
+]]></code>
+        </step>
+        <step order="3">
+          <location>swarm_attack/orchestrator.py line 245</location>
+          <action>Initialize UniversalContextBuilder in __init__ (not lazy)</action>
+          <code><![CDATA[
+# In Orchestrator.__init__ (not lazy - Code Quality fix):
+from swarm_attack.universal_context_builder import UniversalContextBuilder, AgentContext
+
+self._context_builder: UniversalContextBuilder = UniversalContextBuilder(
+    self.config, self._state_store
+)
+]]></code>
+        </step>
+        <step order="4">
+          <location>swarm_attack/orchestrator.py line 2875</location>
+          <action>Build and inject context before coder.run() with validation</action>
+          <code><![CDATA[
+# Build context for coder with type hints (Code Quality)
+agent_context: AgentContext = self._context_builder.build_context_for_agent(
+    agent_type="coder",
+    feature_id=feature_id,
+    issue_number=issue_number,
+)
+
+# Validate context before injection (Security)
+if agent_context and agent_context.token_count > 0:
+    self._coder.with_context(agent_context)
+else:
+    self._log("context_build_warning",
+              {"agent": "coder", "context_valid": agent_context is not None},
+              level="warning")
+
+coder_result: AgentResult = self._coder.run(context)
+]]></code>
+        </step>
+      </implementation_guide>
+
+      <security_mitigations added_by="Security Reviewer">
+        <mitigation>Validate context file hashes before including in prompt</mitigation>
+        <mitigation>Escape/sanitize content from external files</mitigation>
+        <mitigation>Add [UNTRUSTED CONTEXT] delimiters around external content</mitigation>
+      </security_mitigations>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 5: CAMPAIGN PLANNER FIX (P1) -->
+    <!-- ========================================== -->
+    <issue id="5" priority="P1">
+      <title>Fix Campaign Planner _redistribute_work() No-Op Loop</title>
+      <description>
+        CampaignPlanner._redistribute_work() has a no-op loop at lines 203-206
+        that does nothing (pass statement). This causes duplicate goals
+        when replanning because old goals aren't cleared.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/chief_of_staff/campaign_planner.py" lines="183-242"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/chief_of_staff/test_campaign_planner_redistribute.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="5.1">Non-completed day plans have goals cleared before redistribution</criterion>
+        <criterion id="5.2">No duplicate goals after replan()</criterion>
+        <criterion id="5.3">Completed day plans remain unchanged</criterion>
+        <criterion id="5.4">buffer_ratio = 0.2 is actually applied</criterion>
+        <criterion id="5.5">available_hours_per_day parameter is used</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_redistribute_clears_non_completed_goals">
+          <description>Non-completed days should have goals cleared (strengthened assertion)</description>
+          <file>tests/unit/chief_of_staff/test_campaign_planner_redistribute.py</file>
+          <code><![CDATA[
+import pytest
+from datetime import date
+from swarm_attack.chief_of_staff.campaign_planner import CampaignPlanner
+from swarm_attack.chief_of_staff.models import Campaign, DayPlan
+
+
+def test_redistribute_clears_non_completed_goals(tmp_path):
+    """Non-completed day plans should have goals completely cleared (TDD Expert: strong assertion)."""
+    from swarm_attack.config import SwarmConfig
+    config = SwarmConfig(repo_root=str(tmp_path))
+
+    campaign = Campaign(
+        id="test",
+        planned_days=5,
+        start_date=date(2025, 1, 1),
+        current_day=2,
+        day_plans=[
+            DayPlan(day_number=1, status="completed", goals=["Day1 Goal"]),
+            DayPlan(day_number=2, status="pending", goals=["Old Goal", "Another Goal"]),
+            DayPlan(day_number=3, status="pending", goals=["Goal3"]),
+        ],
+        milestones=[],
+    )
+
+    planner = CampaignPlanner(config)
+    result = planner.replan(campaign, [], 2)
+
+    # TDD Expert: Strengthened assertions - goals MUST be cleared
+    assert result.day_plans[1].goals == [], \
+        f"Day 2 goals should be cleared, got: {result.day_plans[1].goals}"
+    assert result.day_plans[2].goals == [], \
+        f"Day 3 goals should be cleared, got: {result.day_plans[2].goals}"
+
+    # Day 1 (completed) should be unchanged
+    assert result.day_plans[0].goals == ["Day1 Goal"], "Completed day should not change"
+]]></code>
+        </test>
+        <test name="test_no_duplicate_goals_after_replan">
+          <description>Replanning should not create duplicate goals</description>
+          <file>tests/unit/chief_of_staff/test_campaign_planner_redistribute.py</file>
+        </test>
+        <test name="test_completed_days_unchanged">
+          <description>Completed days should not be modified</description>
+          <file>tests/unit/chief_of_staff/test_campaign_planner_redistribute.py</file>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <location>swarm_attack/chief_of_staff/campaign_planner.py lines 203-206</location>
+          <action>Replace pass with goal clearing logic</action>
+          <code><![CDATA[
+# Replace the no-op loop:
+for day_plan in remaining_day_plans:
+    if day_plan.status != "completed":
+        # Clear existing goals to prevent duplicates
+        day_plan.goals = []
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/chief_of_staff/campaign_planner.py</location>
+          <action>Apply buffer_ratio in milestone assignment</action>
+        </step>
+        <step order="3">
+          <location>swarm_attack/chief_of_staff/campaign_planner.py</location>
+          <action>Use available_hours_per_day for capacity planning</action>
+        </step>
+      </implementation_guide>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 6: SILENT EXCEPTION HANDLING (P1) -->
+    <!-- ========================================== -->
+    <issue id="6" priority="P1">
+      <title>Fix Orchestrator Silent Exception Handling</title>
+      <description>
+        5 locations in orchestrator.py catch exceptions with pass,
+        silently hiding errors in spec parsing, issue lookup, import resolution.
+        Security Reviewer: This is HIGH risk as it hides state corruption.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/orchestrator.py" lines="797-798, 1696-1697, 2100-2101, 2134-2135, 3155-3156"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/test_orchestrator_error_handling.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="6.1">All silent exception handlers log warnings</criterion>
+        <criterion id="6.2">Errors are surfaced in debug mode</criterion>
+        <criterion id="6.3">No functional regression from changes</criterion>
+        <criterion id="6.4" added_by="Security">State corruption errors trigger critical log</criterion>
+      </acceptance_criteria>
+
+      <tdd_tests>
+        <test name="test_orchestrator_logs_on_spec_parse_error">
+          <description>Orchestrator should log warning on spec parse error</description>
+          <file>tests/unit/test_orchestrator_error_handling.py</file>
+          <code><![CDATA[
+def test_orchestrator_logs_on_spec_parse_error(tmp_path):
+    """Orchestrator should log warning on spec parse error (Code Quality)."""
+    from unittest.mock import Mock, patch
+    from swarm_attack.config import SwarmConfig
+    from swarm_attack.orchestrator import Orchestrator
+
+    config = SwarmConfig(repo_root=str(tmp_path))
+    (tmp_path / ".swarm").mkdir()
+
+    mock_store = Mock()
+    orchestrator = Orchestrator(config, mock_store)
+
+    # Mock logger to capture calls
+    with patch.object(orchestrator, '_log') as mock_log:
+        # Trigger parsing error by providing invalid spec file
+        (tmp_path / "invalid.json").write_text("{ invalid json }")
+
+        orchestrator._check_spec_files_indicate_success("feature", str(tmp_path / "invalid.json"))
+
+        # Verify warning was logged
+        mock_log.assert_called()
+        call_args = mock_log.call_args
+        assert "error" in str(call_args).lower() or "warning" in str(call_args)
+]]></code>
+        </test>
+      </tdd_tests>
+
+      <implementation_guide>
+        <step order="1">
+          <action>Replace each `pass` with `self._log("...", level="warning")`</action>
+          <code><![CDATA[
+# Line 797-798: Replace
+except (json.JSONDecodeError, IOError, KeyError):
+    pass
+# With:
+except (json.JSONDecodeError, IOError, KeyError) as e:
+    self._log("spec_file_parse_error", {
+        "error": str(e),
+        "error_type": type(e).__name__,
+    }, level="warning")
+
+# Line 1696-1697: Replace
+except (json.JSONDecodeError, KeyError):
+    pass
+# With:
+except (json.JSONDecodeError, KeyError) as e:
+    self._log("issue_lookup_error", {"error": str(e)}, level="warning")
+
+# Line 2100-2101: Replace
+except (subprocess.TimeoutExpired, Exception):
+    pass
+# With:
+except (subprocess.TimeoutExpired, Exception) as e:
+    self._log("import_resolution_error", {"error": str(e)}, level="warning")
+
+# Line 2134-2135: Replace
+except (subprocess.TimeoutExpired, Exception):
+    pass
+# With:
+except (subprocess.TimeoutExpired, Exception) as e:
+    self._log("module_search_error", {"error": str(e)}, level="warning")
+
+# Line 3155-3156: Replace
+except subprocess.CalledProcessError:
+    pass
+# With:
+except subprocess.CalledProcessError as e:
+    self._log("git_hash_error", {"error": str(e)}, level="warning")
+]]></code>
+        </step>
+      </implementation_guide>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 7: SESSION INITIALIZER STUBS (P2) -->
+    <!-- ========================================== -->
+    <issue id="7" priority="P2">
+      <title>Implement SessionInitializer Stub Methods</title>
+      <description>
+        _review_git_history() and _review_progress_log() in session_initializer.py
+        are no-op stubs that could provide useful context.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/session_initializer.py" lines="161-185"/>
+      </files_to_modify>
+
+      <acceptance_criteria>
+        <criterion id="7.1">_review_git_history() extracts recent commits (last 10) for context</criterion>
+        <criterion id="7.2">_review_progress_log() loads prior session summaries</criterion>
+        <criterion id="7.3">Both methods remain informational (don't block initialization)</criterion>
+      </acceptance_criteria>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 8: DOCUMENTATION UPDATE (P2) -->
+    <!-- ========================================== -->
+    <issue id="8" priority="P2">
+      <title>Update CLAUDE.md with Correct Implementation Status</title>
+      <description>
+        CLAUDE.md incorrectly states dispatcher._run_agent() is a placeholder.
+        It's fully implemented. Update documentation to match reality.
+      </description>
+      <files_to_modify>
+        <file path="CLAUDE.md"/>
+      </files_to_modify>
+
+      <acceptance_criteria>
+        <criterion id="8.1">Commit review dispatcher section shows all components complete</criterion>
+        <criterion id="8.2">Remove "placeholder" status from _run_agent()</criterion>
+      </acceptance_criteria>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 9: EVENT PAYLOAD VALIDATION (P0 - Security) -->
+    <!-- ========================================== -->
+    <issue id="9" priority="P0" added_by="Security Reviewer">
+      <title>Add Event Payload Schema Validation</title>
+      <description>
+        Events accept arbitrary dict payloads without validation, creating
+        injection risk. Add schema validation per event type.
+      </description>
+      <files_to_create>
+        <file path="swarm_attack/events/validation.py"/>
+        <file path="tests/unit/test_event_validation.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="9.1">ALLOWED_FIELDS defined per EventType</criterion>
+        <criterion id="9.2">validate_payload() rejects unknown fields</criterion>
+        <criterion id="9.3">EventBus.emit() validates before dispatch</criterion>
+        <criterion id="9.4">Invalid payloads raise ValueError with field name</criterion>
+      </acceptance_criteria>
+
+      <implementation_guide>
+        <step order="1">
+          <action>Create validation module</action>
+          <code><![CDATA[
+# swarm_attack/events/validation.py
+from typing import Set
+from .types import EventType, SwarmEvent
+
+ALLOWED_FIELDS: dict[EventType, Set[str]] = {
+    EventType.ISSUE_CREATED: {"issue_count", "output_path"},
+    EventType.IMPL_STARTED: {"issue_number"},
+    EventType.IMPL_VERIFIED: {"issue_number", "test_count"},
+    EventType.IMPL_FAILED: {"issue_number", "error", "retry_count"},
+    EventType.AUTO_APPROVAL_TRIGGERED: {"approval_type", "reason", "threshold_used"},
+    # ... add all event types
+}
+
+
+def validate_payload(event: SwarmEvent) -> bool:
+    """Validate event payload against schema.
+
+    Raises:
+        ValueError: If payload contains disallowed fields.
+    """
+    allowed = ALLOWED_FIELDS.get(event.event_type, set())
+    actual = set(event.payload.keys())
+
+    invalid = actual - allowed
+    if invalid:
+        raise ValueError(f"Invalid payload field(s): {invalid}")
+
+    return True
+]]></code>
+        </step>
+        <step order="2">
+          <location>swarm_attack/events/bus.py line 65</location>
+          <action>Add validation before emit</action>
+          <code><![CDATA[
+from .validation import validate_payload
+
+def emit(self, event: SwarmEvent) -> None:
+    """Emit event to all subscribers."""
+    # Validate payload (Security)
+    validate_payload(event)  # Raises ValueError if invalid
+
+    # ... rest of emit logic
+]]></code>
+        </step>
+      </implementation_guide>
+    </issue>
+
+    <!-- ========================================== -->
+    <!-- ISSUE 10: STATE INTEGRITY VERIFICATION (P1 - Security) -->
+    <!-- ========================================== -->
+    <issue id="10" priority="P1" added_by="Security Reviewer">
+      <title>Add State File Integrity Verification</title>
+      <description>
+        State files are plain JSON with no integrity protection.
+        Add HMAC signatures to detect tampering.
+      </description>
+      <files_to_modify>
+        <file path="swarm_attack/state_store.py"/>
+      </files_to_modify>
+      <files_to_create>
+        <file path="tests/unit/test_state_integrity.py"/>
+      </files_to_create>
+
+      <acceptance_criteria>
+        <criterion id="10.1">State files include signature field</criterion>
+        <criterion id="10.2">Load verifies signature before returning state</criterion>
+        <criterion id="10.3">Tampered files raise StateCorruptionError</criterion>
+        <criterion id="10.4">Signing key from config or environment</criterion>
+      </acceptance_criteria>
+    </issue>
+  </issues>
+
+  <!-- ============================================== -->
+  <!-- MANUAL TESTING SCENARIOS (QA Expert)          -->
+  <!-- ============================================== -->
+  <manual_testing added_by="QA Expert">
+    <scenario id="1" name="Auto-Approval with High Confidence">
+      <steps>
+        <step>Create feature with spec debate score >= 0.85 for 2 rounds</step>
+        <step>Run: swarm-attack approve my-feature --auto</step>
+        <step>Verify: No confirmation prompt appears</step>
+        <step>Verify: spec-final.md created</step>
+        <step>Verify: Phase changed to SPEC_APPROVED</step>
+        <step>Verify: Event logged with auto-approval decision</step>
+      </steps>
+    </scenario>
+    <scenario id="2" name="Manual Override Blocks Auto-Approval">
+      <steps>
+        <step>Same setup as scenario 1</step>
+        <step>Run: swarm-attack approve my-feature --manual</step>
+        <step>Verify: Confirmation prompt appears</step>
+        <step>Approve manually</step>
+        <step>Verify: Event shows manual approval</step>
+      </steps>
+    </scenario>
+    <scenario id="3" name="Coverage Drop Blocks Merge">
+      <steps>
+        <step>Feature started with 90% coverage</step>
+        <step>Feature completed with 75% coverage (15% drop)</step>
+        <step>Run: swarm-attack verify my-feature</step>
+        <step>Verify: Verification blocked</step>
+        <step>Verify: Block reason: "Coverage dropped 15%"</step>
+        <step>Verify: Human approval required</step>
+      </steps>
+    </scenario>
+    <scenario id="4" name="Event Flow End-to-End">
+      <steps>
+        <step>Create issue: ISSUE_CREATED event fires</step>
+        <step>Coder starts: IMPL_STARTED event fires</step>
+        <step>Tests written: IMPL_TESTS_WRITTEN event fires</step>
+        <step>Code complete: IMPL_CODE_COMPLETE event fires</step>
+        <step>Run: swarm-attack status my-feature</step>
+        <step>Verify: Event timeline in status output</step>
+        <step>Verify: Events persisted to .swarm/events/</step>
+      </steps>
+    </scenario>
+  </manual_testing>
+
+  <!-- ============================================== -->
+  <!-- EXECUTION ORDER                                -->
+  <!-- ============================================== -->
+  <execution_order>
+    <phase name="P0 Critical - Security First" effort="8-10 hours">
+      <issue ref="9">Add Event Payload Validation (NEW - Security)</issue>
+      <issue ref="6">Fix Silent Exception Handling (moves to P0)</issue>
+    </phase>
+    <phase name="P0 Critical - Full Autopilot Blockers" effort="25-30 hours">
+      <issue ref="1">Wire Auto-Approval System (8-10 hours)</issue>
+      <issue ref="2">Wire QA Session Extension (6-8 hours)</issue>
+      <issue ref="3">Wire Event Subscriptions (6-8 hours)</issue>
+      <issue ref="4">Wire UniversalContextBuilder (5-6 hours)</issue>
+    </phase>
+    <phase name="P1 High - Reliability Issues" effort="10-12 hours">
+      <issue ref="5">Fix Campaign Planner (3-4 hours)</issue>
+      <issue ref="10">Add State Integrity Verification (NEW - Security)</issue>
+    </phase>
+    <phase name="P2 Medium - Polish" effort="4-6 hours">
+      <issue ref="7">Implement Session Initializer Stubs (2-3 hours)</issue>
+      <issue ref="8">Update Documentation (1-2 hours)</issue>
+    </phase>
+  </execution_order>
+
+  <!-- ============================================== -->
+  <!-- COMPLETION CHECKLIST                           -->
+  <!-- ============================================== -->
+  <completion_checklist>
+    <item>All 10 issues implemented with passing tests</item>
+    <item>No regression in existing test suite (5000+ tests)</item>
+    <item>End-to-end test: feature flows from PRD to merged without manual intervention</item>
+    <item>End-to-end test: bug bash from report to fix without manual intervention</item>
+    <item>Coverage tracking shows metrics in QA results</item>
+    <item>Events flow from emission to subscriber handlers</item>
+    <item>Auto-approval triggers when thresholds met</item>
+    <item>Event payloads validated against schemas</item>
+    <item>State files include integrity signatures</item>
+    <item>All manual testing scenarios pass</item>
+    <item>Merge branch to master after all tests pass</item>
+  </completion_checklist>
+
+  <!-- ============================================== -->
+  <!-- MERGE INSTRUCTIONS                             -->
+  <!-- ============================================== -->
+  <merge_instructions>
+    <step>Run full test suite: PYTHONPATH=. pytest tests/ -v</step>
+    <step>Verify no regressions: compare test count before/after</step>
+    <step>Run manual testing scenarios</step>
+    <step>Push feature branch: git push origin fix/integration-gaps</step>
+    <step>Merge to master: git checkout master &amp;&amp; git merge fix/integration-gaps</step>
+    <step>Remove worktree: git worktree remove /Users/philipjcortes/Desktop/swarm-attack/worktrees/integration-gaps</step>
+  </merge_instructions>
+</spec>

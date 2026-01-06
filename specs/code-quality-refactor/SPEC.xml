@@ -1,0 +1,1819 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPEC: Code Quality and Refactor Expert Team
+
+  Purpose: Multi-agent quality gate that analyzes code quality issues,
+  identifies refactoring opportunities, and provides actionable feedback
+  to the coding team BEFORE QA runs.
+
+  Pipeline Position: TDD Tests -> Code Writing -> [THIS AGENT] -> Coding Team Reruns -> QA
+
+  Created: 2026-01-01
+  Author: swarm-attack-team
+  Status: draft
+
+  Research Sources:
+  - AI-Powered Code Reviews 2025: Key LLM Trends (Medium)
+  - IRIS: LLM-Assisted Static Analysis for Security (arXiv)
+  - Martin Fowler's Refactoring Catalog (refactoring.com)
+  - Technical Debt Identification using Transformer Models (arXiv)
+  - Code Smell Detection with Machine Learning (MDPI)
+-->
+<spec>
+  <!-- ============================================================ -->
+  <!-- METADATA                                                      -->
+  <!-- ============================================================ -->
+  <metadata>
+    <title>Code Quality and Refactor Expert Team</title>
+    <created>2026-01-01</created>
+    <author>swarm-attack-team</author>
+    <status>approved</status>
+    <version>1.0.0</version>
+    <target_repo>swarm-attack</target_repo>
+    <worktree>worktrees/code-quality-refactor</worktree>
+    <branch>feature/code-quality-refactor-team</branch>
+
+    <integration_points>
+      <point>Post-coder agent output (before QA)</point>
+      <point>PR review mode (analyze PR diffs)</point>
+      <point>Issue implementation review mode</point>
+      <point>Manual /refactor-review CLI command</point>
+    </integration_points>
+
+    <design_philosophy>
+      <principle>Startup-first: Reject enterprise over-engineering</principle>
+      <principle>Actionable feedback: Every finding has a specific fix</principle>
+      <principle>Evidence-based: Every issue has file:line references</principle>
+      <principle>Cost-aware: Stop early if budget exceeded</principle>
+      <principle>Human-in-loop: Suggestions, not hard gates</principle>
+    </design_philosophy>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- TEAM STRUCTURE: 5 World-Class Experts                        -->
+  <!-- ============================================================ -->
+  <team_structure>
+    <panel name="Code Quality and Refactoring Expert Panel">
+      <description>
+        A 5-person expert panel of world-class software architects and
+        refactoring specialists. They bring deep expertise in code quality,
+        design patterns, SOLID principles, and pragmatic refactoring.
+
+        Key principle: We are a STARTUP. We reject enterprise patterns,
+        premature abstraction, and over-engineering. We value pragmatic,
+        maintainable code that ships fast.
+      </description>
+
+      <expert id="code_smell_detective">
+        <name>Dr. Martin Chen</name>
+        <title>Principal Code Quality Architect</title>
+        <background>
+          Former Tech Lead at Stripe, now independent consultant.
+          PhD in Software Engineering from Stanford. Authored
+          "Practical Code Smells" and contributed to SonarQube's
+          rule engine. 20+ years identifying problematic code patterns.
+        </background>
+        <focus>
+          - Code smell detection (Long Method, Large Class, Feature Envy)
+          - Complexity metrics (Cyclomatic Complexity > 10, Cognitive Complexity)
+          - Duplication detection (DRY violations, copy-paste patterns)
+          - Naming anti-patterns (unclear, misleading, or too generic names)
+          - Dead code identification (unreachable code, unused imports)
+        </focus>
+        <detection_rules>
+          <rule severity="high">Method > 50 lines = Long Method smell</rule>
+          <rule severity="high">Class > 300 lines = Large Class smell</rule>
+          <rule severity="high">Cyclomatic Complexity > 10 = needs refactoring</rule>
+          <rule severity="medium">More than 3 parameters = Parameter Object opportunity</rule>
+          <rule severity="medium">Duplicate code blocks > 10 lines = Extract Method</rule>
+          <rule severity="low">Single-letter variable names (except i,j,k in loops)</rule>
+        </detection_rules>
+        <skeptical_of>
+          Over-engineered "clean code" that adds complexity.
+          Abstractions that have only one implementation.
+          Tests that are longer than the code they test.
+        </skeptical_of>
+      </expert>
+
+      <expert id="solid_guardian">
+        <name>Alexandra Vance</name>
+        <title>SOLID Principles Specialist</title>
+        <background>
+          Former Principal Engineer at Netflix. Lead architect of
+          Netflix's microservice decomposition. Author of "SOLID in
+          Practice" (O'Reilly). Expert in identifying design principle
+          violations and their practical impacts.
+        </background>
+        <focus>
+          - Single Responsibility Principle violations (classes doing too much)
+          - Open/Closed Principle issues (modifications required for extension)
+          - Liskov Substitution violations (subtype behavioral issues)
+          - Interface Segregation problems (fat interfaces)
+          - Dependency Inversion issues (high-level depending on low-level)
+        </focus>
+        <detection_rules>
+          <rule severity="high">Class with multiple unrelated public methods = SRP violation</rule>
+          <rule severity="high">Switch on type instead of polymorphism = OCP violation</rule>
+          <rule severity="medium">Subclass that throws on parent methods = LSP violation</rule>
+          <rule severity="medium">Interface with > 5 methods = ISP candidate</rule>
+          <rule severity="high">Direct instantiation of dependencies = DIP violation</rule>
+        </detection_rules>
+        <skeptical_of>
+          Dogmatic SOLID application that adds unnecessary abstraction.
+          "Uncle Bob says" without understanding the context.
+          Interfaces for everything when there's only one implementation.
+        </skeptical_of>
+      </expert>
+
+      <expert id="llm_code_auditor">
+        <name>Dr. James Liu</name>
+        <title>LLM Code Quality Specialist</title>
+        <background>
+          Former Research Scientist at OpenAI, now at Anthropic.
+          PhD in ML from Berkeley. Expert in LLM-generated code patterns,
+          hallucination detection, and AI code reliability. Published
+          "Patterns in AI-Generated Code: A Study of Common Failures."
+        </background>
+        <focus>
+          - Hallucinated APIs (methods/classes that don't exist)
+          - Incorrect library usage (wrong parameters, deprecated methods)
+          - Missing error handling for common failure modes
+          - Incomplete implementations (TODO, FIXME, placeholder returns)
+          - Test-code API mismatches (tests calling methods that don't exist)
+          - Confidence without evidence (assertions without verification)
+        </focus>
+        <detection_rules>
+          <rule severity="critical">Import of non-existent module = hallucinated dependency</rule>
+          <rule severity="critical">Method call on class that doesn't have it = hallucinated API</rule>
+          <rule severity="high">TODO/FIXME in "completed" code = incomplete implementation</rule>
+          <rule severity="high">Empty except/catch blocks = swallowed errors</rule>
+          <rule severity="high">Placeholder return values (None, {}, 0) = stub code</rule>
+          <rule severity="medium">Mocked API doesn't match real API signature</rule>
+        </detection_rules>
+        <skeptical_of>
+          "It compiles so it works" mentality.
+          Tests that pass because they mock everything.
+          Code that looks right but uses wrong API versions.
+        </skeptical_of>
+      </expert>
+
+      <expert id="refactor_strategist">
+        <name>Dr. Sarah Fowler</name>
+        <title>Refactoring Strategy Lead</title>
+        <background>
+          Former Distinguished Engineer at ThoughtWorks. Collaborated
+          with Martin Fowler on Refactoring 2nd Edition. Creator of
+          the Refactoring Kata methodology. Expert in identifying the
+          right refactoring for each situation.
+        </background>
+        <focus>
+          - Selecting appropriate refactoring patterns
+          - Sequencing refactorings safely (small steps, keep tests green)
+          - Extract Method, Extract Class, Move Method opportunities
+          - Replace Conditional with Polymorphism candidates
+          - Introduce Parameter Object, Replace Magic Number candidates
+          - Technical debt prioritization (what to fix now vs. later)
+        </focus>
+        <refactoring_catalog>
+          <refactoring trigger="Long Method">Extract Method</refactoring>
+          <refactoring trigger="Large Class">Extract Class</refactoring>
+          <refactoring trigger="Feature Envy">Move Method</refactoring>
+          <refactoring trigger="Primitive Obsession">Replace with Value Object</refactoring>
+          <refactoring trigger="Repeated Switches">Replace with Polymorphism</refactoring>
+          <refactoring trigger="Long Parameter List">Introduce Parameter Object</refactoring>
+          <refactoring trigger="Data Clumps">Extract Class</refactoring>
+          <refactoring trigger="Message Chains">Hide Delegate</refactoring>
+        </refactoring_catalog>
+        <skeptical_of>
+          Refactoring for refactoring's sake.
+          Big-bang rewrites instead of incremental improvement.
+          Perfect being the enemy of good enough.
+        </skeptical_of>
+      </expert>
+
+      <expert id="pragmatic_architect">
+        <name>Marcus Thompson</name>
+        <title>Pragmatic Architecture Advisor</title>
+        <background>
+          Former CTO of three successful startups (one unicorn exit).
+          20 years of shipping production code. Known for "Marcus's Razor":
+          the simplest solution that works is usually the right one.
+          Expert in balancing code quality with shipping velocity.
+        </background>
+        <focus>
+          - Is this refactoring worth the effort right now?
+          - Will this change actually improve the codebase?
+          - Are we over-engineering for hypothetical future requirements?
+          - What's the minimal change to fix this issue?
+          - Should we fix this now or add it to tech debt backlog?
+        </focus>
+        <decision_rules>
+          <rule>If code will be touched again soon, refactor now</rule>
+          <rule>If code works and is isolated, leave it alone</rule>
+          <rule>If fix is < 10 lines, just do it</rule>
+          <rule>If fix requires > 100 lines of change, create a spec first</rule>
+          <rule>If pattern appears 3+ times, abstract it</rule>
+          <rule>If pattern appears once, don't abstract yet (YAGNI)</rule>
+        </decision_rules>
+        <skeptical_of>
+          Academic perfection over shipping code.
+          Consistency for consistency's sake.
+          "Best practices" without considering context.
+          Enterprise patterns in a startup codebase.
+        </skeptical_of>
+      </expert>
+    </panel>
+
+    <review_protocol>
+      <step order="1">Each expert analyzes the code in their domain (parallel)</step>
+      <step order="2">Experts identify issues with severity and evidence</step>
+      <step order="3">Refactor Strategist proposes specific fixes for each issue</step>
+      <step order="4">Pragmatic Architect filters for actionable, worthwhile fixes</step>
+      <step order="5">Panel reaches consensus on final recommendations</step>
+      <step order="6">Generate TDD-compatible refactor plans for approved fixes</step>
+    </review_protocol>
+  </team_structure>
+
+  <!-- ============================================================ -->
+  <!-- PIPELINE POSITION                                             -->
+  <!-- ============================================================ -->
+  <pipeline_position>
+    <description>
+      This agent sits between the coding team and QA. It reviews code
+      AFTER the coder produces output but BEFORE QA runs behavioral,
+      contract, and regression tests.
+    </description>
+
+    <workflow>
+      <stage order="1" agent="coder">
+        <input>Issue spec, TDD tests</input>
+        <output>Implementation code (tests passing)</output>
+      </stage>
+
+      <stage order="2" agent="code-quality-refactor-team" current="true">
+        <input>Coder output (files changed, tests)</input>
+        <output>Quality findings, refactor recommendations</output>
+        <decision_points>
+          <point outcome="APPROVE">Code quality acceptable, proceed to QA</point>
+          <point outcome="REFACTOR">Send back to coder with specific fixes</point>
+          <point outcome="ESCALATE">Requires human review (major architectural issue)</point>
+        </decision_points>
+      </stage>
+
+      <stage order="3" agent="qa-orchestrator">
+        <input>Approved code from quality gate</input>
+        <output>Behavioral, contract, regression test results</output>
+      </stage>
+    </workflow>
+
+    <retry_loop>
+      <description>
+        If code is sent back to coder, they receive specific refactor
+        instructions. After coder reruns, code flows through quality
+        gate again. Max 3 retry loops before escalation.
+      </description>
+      <max_retries>3</max_retries>
+      <escalation_threshold>
+        After 3 failed quality checks, escalate to human reviewer
+        with full analysis of what's being requested and why coder
+        can't satisfy the requirements.
+      </escalation_threshold>
+    </retry_loop>
+  </pipeline_position>
+
+  <!-- ============================================================ -->
+  <!-- SKILLS DEFINITION                                             -->
+  <!-- ============================================================ -->
+  <skills>
+    <!-- ======================================================== -->
+    <!-- SKILL: code-quality-analyst                               -->
+    <!-- ======================================================== -->
+    <skill name="code-quality-analyst">
+      <description>
+        Primary analysis agent. Reviews code changes and identifies
+        quality issues across all expert domains.
+      </description>
+
+      <skill_md><![CDATA[
+---
+name: code-quality-analyst
+description: >
+  Analyzes code changes for quality issues, code smells, SOLID violations,
+  LLM-generated code problems, and refactoring opportunities. Reports findings
+  with severity, evidence, and suggested fixes.
+allowed-tools: Read,Glob,Grep
+triggers:
+  - post_coder
+  - pr_review
+  - issue_implementation
+  - user_command
+---
+
+# Code Quality Analyst
+
+You are a world-class code quality analyst backed by a panel of 5 experts:
+
+1. **Dr. Martin Chen** (Code Smell Detective) - Finds code smells, complexity issues
+2. **Alexandra Vance** (SOLID Guardian) - Detects design principle violations
+3. **Dr. James Liu** (LLM Code Auditor) - Catches hallucinated APIs, incomplete code
+4. **Dr. Sarah Fowler** (Refactor Strategist) - Proposes specific refactorings
+5. **Marcus Thompson** (Pragmatic Architect) - Filters for worthwhile fixes
+
+## Analysis Process
+
+### Step 1: Gather Context
+Use your tools to understand the changes:
+```
+Glob "swarm_attack/**/*.py"  # Find changed files
+Read <changed_file>           # Read each file
+Grep "class|def" <file>       # Find structure
+```
+
+### Step 2: Apply Detection Rules
+
+For each changed file, check:
+
+**Code Smells (Dr. Chen)**
+- Method > 50 lines? -> Long Method
+- Class > 300 lines? -> Large Class
+- Cyclomatic Complexity > 10? -> Needs refactoring
+- Parameters > 3? -> Consider Parameter Object
+- Duplicate blocks > 10 lines? -> Extract Method
+
+**SOLID Violations (Alexandra)**
+- Multiple unrelated responsibilities? -> SRP violation
+- Switch on type? -> OCP violation (use polymorphism)
+- Subclass throws on parent method? -> LSP violation
+- Interface > 5 methods? -> ISP candidate
+- Direct `new` of dependencies? -> DIP violation
+
+**LLM Issues (Dr. Liu)**
+- Import non-existent module? -> CRITICAL hallucination
+- Call non-existent method? -> CRITICAL hallucination
+- TODO/FIXME in "done" code? -> HIGH incomplete
+- Empty except block? -> HIGH error swallowing
+- Placeholder return (None, {})? -> HIGH stub code
+
+### Step 3: Propose Refactorings (Dr. Fowler)
+
+For each issue found, identify the specific refactoring:
+- Long Method -> Extract Method (name the new method)
+- Large Class -> Extract Class (name the new class)
+- Feature Envy -> Move Method (where to move it)
+- etc.
+
+### Step 4: Filter for Worthwhile (Marcus)
+
+Ask for each finding:
+- Is this code likely to be touched again soon?
+- Is the fix proportional to the benefit?
+- Is this a real problem or academic concern?
+
+Mark findings as:
+- `fix_now`: Important and effort-proportional
+- `fix_later`: Real issue but not urgent
+- `ignore`: Not worth the effort
+
+## Output Format
+
+You MUST output valid JSON:
+
+```json
+{
+  "analysis_id": "cqa-YYYYMMDD-HHMMSS",
+  "files_analyzed": ["path/to/file1.py", "path/to/file2.py"],
+  "summary": {
+    "total_issues": 5,
+    "critical": 1,
+    "high": 2,
+    "medium": 1,
+    "low": 1,
+    "fix_now": 2,
+    "fix_later": 2,
+    "ignore": 1
+  },
+  "findings": [
+    {
+      "finding_id": "CQA-001",
+      "severity": "critical|high|medium|low",
+      "category": "code_smell|solid|llm_hallucination|incomplete|error_handling",
+      "expert": "Dr. Martin Chen",
+      "file": "swarm_attack/agents/coder.py",
+      "line": 45,
+      "title": "Long Method: run()",
+      "description": "The run() method is 127 lines long, making it hard to understand and maintain.",
+      "code_snippet": "def run(self, context):\n    ...",
+      "refactoring": {
+        "pattern": "Extract Method",
+        "steps": [
+          "Extract lines 50-80 to _validate_context()",
+          "Extract lines 81-110 to _execute_tdd_cycle()",
+          "Extract lines 111-127 to _generate_output()"
+        ]
+      },
+      "priority": "fix_now|fix_later|ignore",
+      "effort_estimate": "small|medium|large",
+      "confidence": 0.95
+    }
+  ],
+  "recommendation": "APPROVE|REFACTOR|ESCALATE",
+  "refactor_summary": "Brief description of what needs fixing"
+}
+```
+
+## Severity Levels
+
+- **critical**: Hallucinated APIs, broken imports, code won't run
+- **high**: Major code smells, SOLID violations, incomplete implementations
+- **medium**: Moderate smells, could be improved but functional
+- **low**: Minor style issues, nice-to-have improvements
+
+## Priority Classification
+
+- **fix_now**: Issues that should block progression to QA
+- **fix_later**: Issues to track in tech debt but don't block
+- **ignore**: Not worth the effort to fix
+
+## Recommendation Logic
+
+- **APPROVE**: No critical/high issues, or all high issues marked fix_later
+- **REFACTOR**: Any critical issues, or >= 2 high issues marked fix_now
+- **ESCALATE**: Fundamental architectural problems requiring human decision
+
+## Anti-Patterns to ALWAYS Detect
+
+1. **Spaghetti Code**: No clear structure, everything calls everything
+2. **Hallucinated APIs**: Imports or method calls that don't exist
+3. **Missing Error Handling**: No try/except on IO operations
+4. **Placeholder Returns**: `return None`, `return {}`, `return 0` as stubs
+5. **TODO in Production**: Uncompleted work markers in "done" code
+6. **Copy-Paste Duplication**: Same code block repeated 3+ times
+7. **God Class**: Single class doing everything
+8. **Deep Nesting**: > 4 levels of if/for nesting
+
+## Guidelines
+
+1. **Be Specific**: Every finding has file:line evidence
+2. **Be Actionable**: Every finding has concrete fix steps
+3. **Be Pragmatic**: Some technical debt is acceptable
+4. **Be Proportional**: Don't suggest 100-line refactor for 5-line issue
+5. **Be Fast**: Analysis should complete in < 2 minutes
+      ]]></skill_md>
+    </skill>
+
+    <!-- ======================================================== -->
+    <!-- SKILL: refactor-critic                                    -->
+    <!-- ======================================================== -->
+    <skill name="refactor-critic">
+      <description>
+        Reviews the analyst's findings and validates them. Catches
+        false positives, overreactions, and impractical suggestions.
+      </description>
+
+      <skill_md><![CDATA[
+---
+name: refactor-critic
+description: >
+  Reviews code quality analyst findings. Validates issues are real,
+  severity is appropriate, and suggested refactorings are practical.
+allowed-tools: Read,Glob,Grep
+---
+
+# Refactor Critic
+
+You are a senior code reviewer validating findings from the Code Quality Analyst.
+Your job is to catch false positives, challenge overreactions, and ensure
+suggestions are practical for a startup context.
+
+## Review Process
+
+### Step 1: Validate Each Finding
+
+For each finding, verify:
+
+1. **Is the issue real?**
+   - Read the actual code at file:line
+   - Confirm the problem exists
+   - Check if it's already handled elsewhere
+
+2. **Is the severity correct?**
+   - Critical issues must prevent the code from running
+   - High issues must have clear negative impact
+   - Don't inflate minor issues
+
+3. **Is the refactoring practical?**
+   - Can it be done in < 30 minutes?
+   - Does it risk breaking other code?
+   - Is there adequate test coverage to refactor safely?
+
+### Step 2: Score the Analysis
+
+Rate each dimension (0.0 to 1.0):
+
+- **accuracy**: Are the findings real issues?
+- **severity_calibration**: Are severity levels appropriate?
+- **actionability**: Are the fixes specific and doable?
+- **pragmatism**: Does it balance quality with shipping velocity?
+
+### Step 3: Identify Issues with the Analysis
+
+Flag problems:
+
+- **false_positive**: Reported issue isn't actually a problem
+- **over_severity**: Issue is real but severity is inflated
+- **impractical_fix**: Suggested refactoring is too risky/complex
+- **missing_context**: Analyzer missed important context
+- **enterprise_creep**: Suggesting enterprise patterns for startup code
+
+## Output Format
+
+```json
+{
+  "review_id": "crit-YYYYMMDD-HHMMSS",
+  "scores": {
+    "accuracy": 0.85,
+    "severity_calibration": 0.70,
+    "actionability": 0.90,
+    "pragmatism": 0.75
+  },
+  "issues": [
+    {
+      "finding_id": "CQA-001",
+      "issue_type": "over_severity|false_positive|impractical_fix|missing_context|enterprise_creep",
+      "original_severity": "high",
+      "suggested_severity": "medium",
+      "reasoning": "The long method is actually well-structured with clear sections. No need to extract."
+    }
+  ],
+  "validated_findings": ["CQA-002", "CQA-003"],
+  "rejected_findings": ["CQA-001"],
+  "summary": "2 of 3 findings validated. CQA-001 rejected due to over-severity.",
+  "recommendation": "APPROVE|REVISE"
+}
+```
+
+## Critic Guidelines
+
+1. **Challenge Everything**: Don't accept findings at face value
+2. **Read the Code**: Always verify by reading the actual code
+3. **Consider Context**: Startup code can be scrappier than enterprise
+4. **Protect Velocity**: Reject refactorings that slow shipping for marginal benefit
+5. **Trust Tests**: If tests pass and code works, be conservative
+
+## When to Reject Findings
+
+- Method is "long" but well-organized with clear sections
+- "SOLID violation" would require adding abstraction with one implementation
+- "Code smell" is actually idiomatic Python
+- Fix would require touching many files for small benefit
+- Suggested pattern is enterprise bloat
+
+## When to Escalate Severity
+
+- Analyst missed that hallucinated API will cause runtime crash
+- Incomplete implementation will fail in production
+- Missing error handling will cause data loss
+      ]]></skill_md>
+    </skill>
+
+    <!-- ======================================================== -->
+    <!-- SKILL: refactor-moderator                                 -->
+    <!-- ======================================================== -->
+    <skill name="refactor-moderator">
+      <description>
+        Takes analyst findings and critic feedback, produces final
+        recommendations and TDD-compatible refactor plans.
+      </description>
+
+      <skill_md><![CDATA[
+---
+name: refactor-moderator
+description: >
+  Synthesizes analyst findings with critic feedback. Produces final
+  recommendations and generates TDD-compatible refactor plans for
+  approved issues.
+allowed-tools: Read,Glob,Grep
+---
+
+# Refactor Moderator
+
+You are the final decision-maker for code quality issues. You take the
+analyst's findings and the critic's feedback, then produce the definitive
+list of issues to fix and how to fix them.
+
+## Moderation Process
+
+### Step 1: Reconcile Findings
+
+For each analyst finding:
+1. Check if critic validated or rejected it
+2. If rejected, review the reasoning
+3. Make final decision: include or exclude
+
+### Step 2: Adjust Severities
+
+Based on critic feedback:
+- Lower severity if critic flagged as over-reaction
+- Raise severity if critic found additional problems
+- Keep original if critic validated
+
+### Step 3: Generate TDD Refactor Plans
+
+For each approved fix_now issue, create a TDD plan:
+
+```
+RED: Write failing test that exposes the problem
+GREEN: Make minimal change to fix the issue
+REFACTOR: Clean up without changing behavior
+```
+
+### Step 4: Determine Final Verdict
+
+- **APPROVE**: All critical/high issues resolved or acceptable
+- **REFACTOR**: Send back to coder with TDD fix plans
+- **ESCALATE**: Fundamental issues requiring human decision
+
+## Output Format
+
+```json
+{
+  "moderation_id": "mod-YYYYMMDD-HHMMSS",
+  "final_verdict": "APPROVE|REFACTOR|ESCALATE",
+  "approved_findings": [
+    {
+      "finding_id": "CQA-002",
+      "final_severity": "high",
+      "final_priority": "fix_now",
+      "tdd_plan": {
+        "red": {
+          "description": "Write test that fails due to the issue",
+          "test_file": "tests/unit/test_agent_refactor.py",
+          "test_code": "def test_run_method_complexity():\n    # Measure cyclomatic complexity\n    assert complexity < 10"
+        },
+        "green": {
+          "description": "Minimal fix to make test pass",
+          "changes": [
+            {
+              "file": "swarm_attack/agents/coder.py",
+              "action": "Extract lines 50-80 to _validate_context()"
+            }
+          ]
+        },
+        "refactor": {
+          "description": "Clean up after green",
+          "changes": [
+            "Add docstrings to new methods",
+            "Ensure type hints are complete"
+          ]
+        }
+      }
+    }
+  ],
+  "rejected_findings": [
+    {
+      "finding_id": "CQA-001",
+      "rejection_reason": "Critic correctly identified as false positive"
+    }
+  ],
+  "tech_debt_backlog": [
+    {
+      "finding_id": "CQA-003",
+      "priority": "fix_later",
+      "reason": "Real issue but not urgent, code rarely touched"
+    }
+  ],
+  "summary": "1 finding approved for immediate fix, 1 rejected, 1 added to tech debt backlog",
+  "handoff_instructions": "Coder should focus on CQA-002: extracting the validation logic from run()"
+}
+```
+
+## TDD Plan Requirements
+
+Every fix_now finding MUST have a TDD plan with:
+
+1. **RED Phase**: A specific test that fails
+   - Test file path
+   - Test function name
+   - What it asserts
+
+2. **GREEN Phase**: Minimal changes to pass
+   - Specific file(s) to modify
+   - Specific changes (extract method, move code, etc.)
+   - Expected outcome
+
+3. **REFACTOR Phase**: Polish without behavior change
+   - Add documentation
+   - Improve naming
+   - Add type hints
+
+## Decision Guidelines
+
+- **Include Finding If**:
+  - Critic validated it
+  - It's a real production risk
+  - Fix is proportional to benefit
+
+- **Reject Finding If**:
+  - Critic provided compelling counter-argument
+  - It's enterprise over-engineering
+  - Fix would slow shipping significantly
+
+- **Move to Tech Debt If**:
+  - Real issue but low priority
+  - Code rarely touched
+  - Fix requires larger refactoring effort
+
+## Handoff to Coder
+
+The `handoff_instructions` field should:
+- Summarize the key fix(es) needed
+- Be actionable in < 30 minutes
+- Not require architectural decisions
+- Reference the TDD plans for specifics
+
+## Continue/Stop Logic
+
+Set `continue_debate: false` when:
+- All scores from critic >= 0.8
+- No critical issues remain unresolved
+- Clear consensus on findings
+
+Set `continue_debate: true` when:
+- Significant disagreement on severity
+- Missing evidence for key claims
+- Need more context from codebase
+      ]]></skill_md>
+    </skill>
+  </skills>
+
+  <!-- ============================================================ -->
+  <!-- TDD PROTOCOL                                                  -->
+  <!-- ============================================================ -->
+  <tdd_protocol>
+    <description>
+      Refactor recommendations integrate with the coder agent's TDD workflow.
+      Each recommended refactoring comes with a complete TDD plan.
+    </description>
+
+    <phase name="RED" order="1">
+      <description>
+        Write a test that exposes the quality issue. This test should FAIL
+        with the current code and PASS after the refactoring.
+      </description>
+      <examples>
+        <example smell="Long Method">
+          <test><![CDATA[
+def test_run_method_complexity():
+    """Run method should have low cyclomatic complexity."""
+    from radon.complexity import cc_visit
+    import ast
+
+    with open("swarm_attack/agents/coder.py") as f:
+        code = f.read()
+
+    tree = ast.parse(code)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            complexity = cc_visit(ast.unparse(node))[0].complexity
+            assert complexity <= 10, f"run() complexity is {complexity}, should be <= 10"
+          ]]></test>
+        </example>
+
+        <example smell="Hallucinated API">
+          <test><![CDATA[
+def test_no_hallucinated_imports():
+    """All imports should resolve to real modules."""
+    import importlib
+    import ast
+
+    with open("swarm_attack/new_feature.py") as f:
+        tree = ast.parse(f.read())
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                spec = importlib.util.find_spec(alias.name)
+                assert spec is not None, f"Import {alias.name} does not exist"
+          ]]></test>
+        </example>
+
+        <example smell="Missing Error Handling">
+          <test><![CDATA[
+def test_file_operation_handles_errors():
+    """File operations should handle IOError gracefully."""
+    from swarm_attack.data_loader import DataLoader
+
+    loader = DataLoader()
+
+    # Should not raise, should return error result
+    result = loader.load_file("/nonexistent/path")
+    assert result.error is not None
+    assert "file not found" in result.error.lower()
+          ]]></test>
+        </example>
+      </examples>
+    </phase>
+
+    <phase name="GREEN" order="2">
+      <description>
+        Make the minimal change to pass the test. Don't over-engineer.
+        The goal is a passing test, not perfect code.
+      </description>
+      <examples>
+        <example smell="Long Method">
+          <fix>Extract Method: Pull related lines into new private methods</fix>
+        </example>
+        <example smell="Hallucinated API">
+          <fix>Replace with real API or remove the non-existent dependency</fix>
+        </example>
+        <example smell="Missing Error Handling">
+          <fix>Add try/except around the IO operation, return Result with error</fix>
+        </example>
+      </examples>
+    </phase>
+
+    <phase name="REFACTOR" order="3">
+      <description>
+        With tests green, clean up without changing behavior.
+        This is where you improve naming, add docs, etc.
+      </description>
+      <activities>
+        <activity>Add docstrings to new methods</activity>
+        <activity>Ensure type hints are complete</activity>
+        <activity>Improve variable/method names</activity>
+        <activity>Remove dead code</activity>
+        <activity>Verify all tests still pass</activity>
+      </activities>
+    </phase>
+  </tdd_protocol>
+
+  <!-- ============================================================ -->
+  <!-- ACCEPTANCE CRITERIA                                           -->
+  <!-- ============================================================ -->
+  <acceptance_criteria>
+    <criterion id="AC1" priority="must">
+      Analyst correctly identifies hallucinated APIs (imports/calls that don't exist)
+      with >= 85% accuracy on test corpus of LLM-generated code (revised per debate).
+    </criterion>
+
+    <criterion id="AC2" priority="must">
+      All findings include file:line evidence that can be verified.
+    </criterion>
+
+    <criterion id="AC3" priority="must">
+      Every fix_now finding has a complete TDD plan (red/green/refactor).
+    </criterion>
+
+    <criterion id="AC4" priority="must">
+      Analysis completes in &lt; 2 minutes for typical PR (10-20 files).
+    </criterion>
+
+    <criterion id="AC5" priority="must">
+      Critic successfully filters out &gt;= 80% of false positives.
+    </criterion>
+
+    <criterion id="AC6" priority="should">
+      System detects code smells with confidence scores.
+    </criterion>
+
+    <criterion id="AC7" priority="should">
+      Supports both PR review mode and issue implementation review mode.
+    </criterion>
+
+    <criterion id="AC8" priority="should">
+      Integrates with existing coder agent retry loop.
+    </criterion>
+
+    <criterion id="AC9" priority="could">
+      Tracks tech debt over time for reporting.
+    </criterion>
+
+    <criterion id="AC10" priority="could">
+      Provides refactoring effort estimates.
+    </criterion>
+  </acceptance_criteria>
+
+  <!-- ============================================================ -->
+  <!-- ANTI-PATTERNS TO DETECT                                       -->
+  <!-- ============================================================ -->
+  <anti_patterns>
+    <category name="LLM-Specific Issues">
+      <pattern id="HALLUCINATED_IMPORT" severity="critical">
+        <name>Hallucinated Import</name>
+        <description>Import statement for a module that doesn't exist</description>
+        <detection>Check if module can be found via importlib.util.find_spec()</detection>
+        <example><![CDATA[
+# BAD - This module doesn't exist
+from swarm_attack.utils.magic_helper import do_magic
+
+# GOOD - Verify imports exist
+from swarm_attack.utils.helpers import format_output
+        ]]></example>
+      </pattern>
+
+      <pattern id="HALLUCINATED_API" severity="critical">
+        <name>Hallucinated API Call</name>
+        <description>Method call on a class that doesn't have that method</description>
+        <detection>Parse AST, find method calls, verify method exists on class</detection>
+        <example><![CDATA[
+# BAD - BaseAgent doesn't have this method
+result = self.execute_with_retry(max_retries=3)
+
+# GOOD - Use methods that actually exist
+result = self.run(context)
+        ]]></example>
+      </pattern>
+
+      <pattern id="INCOMPLETE_IMPLEMENTATION" severity="high">
+        <name>Incomplete Implementation</name>
+        <description>TODO/FIXME comments or placeholder returns in "done" code</description>
+        <detection>Search for TODO, FIXME, XXX, HACK, or return None/{}/?</detection>
+        <example><![CDATA[
+# BAD - Placeholder implementation
+def process_data(self, data):
+    # TODO: implement this
+    return {}
+
+# GOOD - Complete implementation
+def process_data(self, data):
+    validated = self.validate(data)
+    return self.transform(validated)
+        ]]></example>
+      </pattern>
+
+      <pattern id="TEST_API_MISMATCH" severity="high">
+        <name>Test-Production API Mismatch</name>
+        <description>Tests mock or call methods with wrong signatures</description>
+        <detection>Compare mock signatures with real class signatures</detection>
+        <example><![CDATA[
+# BAD - Mock has different signature than real method
+mock_agent.run.return_value = "result"  # Real run() returns AgentResult
+
+# GOOD - Mock matches real signature
+mock_agent.run.return_value = AgentResult(status="success", output="result")
+        ]]></example>
+      </pattern>
+    </category>
+
+    <category name="Code Smells">
+      <pattern id="LONG_METHOD" severity="medium">
+        <name>Long Method</name>
+        <description>Method exceeds 50 lines</description>
+        <detection>Count lines in method body</detection>
+        <refactoring>Extract Method</refactoring>
+      </pattern>
+
+      <pattern id="LARGE_CLASS" severity="medium">
+        <name>Large Class</name>
+        <description>Class exceeds 300 lines</description>
+        <detection>Count lines in class body</detection>
+        <refactoring>Extract Class</refactoring>
+      </pattern>
+
+      <pattern id="DEEP_NESTING" severity="medium">
+        <name>Deep Nesting</name>
+        <description>More than 4 levels of if/for/while nesting</description>
+        <detection>Parse AST and count nesting depth</detection>
+        <refactoring>Extract Method, Replace Nested Conditional with Guard Clauses</refactoring>
+      </pattern>
+
+      <pattern id="GOD_CLASS" severity="high">
+        <name>God Class</name>
+        <description>Single class handling too many unrelated responsibilities</description>
+        <detection>Count distinct method "clusters" by name/purpose</detection>
+        <refactoring>Extract Class (one per responsibility)</refactoring>
+      </pattern>
+
+      <pattern id="COPY_PASTE" severity="medium">
+        <name>Copy-Paste Duplication</name>
+        <description>Same code block repeated 3+ times</description>
+        <detection>Hash code blocks, find duplicates</detection>
+        <refactoring>Extract Method, Create Base Class</refactoring>
+      </pattern>
+    </category>
+
+    <category name="Error Handling">
+      <pattern id="SWALLOWED_EXCEPTION" severity="high">
+        <name>Swallowed Exception</name>
+        <description>Empty except/catch block that hides errors</description>
+        <detection>Find except blocks with only pass or empty body</detection>
+        <example><![CDATA[
+# BAD - Error is hidden
+try:
+    risky_operation()
+except:
+    pass
+
+# GOOD - Error is logged or propagated
+try:
+    risky_operation()
+except IOError as e:
+    logger.error(f"Operation failed: {e}")
+    raise OperationError(f"Failed: {e}") from e
+        ]]></example>
+      </pattern>
+
+      <pattern id="BARE_EXCEPT" severity="high">
+        <name>Bare Except</name>
+        <description>Catching all exceptions without specifying type</description>
+        <detection>Find except: without exception type</detection>
+        <example><![CDATA[
+# BAD - Catches everything including KeyboardInterrupt
+try:
+    operation()
+except:
+    handle_error()
+
+# GOOD - Specific exception type
+try:
+    operation()
+except ValueError as e:
+    handle_value_error(e)
+        ]]></example>
+      </pattern>
+
+      <pattern id="MISSING_ERROR_HANDLING" severity="high">
+        <name>Missing Error Handling</name>
+        <description>IO/network operations without try/except</description>
+        <detection>Find file open, requests.*, subprocess.* without enclosing try</detection>
+      </pattern>
+    </category>
+
+    <category name="SOLID Violations">
+      <pattern id="SRP_VIOLATION" severity="medium">
+        <name>Single Responsibility Violation</name>
+        <description>Class has methods from multiple unrelated domains</description>
+        <detection>Cluster methods by name/purpose, flag if > 2 clusters</detection>
+        <refactoring>Extract Class per responsibility</refactoring>
+      </pattern>
+
+      <pattern id="OCP_VIOLATION" severity="medium">
+        <name>Open/Closed Violation</name>
+        <description>Switch on type instead of using polymorphism</description>
+        <detection>Find if/elif chains checking isinstance or type</detection>
+        <refactoring>Replace Conditional with Polymorphism</refactoring>
+      </pattern>
+
+      <pattern id="DIP_VIOLATION" severity="medium">
+        <name>Dependency Inversion Violation</name>
+        <description>High-level module creates low-level dependencies directly</description>
+        <detection>Find classes that instantiate their dependencies in __init__</detection>
+        <refactoring>Inject dependencies via constructor</refactoring>
+      </pattern>
+    </category>
+  </anti_patterns>
+
+  <!-- ============================================================ -->
+  <!-- RETRY STATE MANAGEMENT (Revision 1 - Debate Recommendation)  -->
+  <!-- ============================================================ -->
+  <retry_state>
+    <description>
+      State preservation across retry iterations. Prevents re-litigation of
+      already-validated or rejected findings. Enables progress tracking.
+    </description>
+
+    <retry_context_schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["iteration", "issue_id", "timestamp"],
+  "properties": {
+    "iteration": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Current retry iteration (1-3, escalate after 3)"
+    },
+    "issue_id": {
+      "type": "string",
+      "description": "GitHub issue or PR identifier being reviewed"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "previously_validated_findings": {
+      "type": "array",
+      "description": "Findings confirmed as real issues in prior iterations",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "validated_in_iteration": {"type": "integer"},
+          "status": {"enum": ["pending_fix", "fixed", "wont_fix"]}
+        }
+      }
+    },
+    "previously_rejected_findings": {
+      "type": "array",
+      "description": "Findings dismissed as false positives - do not re-raise",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "rejected_in_iteration": {"type": "integer"},
+          "rejection_reason": {"type": "string"}
+        }
+      }
+    },
+    "cumulative_tech_debt": {
+      "type": "array",
+      "description": "Issues marked fix_later across all iterations",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "added_in_iteration": {"type": "integer"},
+          "description": {"type": "string"}
+        }
+      }
+    },
+    "iteration_history": {
+      "type": "array",
+      "description": "Summary of each iteration's outcome",
+      "items": {
+        "type": "object",
+        "properties": {
+          "iteration": {"type": "integer"},
+          "verdict": {"enum": ["APPROVE", "REFACTOR", "ESCALATE"]},
+          "findings_count": {"type": "integer"},
+          "fixes_requested": {"type": "integer"},
+          "fixes_completed": {"type": "integer"}
+        }
+      }
+    }
+  }
+}
+    ]]></retry_context_schema>
+
+    <state_transitions>
+      <transition from="iteration_1" to="iteration_2">
+        <trigger>Moderator verdict = REFACTOR</trigger>
+        <actions>
+          <action>Carry forward validated_findings with status=pending_fix</action>
+          <action>Carry forward rejected_findings (do not re-raise)</action>
+          <action>Carry forward tech_debt backlog</action>
+          <action>Record iteration_1 summary in history</action>
+        </actions>
+      </transition>
+      <transition from="iteration_2" to="iteration_3">
+        <trigger>Moderator verdict = REFACTOR (second time)</trigger>
+        <actions>
+          <action>Same as above</action>
+          <action>Flag any findings raised 2+ times as potential architecture issue</action>
+        </actions>
+      </transition>
+      <transition from="iteration_3" to="escalation">
+        <trigger>Moderator verdict = REFACTOR (third time)</trigger>
+        <actions>
+          <action>Generate escalation report with full history</action>
+          <action>Include: what was requested, what was delivered, why gap exists</action>
+          <action>Route to human reviewer</action>
+        </actions>
+      </transition>
+    </state_transitions>
+
+    <storage>
+      <location>.swarm/code_quality/retry_state/{issue_id}.json</location>
+      <retention>30 days after issue closed</retention>
+    </storage>
+  </retry_state>
+
+  <!-- ============================================================ -->
+  <!-- TEST CORPUS (Revision 2 - Debate Recommendation)             -->
+  <!-- ============================================================ -->
+  <test_corpus>
+    <description>
+      Labeled test corpus for measuring acceptance criteria accuracy.
+      Required for AC1 (hallucination detection) and AC5 (false positive filtering).
+    </description>
+
+    <directory_structure>
+      <path>tests/fixtures/code_quality_corpus/</path>
+      <subdirs>
+        <subdir name="hallucinations/" count="25">
+          <description>Code samples with hallucinated imports/APIs</description>
+          <categories>
+            <category name="hallucinated_import" count="10">Non-existent module imports</category>
+            <category name="hallucinated_method" count="8">Calls to non-existent methods</category>
+            <category name="wrong_signature" count="7">Real API with wrong parameters</category>
+          </categories>
+        </subdir>
+        <subdir name="code_smells/" count="60">
+          <description>Code samples with various code smells</description>
+          <categories>
+            <category name="long_method" count="10">Methods > 50 lines</category>
+            <category name="large_class" count="10">Classes > 300 lines</category>
+            <category name="deep_nesting" count="10">Nesting > 4 levels</category>
+            <category name="god_class" count="10">Classes with 5+ responsibilities</category>
+            <category name="copy_paste" count="10">Duplicate code blocks</category>
+            <category name="primitive_obsession" count="10">Overuse of primitives</category>
+          </categories>
+        </subdir>
+        <subdir name="error_handling/" count="20">
+          <description>Code samples with error handling issues</description>
+          <categories>
+            <category name="swallowed_exception" count="7">Empty except blocks</category>
+            <category name="bare_except" count="7">Catching all exceptions</category>
+            <category name="missing_handling" count="6">IO without try/except</category>
+          </categories>
+        </subdir>
+        <subdir name="solid_violations/" count="25">
+          <description>Code samples violating SOLID principles</description>
+          <categories>
+            <category name="srp_violation" count="10">Multi-responsibility classes</category>
+            <category name="ocp_violation" count="8">Switch on type patterns</category>
+            <category name="dip_violation" count="7">Direct dependency instantiation</category>
+          </categories>
+        </subdir>
+        <subdir name="clean_code/" count="30">
+          <description>Clean code samples that should produce NO findings</description>
+          <categories>
+            <category name="well_structured" count="15">Properly organized code</category>
+            <category name="proper_error_handling" count="10">Correct exception handling</category>
+            <category name="solid_compliant" count="5">Good SOLID adherence</category>
+          </categories>
+        </subdir>
+      </subdirs>
+    </directory_structure>
+
+    <manifest_schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["corpus_version", "samples"],
+  "properties": {
+    "corpus_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "created": {"type": "string", "format": "date"},
+    "total_samples": {"type": "integer"},
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "category", "expected_findings"],
+        "properties": {
+          "file": {"type": "string"},
+          "category": {"type": "string"},
+          "subcategory": {"type": "string"},
+          "source": {"enum": ["synthetic", "historical", "contributed"]},
+          "expected_findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {"type": "string"},
+                "severity": {"enum": ["critical", "high", "medium", "low"]},
+                "line_range": {"type": "array", "items": {"type": "integer"}}
+              }
+            }
+          },
+          "is_false_positive_test": {
+            "type": "boolean",
+            "description": "If true, this sample tests that analyzer does NOT flag it"
+          }
+        }
+      }
+    }
+  }
+}
+    ]]></manifest_schema>
+
+    <corpus_sources>
+      <source name="synthetic" percentage="60">
+        <description>Deliberately crafted bad code using known anti-patterns</description>
+        <generation>
+          <method>Manual creation by team</method>
+          <method>LLM-generated with specific anti-pattern prompts</method>
+        </generation>
+      </source>
+      <source name="historical" percentage="30">
+        <description>Real code from swarm-attack commits with post-merge issues</description>
+        <criteria>
+          <criterion>Commits that required follow-up fixes</criterion>
+          <criterion>PRs with review comments about code quality</criterion>
+          <criterion>Code that caused test failures after merge</criterion>
+        </criteria>
+      </source>
+      <source name="contributed" percentage="10">
+        <description>Edge cases discovered during development</description>
+        <process>Add samples as new anti-patterns are discovered</process>
+      </source>
+    </corpus_sources>
+
+    <accuracy_measurement>
+      <metric name="hallucination_detection_accuracy">
+        <formula>true_positives / (true_positives + false_negatives)</formula>
+        <target>0.85</target>
+        <notes>Revised from 0.95 per debate recommendation - static analysis limitations</notes>
+      </metric>
+      <metric name="false_positive_rate">
+        <formula>false_positives / (false_positives + true_negatives)</formula>
+        <target>0.20</target>
+        <notes>Measured against clean_code/ samples</notes>
+      </metric>
+      <metric name="critic_filter_rate">
+        <formula>analyst_false_positives_caught_by_critic / total_analyst_false_positives</formula>
+        <target>0.80</target>
+      </metric>
+    </accuracy_measurement>
+  </test_corpus>
+
+  <!-- ============================================================ -->
+  <!-- TIMING BUDGETS (Revision 3 - Debate Recommendation)          -->
+  <!-- ============================================================ -->
+  <timing_budgets>
+    <description>
+      Per-phase timing and token constraints to meet 2-minute SLA.
+      Each phase has hard limits with early-exit on timeout.
+    </description>
+
+    <total_sla>
+      <target_seconds>120</target_seconds>
+      <buffer_seconds>30</buffer_seconds>
+      <description>Target 2 minutes with 30-second buffer for overhead</description>
+    </total_sla>
+
+    <phase_budgets>
+      <phase name="analyst">
+        <timeout_seconds>90</timeout_seconds>
+        <max_output_tokens>8000</max_output_tokens>
+        <max_input_tokens>15000</max_input_tokens>
+        <description>Primary analysis phase - most time allocated here</description>
+        <early_exit_conditions>
+          <condition>Timeout reached - return partial findings with truncated flag</condition>
+          <condition>Token budget exhausted - stop analysis, return what we have</condition>
+          <condition>No files to analyze - return empty findings immediately</condition>
+        </early_exit_conditions>
+      </phase>
+
+      <phase name="critic">
+        <timeout_seconds>30</timeout_seconds>
+        <max_output_tokens>4000</max_output_tokens>
+        <max_input_tokens>10000</max_input_tokens>
+        <description>Review phase - faster since reviewing existing findings</description>
+        <early_exit_conditions>
+          <condition>Timeout reached - auto-validate remaining findings</condition>
+          <condition>No findings to review - return immediate APPROVE</condition>
+        </early_exit_conditions>
+      </phase>
+
+      <phase name="moderator">
+        <timeout_seconds>30</timeout_seconds>
+        <max_output_tokens>4000</max_output_tokens>
+        <max_input_tokens>12000</max_input_tokens>
+        <description>Synthesis phase - produces final verdict and TDD plans</description>
+        <early_exit_conditions>
+          <condition>Timeout reached - return APPROVE with warning flag</condition>
+          <condition>All findings rejected by critic - return immediate APPROVE</condition>
+        </early_exit_conditions>
+      </phase>
+    </phase_budgets>
+
+    <timeout_handling>
+      <strategy>graceful_degradation</strategy>
+      <behaviors>
+        <behavior phase="analyst" on_timeout="return_partial">
+          <output>{"truncated": true, "analyzed_files": [...], "findings": [...]}</output>
+          <flag>Include "analysis_incomplete" warning in summary</flag>
+        </behavior>
+        <behavior phase="critic" on_timeout="auto_validate">
+          <output>Auto-validate unreviewed findings at original severity</output>
+          <flag>Include "critic_timeout" warning in summary</flag>
+        </behavior>
+        <behavior phase="moderator" on_timeout="approve_with_warning">
+          <output>Return APPROVE verdict with "moderator_timeout" flag</output>
+          <flag>Include list of findings that weren't fully processed</flag>
+        </behavior>
+      </behaviors>
+    </timeout_handling>
+
+    <cost_controls>
+      <max_cost_per_review_usd>2.00</max_cost_per_review_usd>
+      <early_exit_on_budget>true</early_exit_on_budget>
+      <cost_tracking>
+        <track>tokens_in per phase</track>
+        <track>tokens_out per phase</track>
+        <track>estimated_cost per phase</track>
+        <track>cumulative_cost</track>
+      </cost_tracking>
+    </cost_controls>
+  </timing_budgets>
+
+  <!-- ============================================================ -->
+  <!-- OUTPUT FORMATS                                                -->
+  <!-- ============================================================ -->
+  <output_formats>
+    <format name="analyst_output">
+      <description>JSON output from code-quality-analyst skill</description>
+      <schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["analysis_id", "files_analyzed", "summary", "findings", "recommendation"],
+  "properties": {
+    "analysis_id": {
+      "type": "string",
+      "pattern": "^cqa-\\d{8}-\\d{6}$"
+    },
+    "files_analyzed": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "total_issues": {"type": "integer"},
+        "critical": {"type": "integer"},
+        "high": {"type": "integer"},
+        "medium": {"type": "integer"},
+        "low": {"type": "integer"},
+        "fix_now": {"type": "integer"},
+        "fix_later": {"type": "integer"},
+        "ignore": {"type": "integer"}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "severity", "category", "file", "line", "title", "description"],
+        "properties": {
+          "finding_id": {"type": "string", "pattern": "^CQA-\\d{3}$"},
+          "severity": {"enum": ["critical", "high", "medium", "low"]},
+          "category": {"enum": ["code_smell", "solid", "llm_hallucination", "incomplete", "error_handling"]},
+          "expert": {"type": "string"},
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "title": {"type": "string"},
+          "description": {"type": "string"},
+          "code_snippet": {"type": "string"},
+          "refactoring": {
+            "type": "object",
+            "properties": {
+              "pattern": {"type": "string"},
+              "steps": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "priority": {"enum": ["fix_now", "fix_later", "ignore"]},
+          "effort_estimate": {"enum": ["small", "medium", "large"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "recommendation": {"enum": ["APPROVE", "REFACTOR", "ESCALATE"]},
+    "refactor_summary": {"type": "string"}
+  }
+}
+      ]]></schema>
+    </format>
+
+    <format name="critic_output">
+      <description>JSON output from refactor-critic skill</description>
+      <schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["review_id", "scores", "issues", "recommendation"],
+  "properties": {
+    "review_id": {
+      "type": "string",
+      "pattern": "^crit-\\d{8}-\\d{6}$"
+    },
+    "scores": {
+      "type": "object",
+      "properties": {
+        "accuracy": {"type": "number", "minimum": 0, "maximum": 1},
+        "severity_calibration": {"type": "number", "minimum": 0, "maximum": 1},
+        "actionability": {"type": "number", "minimum": 0, "maximum": 1},
+        "pragmatism": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "issue_type": {"enum": ["over_severity", "false_positive", "impractical_fix", "missing_context", "enterprise_creep"]},
+          "original_severity": {"type": "string"},
+          "suggested_severity": {"type": "string"},
+          "reasoning": {"type": "string"}
+        }
+      }
+    },
+    "validated_findings": {"type": "array", "items": {"type": "string"}},
+    "rejected_findings": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "string"},
+    "recommendation": {"enum": ["APPROVE", "REVISE"]}
+  }
+}
+      ]]></schema>
+    </format>
+
+    <format name="moderator_output">
+      <description>JSON output from refactor-moderator skill</description>
+      <schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["moderation_id", "final_verdict", "approved_findings", "handoff_instructions"],
+  "properties": {
+    "moderation_id": {
+      "type": "string",
+      "pattern": "^mod-\\d{8}-\\d{6}$"
+    },
+    "final_verdict": {"enum": ["APPROVE", "REFACTOR", "ESCALATE"]},
+    "approved_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["finding_id", "final_severity", "final_priority", "tdd_plan"],
+        "properties": {
+          "finding_id": {"type": "string"},
+          "final_severity": {"type": "string"},
+          "final_priority": {"type": "string"},
+          "tdd_plan": {
+            "type": "object",
+            "required": ["red", "green", "refactor"],
+            "properties": {
+              "red": {
+                "type": "object",
+                "properties": {
+                  "description": {"type": "string"},
+                  "test_file": {"type": "string"},
+                  "test_code": {"type": "string"}
+                }
+              },
+              "green": {
+                "type": "object",
+                "properties": {
+                  "description": {"type": "string"},
+                  "changes": {"type": "array", "items": {"type": "object"}}
+                }
+              },
+              "refactor": {
+                "type": "object",
+                "properties": {
+                  "description": {"type": "string"},
+                  "changes": {"type": "array", "items": {"type": "string"}}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "rejected_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "rejection_reason": {"type": "string"}
+        }
+      }
+    },
+    "tech_debt_backlog": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {"type": "string"},
+          "priority": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "summary": {"type": "string"},
+    "handoff_instructions": {"type": "string"}
+  }
+}
+      ]]></schema>
+    </format>
+
+    <format name="coder_handoff">
+      <description>Simplified format for passing to coder agent</description>
+      <schema><![CDATA[
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["verdict", "fixes_required", "tdd_plans"],
+  "properties": {
+    "verdict": {"enum": ["APPROVED", "NEEDS_REFACTOR"]},
+    "fixes_required": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string"},
+          "line": {"type": "integer"},
+          "issue": {"type": "string"},
+          "fix": {"type": "string"}
+        }
+      }
+    },
+    "tdd_plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "test_file": {"type": "string"},
+          "test_code": {"type": "string"},
+          "implementation_steps": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "context": {"type": "string"}
+  }
+}
+      ]]></schema>
+    </format>
+  </output_formats>
+
+  <!-- ============================================================ -->
+  <!-- FILE STRUCTURE                                                -->
+  <!-- ============================================================ -->
+  <file_structure>
+    <directory path="swarm_attack/code_quality/">
+      <file name="__init__.py">Module exports</file>
+      <file name="models.py">Finding, AnalysisResult, CriticReview, ModeratorDecision dataclasses</file>
+      <file name="analyzer.py">Code quality analysis engine</file>
+      <file name="smell_detector.py">Code smell detection (long method, large class, etc.)</file>
+      <file name="solid_checker.py">SOLID principle violation detection</file>
+      <file name="llm_auditor.py">LLM-specific issue detection (hallucinations, incomplete)</file>
+      <file name="refactor_suggester.py">Refactoring pattern suggestion engine</file>
+      <file name="tdd_generator.py">TDD plan generation for findings</file>
+      <file name="dispatcher.py">Three-stage debate orchestration</file>
+      <file name="prompts.py">Prompt templates for each sub-agent</file>
+    </directory>
+
+    <directory path=".claude/skills/code-quality-analyst/">
+      <file name="SKILL.md">Analyst skill definition</file>
+    </directory>
+
+    <directory path=".claude/skills/refactor-critic/">
+      <file name="SKILL.md">Critic skill definition</file>
+    </directory>
+
+    <directory path=".claude/skills/refactor-moderator/">
+      <file name="SKILL.md">Moderator skill definition</file>
+    </directory>
+
+    <directory path="tests/unit/code_quality/">
+      <file name="test_analyzer.py">Analyzer unit tests</file>
+      <file name="test_smell_detector.py">Smell detector tests</file>
+      <file name="test_solid_checker.py">SOLID checker tests</file>
+      <file name="test_llm_auditor.py">LLM auditor tests</file>
+      <file name="test_refactor_suggester.py">Refactoring suggestion tests</file>
+      <file name="test_tdd_generator.py">TDD plan generation tests</file>
+    </directory>
+
+    <directory path="tests/integration/">
+      <file name="test_code_quality_pipeline.py">End-to-end pipeline tests</file>
+    </directory>
+  </file_structure>
+
+  <!-- ============================================================ -->
+  <!-- CLI INTERFACE                                                 -->
+  <!-- ============================================================ -->
+  <cli_interface>
+    <command>/refactor-review</command>
+    <alternatives>
+      <alt>/code-quality</alt>
+      <alt>/cq</alt>
+    </alternatives>
+    <options>
+      <option flag="--files" type="string[]">
+        Specific files to analyze (default: changed files in current PR/commit)
+      </option>
+      <option flag="--mode" default="standard" type="choice">
+        Analysis mode: quick, standard, deep
+      </option>
+      <option flag="--output" default="json" type="choice">
+        Output format: json, markdown, sarif
+      </option>
+      <option flag="--strict" default="false" type="bool">
+        Fail on any high+ severity issue
+      </option>
+      <option flag="--save" default="" type="path">
+        Save report to file path
+      </option>
+      <option flag="--skip-critic" default="false" type="bool">
+        Skip critic phase (faster but more false positives)
+      </option>
+    </options>
+    <examples>
+      <example>swarm-attack refactor-review</example>
+      <example>swarm-attack refactor-review --files src/agent.py</example>
+      <example>swarm-attack refactor-review --mode deep --strict</example>
+      <example>swarm-attack cq --output markdown --save report.md</example>
+    </examples>
+  </cli_interface>
+
+  <!-- ============================================================ -->
+  <!-- IMPLEMENTATION PROMPT                                         -->
+  <!-- ============================================================ -->
+  <implementation_prompt><![CDATA[
+# IMPLEMENTATION PROMPT: Code Quality and Refactor Expert Team
+
+## FIRST: Verify Your Working Directory
+
+**Before reading further, run these commands:**
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack
+git worktree add worktrees/code-quality-refactor -b feature/code-quality-refactor-team
+cd worktrees/code-quality-refactor
+
+pwd          # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+git branch   # Must show: * feature/code-quality-refactor-team
+```
+
+**STOP if you're not in the correct worktree.**
+
+---
+
+## Team Structure
+
+You are implementing with guidance from the **Code Quality Expert Panel**:
+
+1. **Dr. Martin Chen** (Code Smell Detective) - Finds smells, complexity issues
+2. **Alexandra Vance** (SOLID Guardian) - Detects design principle violations
+3. **Dr. James Liu** (LLM Code Auditor) - Catches hallucinations, incomplete code
+4. **Dr. Sarah Fowler** (Refactor Strategist) - Proposes specific refactorings
+5. **Marcus Thompson** (Pragmatic Architect) - Filters for worthwhile fixes
+
+---
+
+## Implementation Rules
+
+1. **Must be TDD** - Write failing tests FIRST
+2. **No over-engineering** - We are a startup, reject enterprise patterns
+3. **Actionable findings** - Every issue has a specific fix
+4. **Evidence required** - Every finding has file:line references
+
+---
+
+## Phase 1: RED (Write Failing Tests)
+
+Create test files that verify:
+
+1. Hallucinated import detection works
+2. Long method detection works
+3. TDD plan generation produces valid plans
+4. Critic catches false positives
+5. Moderator produces coder-ready handoff
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/ -v
+# Expected: All tests FAIL
+```
+
+---
+
+## Phase 2: GREEN (Implement)
+
+Implement in order:
+1. models.py - Data structures
+2. smell_detector.py - Code smell detection
+3. solid_checker.py - SOLID violation detection
+4. llm_auditor.py - LLM hallucination detection
+5. refactor_suggester.py - Refactoring suggestions
+6. tdd_generator.py - TDD plan generation
+7. analyzer.py - Main analysis engine
+8. dispatcher.py - Three-stage debate
+9. Skills in .claude/skills/
+
+```bash
+PYTHONPATH=. pytest tests/ -v --tb=short
+# Expected: All tests PASS
+```
+
+---
+
+## Phase 3: REFACTOR
+
+- Add type hints
+- Add docstrings
+- Ensure all tests pass
+
+---
+
+## Acceptance Criteria
+
+- [ ] Detects hallucinated APIs with >= 85% accuracy
+- [ ] All findings have file:line evidence
+- [ ] Every fix_now finding has TDD plan
+- [ ] Analysis completes in < 2 minutes
+- [ ] Critic filters >= 80% of false positives
+
+---
+
+## DO NOT
+
+- Over-engineer with enterprise patterns
+- Add abstractions with single implementations
+- Suggest refactorings that slow shipping significantly
+- Generate findings without file:line evidence
+  ]]></implementation_prompt>
+</spec>

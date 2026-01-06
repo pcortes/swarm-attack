@@ -1,0 +1,302 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CONTINUATION PROMPT: Code Quality Refactor Team
+
+  Created: 2026-01-01
+  Purpose: Continue implementation from Phase 3
+
+  RESUME FROM: Phase 3 - Dispatcher and Skills agents
+-->
+<continuation>
+  <metadata>
+    <spec_file>/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml</spec_file>
+    <implementation_prompt>/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/IMPLEMENTATION_PROMPT.xml</implementation_prompt>
+    <worktree>/Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor</worktree>
+    <branch>feature/code-quality-refactor-team</branch>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- FIRST: VERIFY WORKTREE                                        -->
+  <!-- ============================================================ -->
+  <first_step><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+git branch   # Must show: * feature/code-quality-refactor-team
+
+# Verify tests pass
+PYTHONPATH=. python -m pytest tests/unit/code_quality/ -v --tb=short 2>&1 | tail -10
+# Expected: 237 passed
+  ]]></first_step>
+
+  <!-- ============================================================ -->
+  <!-- COMPLETED PHASES                                              -->
+  <!-- ============================================================ -->
+  <completed>
+    <phase name="Phase 1: Foundation" status="COMPLETE" tests="141">
+      <module>swarm_attack/code_quality/models.py</module>
+      <module>swarm_attack/code_quality/smell_detector.py</module>
+      <module>swarm_attack/code_quality/solid_checker.py</module>
+      <module>swarm_attack/code_quality/llm_auditor.py</module>
+      <module>tests/fixtures/code_quality_corpus/</module>
+    </phase>
+
+    <phase name="Phase 2: Dependent Modules" status="COMPLETE" tests="96">
+      <module>swarm_attack/code_quality/refactor_suggester.py</module>
+      <module>swarm_attack/code_quality/tdd_generator.py</module>
+      <module>swarm_attack/code_quality/analyzer.py</module>
+    </phase>
+
+    <total_tests>237 passing</total_tests>
+  </completed>
+
+  <!-- ============================================================ -->
+  <!-- REMAINING WORK: PHASE 3                                       -->
+  <!-- ============================================================ -->
+  <remaining>
+    <phase name="Phase 3: Orchestration" status="NOT_STARTED">
+      <task id="dispatcher">
+        <name>CodeQualityDispatcher</name>
+        <file>swarm_attack/code_quality/dispatcher.py</file>
+        <test_file>tests/unit/code_quality/test_dispatcher.py</test_file>
+        <description>
+          Three-stage debate orchestration:
+          1. Analyst phase (90s budget) - Run CodeQualityAnalyzer
+          2. Critic phase (30s budget) - Validate findings, catch false positives
+          3. Moderator phase (30s budget) - Final verdict with TDD plans
+
+          Must implement:
+          - RetryContext state management (max 3 iterations)
+          - Per-phase timing budgets
+          - Graceful degradation on timeout
+          - Cost tracking
+          - Decision points: APPROVE / REFACTOR / ESCALATE
+        </description>
+        <dependencies>analyzer.py, models.py</dependencies>
+      </task>
+
+      <task id="skills">
+        <name>CLI Skill Files</name>
+        <files>
+          <file>.claude/skills/code-quality-analyst/SKILL.md</file>
+          <file>.claude/skills/refactor-critic/SKILL.md</file>
+          <file>.claude/skills/refactor-moderator/SKILL.md</file>
+        </files>
+        <test_file>tests/unit/code_quality/test_skills_loading.py</test_file>
+        <description>
+          Create SKILL.md files for the three debate agents.
+          Each skill needs:
+          - Correct tool whitelists per skill
+          - JSON output format specifications from spec
+          - Detection rules in analyst skill
+        </description>
+      </task>
+    </phase>
+
+    <phase name="Phase 4: Integration" status="NOT_STARTED">
+      <task id="integration_tests">
+        <name>Integration Tests</name>
+        <description>
+          - Run full unit test suite
+          - Run integration tests (end-to-end pipeline)
+          - Test against corpus samples
+          - Measure accuracy metrics (AC1: 85% hallucination detection, AC5: 80% false positive filter)
+          - Verify timing SLA (2-minute target for 10-20 files)
+        </description>
+      </task>
+    </phase>
+
+    <phase name="Phase 5: Finalize" status="NOT_STARTED">
+      <task id="commit">
+        <name>Commit and Push</name>
+        <description>
+          - Run final test suite
+          - Update __init__.py exports
+          - Commit with descriptive message
+          - Push branch to remote
+        </description>
+      </task>
+    </phase>
+  </remaining>
+
+  <!-- ============================================================ -->
+  <!-- DISPATCHER AGENT PROMPT                                       -->
+  <!-- ============================================================ -->
+  <dispatcher_agent_prompt><![CDATA[
+# Agent: Debate Dispatcher Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Implement `swarm_attack/code_quality/dispatcher.py` - the three-stage debate orchestrator.
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on:
+- `<pipeline_position>` for the three stages
+- `<retry_state>` for RetryContext schema
+- Timing budgets: analyst=90s, critic=30s, moderator=30s
+
+## Dependencies (already implemented)
+
+Import from existing modules:
+- `from .models import Finding, AnalysisResult, RetryContext, ModeratorDecision, CriticReview, Verdict`
+- `from .analyzer import CodeQualityAnalyzer`
+- `from .refactor_suggester import RefactorSuggester`
+- `from .tdd_generator import TDDGenerator`
+
+## Deliverables
+
+```python
+# swarm_attack/code_quality/dispatcher.py
+
+import time
+from pathlib import Path
+from typing import Optional
+from .models import RetryContext, ModeratorDecision, CriticReview, AnalysisResult, Verdict
+from .analyzer import CodeQualityAnalyzer
+from .refactor_suggester import RefactorSuggester
+from .tdd_generator import TDDGenerator
+
+class CodeQualityDispatcher:
+    """Three-stage debate orchestration for code quality review."""
+
+    # Timing budgets from spec
+    ANALYST_BUDGET_SECONDS = 90
+    CRITIC_BUDGET_SECONDS = 30
+    MODERATOR_BUDGET_SECONDS = 30
+    MAX_RETRIES = 3
+
+    def __init__(self):
+        self.analyzer = CodeQualityAnalyzer()
+        self.suggester = RefactorSuggester()
+        self.tdd_generator = TDDGenerator()
+
+    def run_review(
+        self,
+        file_paths: list[str | Path],
+        retry_context: Optional[RetryContext] = None,
+    ) -> ModeratorDecision:
+        """Run full three-stage review pipeline."""
+        pass
+
+    def run_analyst_phase(self, file_paths: list[str | Path]) -> AnalysisResult:
+        """Stage 1: Analysis with 90s budget."""
+        pass
+
+    def run_critic_phase(self, analysis: AnalysisResult) -> CriticReview:
+        """Stage 2: Validate findings with 30s budget."""
+        pass
+
+    def run_moderator_phase(
+        self,
+        analysis: AnalysisResult,
+        critique: CriticReview,
+        retry_context: Optional[RetryContext] = None,
+    ) -> ModeratorDecision:
+        """Stage 3: Final verdict with 30s budget."""
+        pass
+
+    def should_escalate(self, retry_context: RetryContext) -> bool:
+        """Check if we should escalate after max retries."""
+        pass
+```
+
+## TDD Protocol
+
+1. **RED**: Write tests in `tests/unit/code_quality/test_dispatcher.py`
+2. **GREEN**: Implement dispatcher
+3. **REFACTOR**: Clean up
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_dispatcher.py -v
+```
+
+Report: "CodeQualityDispatcher complete. All X tests passing."
+  ]]></dispatcher_agent_prompt>
+
+  <!-- ============================================================ -->
+  <!-- SKILLS AGENT PROMPT                                           -->
+  <!-- ============================================================ -->
+  <skills_agent_prompt><![CDATA[
+# Agent: Skills Definition Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Create SKILL.md files for the three debate agents:
+1. `.claude/skills/code-quality-analyst/SKILL.md`
+2. `.claude/skills/refactor-critic/SKILL.md`
+3. `.claude/skills/refactor-moderator/SKILL.md`
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on:
+- `<skills>` section for each skill's SKILL.md content
+- `<output_formats>` for JSON schemas
+
+## Deliverables
+
+Create three SKILL.md files following the patterns in the spec.
+
+Each SKILL.md needs:
+- name: The skill name
+- description: What the skill does
+- tools: List of allowed tools (Read, Grep, Glob, Bash with restrictions)
+- Output format specification
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_skills_loading.py -v
+```
+
+Report: "Skills complete. All X tests passing."
+  ]]></skills_agent_prompt>
+
+  <!-- ============================================================ -->
+  <!-- HOW TO CONTINUE                                               -->
+  <!-- ============================================================ -->
+  <instructions><![CDATA[
+To continue this implementation:
+
+1. Start a new Claude Code session in the worktree:
+   cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+
+2. Provide this prompt:
+   "Continue code quality refactor implementation from Phase 3.
+    See /Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/CONTINUATION_PROMPT.xml"
+
+3. The new session should:
+   a. Verify worktree (pwd, git branch, run tests to confirm 237 pass)
+   b. Spawn two agents in parallel for Phase 3:
+      - Dispatcher agent (using <dispatcher_agent_prompt>)
+      - Skills agent (using <skills_agent_prompt>)
+   c. After Phase 3 completes, run Phase 4 integration tests
+   d. After Phase 4 passes, run Phase 5 commit
+
+4. Expected final state:
+   - All tests passing (should be ~280+ tests)
+   - Branch pushed to remote
+   - Commit message following spec format
+  ]]></instructions>
+</continuation>
