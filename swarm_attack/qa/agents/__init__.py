@@ -16,6 +16,14 @@ from swarm_attack.qa.agents.regression import (
     GitEdgeCaseError,
     ImpactMap,
 )
+from swarm_attack.qa.agents.semantic_tester import (
+    SemanticTesterAgent,
+    SemanticTestResult,
+    SemanticVerdict,
+    SemanticScope,
+    Evidence,
+    SemanticIssue,
+)
 
 __all__ = [
     "BehavioralTesterAgent",
@@ -28,4 +36,10 @@ __all__ = [
     "RegressionScannerAgent",
     "GitEdgeCaseError",
     "ImpactMap",
+    "SemanticTesterAgent",
+    "SemanticTestResult",
+    "SemanticVerdict",
+    "SemanticScope",
+    "Evidence",
+    "SemanticIssue",
 ]

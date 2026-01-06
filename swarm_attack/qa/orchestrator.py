@@ -19,6 +19,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from swarm_attack.qa.agents.behavioral import BehavioralTesterAgent
 from swarm_attack.qa.agents.contract import ContractValidatorAgent
 from swarm_attack.qa.agents.regression import RegressionScannerAgent
+from swarm_attack.qa.agents.semantic_tester import SemanticTesterAgent
 from swarm_attack.qa.models import (
     QABug,
     QAContext,
@@ -45,8 +46,9 @@ class QAOrchestrator:
     Routes to specialized sub-agents based on depth:
     - SHALLOW: BehavioralTester only (happy path)
     - STANDARD: BehavioralTester + ContractValidator
-    - DEEP: All three agents + security probes
+    - DEEP: All agents including SemanticTester
     - REGRESSION: RegressionScanner + targeted BehavioralTester
+    - SEMANTIC: SemanticTester only (Claude CLI-powered)
     """
 
     # Class-level counter for unique session IDs
@@ -78,6 +80,7 @@ class QAOrchestrator:
         self.behavioral_agent = BehavioralTesterAgent(config, logger)
         self.contract_agent = ContractValidatorAgent(config, logger, limits=self.limits)
         self.regression_agent = RegressionScannerAgent(config, logger, limits=self.limits)
+        self.semantic_tester = SemanticTesterAgent(config, logger)
 
         # Session tracking
         self._current_session: Optional[QASession] = None
@@ -323,8 +326,9 @@ class QAOrchestrator:
         Depth-based dispatch (Section 6):
         - SHALLOW: BehavioralTester only (happy path)
         - STANDARD: BehavioralTester + ContractValidator
-        - DEEP: All three agents + security probes
+        - DEEP: All agents including SemanticTester
         - REGRESSION: RegressionScanner + targeted BehavioralTester
+        - SEMANTIC: SemanticTester only (Claude CLI-powered)
 
         Args:
             depth: Testing depth level.
@@ -367,7 +371,7 @@ class QAOrchestrator:
             )
 
         elif depth == QADepth.DEEP:
-            # DEEP: All three agents
+            # DEEP: All agents including semantic
             results["behavioral"] = self._run_agent_safe(
                 self.behavioral_agent, agent_context, "behavioral", skipped_reasons
             )
@@ -376,6 +380,9 @@ class QAOrchestrator:
             )
             results["regression"] = self._run_agent_safe(
                 self.regression_agent, agent_context, "regression", skipped_reasons
+            )
+            results["semantic"] = self._run_agent_safe(
+                self.semantic_tester, agent_context, "semantic", skipped_reasons
             )
 
         elif depth == QADepth.REGRESSION:
@@ -399,6 +406,12 @@ class QAOrchestrator:
 
             results["behavioral"] = self._run_agent_safe(
                 self.behavioral_agent, agent_context, "behavioral", skipped_reasons
+            )
+
+        elif depth == QADepth.SEMANTIC:
+            # SEMANTIC: SemanticTester only (Claude CLI-powered)
+            results["semantic"] = self._run_agent_safe(
+                self.semantic_tester, agent_context, "semantic", skipped_reasons
             )
 
         if skipped_reasons:
@@ -505,6 +518,30 @@ class QAOrchestrator:
                     normalized = self._normalize_finding(f)
                     if normalized:
                         all_findings.append(normalized)
+
+        # Extract semantic results
+        if semantic := agent_results.get("semantic"):
+            if isinstance(semantic, dict):
+                # Semantic tests don't have standard test counts
+                # but may have findings
+                findings = semantic.get("issues", [])
+                for f in findings:
+                    # Convert semantic issues to QAFinding format
+                    if isinstance(f, dict):
+                        qa_finding = QAFinding(
+                            finding_id=f"sem-{len(all_findings)+1}",
+                            severity=f.get("severity", "minor"),
+                            category="semantic",
+                            endpoint="",
+                            test_type="semantic",
+                            title=f.get("description", "Semantic issue")[:50],
+                            description=f.get("description", ""),
+                            expected={},
+                            actual={},
+                            evidence={"suggestion": f.get("suggestion", "")},
+                            recommendation=f.get("suggestion", ""),
+                        )
+                        all_findings.append(qa_finding)
 
         # Track skipped reasons
         if skipped := agent_results.get("skipped_reasons"):

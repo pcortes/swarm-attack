@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
 from swarm_attack.agents.base import AgentResult, BaseAgent, SkillNotFoundError
+from swarm_attack.qa.regression_scheduler import RegressionScheduler, RegressionSchedulerConfig
 from swarm_attack.utils.fs import file_exists
 
 if TYPE_CHECKING:
@@ -829,6 +830,18 @@ class VerifierAgent(BaseAgent):
         )
 
         if success:
+            # Record issue committed for regression tracking
+            try:
+                scheduler_config = RegressionSchedulerConfig()
+                scheduler = RegressionScheduler(scheduler_config, Path(self.config.repo_root))
+                if scheduler.record_issue_committed(f"{feature_id}_{issue_number}"):
+                    self._log("regression_triggered", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                    })
+            except Exception:
+                pass  # Don't block verification on regression tracking failures
+
             return AgentResult.success_result(output=result_output, cost_usd=self._total_cost)
         else:
             # Build appropriate error message

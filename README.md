@@ -14,6 +14,29 @@ PRD → Spec Debate → Issues → Complexity Gate → Implementation → Verify
 Bug Report → Reproduce → Analyze → Plan → Approve → Fix → Verify
 ```
 
+### Semantic QA Testing
+```
+Changes → Semantic Test (Opus 4.5) → Verdict → Pipeline Decision
+```
+
+AI-powered semantic validation using Claude Code CLI:
+- **Zero API cost** - Uses Claude Max subscription
+- **Human-like testing** - Opus 4.5 understands code behavior semantically
+- **Pipeline integrated** - Blocks commits on FAIL verdict
+- **Regression tracking** - Automated periodic testing after N commits/issues
+
+**Quick Start:**
+```bash
+# Run semantic test on your changes
+swarm-attack qa semantic-test
+
+# Check regression scheduler status
+swarm-attack qa regression-status
+
+# Force a regression run
+swarm-attack qa regression --force
+```
+
 Swarm Attack coordinates multiple AI agents to:
 
 **Feature Development:**

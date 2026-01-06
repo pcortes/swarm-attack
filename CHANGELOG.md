@@ -2,6 +2,63 @@
 
 All notable changes to Swarm Attack are documented here.
 
+## [0.3.1] - 2026-01-05
+
+### Major Features
+
+#### Semantic QA Testing System
+- **SemanticTesterAgent** - Claude Code CLI-powered semantic testing with Opus 4.5
+- **Zero API Cost** - Uses Claude Max subscription for unlimited testing
+- **Human-like Testing** - Runs real commands and validates code does what it claims
+
+#### Regression Scheduler
+- **RegressionScheduler** - Tracks commits/issues and triggers periodic regression testing
+- **Configurable Triggers** - Issues count, commit count, or time-based triggers
+- **State Persistence** - State tracked at `.swarm/regression_state.json`
+
+#### Pipeline Integration
+- **Feature Pipeline Hook** - Semantic test after implementation, before commit
+- **Bug Pipeline Hook** - Semantic test after fix, before pytest verification
+- **Verifier Hook** - Records issues committed for regression tracking
+- **FAIL Verdict Handling** - Creates bugs and blocks commits for failed semantic tests
+
+#### Reporting & Metrics
+- **RegressionReporter** - Generates markdown reports at `.swarm/qa/regression-reports/`
+- **SemanticQAMetrics** - Tracks bugs caught, false positives, execution times
+- **Rich Formatting** - Colored CLI output with panels and tables
+
+### CLI Commands
+- `swarm-attack qa semantic-test` - Run semantic testing on changes
+- `swarm-attack qa semantic-test --expected "behavior"` - With expected behavior
+- `swarm-attack qa regression-status` - Check regression scheduler status
+- `swarm-attack qa regression --force` - Force regression run
+
+### Files Added
+- `swarm_attack/qa/agents/semantic_tester.py`
+- `swarm_attack/qa/regression_scheduler.py`
+- `swarm_attack/qa/regression_reporter.py`
+- `swarm_attack/qa/metrics.py`
+- `.claude/skills/qa-semantic-tester/SKILL.md`
+- `docs/SEMANTIC-QA.md`
+
+### Files Modified
+- `swarm_attack/orchestrator.py` - Feature pipeline semantic hook
+- `swarm_attack/bug_orchestrator.py` - Bug pipeline semantic hook
+- `swarm_attack/agents/verifier.py` - Regression scheduler hook
+- `swarm_attack/cli/qa.py` - New CLI commands
+- `swarm_attack/qa/models.py` - QADepth.SEMANTIC added
+- `swarm_attack/qa/orchestrator.py` - SEMANTIC and DEEP depth support
+- `CLAUDE.md` - Semantic QA documentation
+- `README.md` - Feature overview
+
+### Test Coverage
+- 19 unit tests for SemanticTesterAgent
+- 22 unit tests for RegressionScheduler
+- 7 integration tests for semantic QA integration
+- Integration tests for pipeline hooks
+
+---
+
 ## [0.3.0] - 2025-12-29
 
 ### Major Features

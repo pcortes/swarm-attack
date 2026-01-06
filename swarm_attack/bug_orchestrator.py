@@ -27,6 +27,7 @@ from swarm_attack.agents.bug_moderator import BugModeratorAgent
 from swarm_attack.agents.bug_researcher import BugResearcherAgent
 from swarm_attack.agents.fix_planner import FixPlannerAgent
 from swarm_attack.agents.root_cause_analyzer import RootCauseAnalyzerAgent
+from swarm_attack.qa.agents import SemanticTesterAgent
 from swarm_attack.bug_models import (
     AgentCost,
     ApprovalRecord,
@@ -1132,6 +1133,66 @@ class BugOrchestrator:
             # Run verification tests
             state.transition_to(BugPhase.VERIFYING, "auto")
             self._state_store.save(state)
+
+            # Run semantic tester before pytest verification
+            self._log("semantic_test_start", {"bug_id": bug_id})
+            try:
+                semantic_tester = SemanticTesterAgent(self.config, self._logger)
+                semantic_context = {
+                    "changes": f"Fix for {bug_id}: {state.fix_plan.summary}",
+                    "expected_behavior": f"Bug {bug_id} should be fixed. Root cause: {state.root_cause.summary if state.root_cause else 'Unknown'}",
+                    "test_scope": "changes_only",
+                }
+                semantic_result = semantic_tester.run(semantic_context)
+
+                # Check semantic test verdict
+                if semantic_result.output and semantic_result.output.get("verdict") == "FAIL":
+                    # Semantic validation failed - block and send back for re-analysis
+                    error_msg = (
+                        semantic_result.errors[0]
+                        if semantic_result.errors
+                        else "Semantic validation failed"
+                    )
+                    state.blocked_reason = f"Semantic test failed: {error_msg}"
+                    state.transition_to(BugPhase.BLOCKED, "semantic_test_failed")
+                    self._state_store.save(state)
+                    self._log(
+                        "semantic_test_failed",
+                        {"bug_id": bug_id, "error": error_msg},
+                        level="warning",
+                    )
+                    return BugPipelineResult(
+                        success=False,
+                        bug_id=bug_id,
+                        phase=BugPhase.BLOCKED,
+                        cost_usd=0.0,
+                        error=state.blocked_reason,
+                    )
+
+                self._log(
+                    "semantic_test_passed",
+                    {
+                        "bug_id": bug_id,
+                        "verdict": semantic_result.output.get("verdict") if semantic_result.output else "UNKNOWN",
+                    },
+                )
+            except Exception as e:
+                # Semantic tester error - block the bug
+                state.blocked_reason = f"Semantic tester error: {e}"
+                state.transition_to(BugPhase.BLOCKED, "semantic_test_error")
+                self._state_store.save(state)
+                self._log(
+                    "semantic_test_error",
+                    {"bug_id": bug_id, "error": str(e)},
+                    level="error",
+                )
+                return BugPipelineResult(
+                    success=False,
+                    bug_id=bug_id,
+                    phase=BugPhase.BLOCKED,
+                    cost_usd=0.0,
+                    error=state.blocked_reason,
+                )
 
             # Run pytest on original test if provided
             test_passed = True

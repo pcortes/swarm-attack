@@ -53,6 +53,7 @@ from swarm_attack.progress_logger import ProgressLogger
 from swarm_attack.session_initializer import SessionInitializer
 from swarm_attack.session_finalizer import SessionFinalizer
 from swarm_attack.verification_tracker import VerificationTracker
+from swarm_attack.qa.hooks.semantic_hook import SemanticTestHook
 
 if TYPE_CHECKING:
     from swarm_attack.config import SwarmConfig
@@ -3635,6 +3636,47 @@ class Orchestrator:
                 except Exception:
                     pass  # Summary generation failures should not block implementation
 
+                # Run semantic testing before commit
+                try:
+                    semantic_hook = SemanticTestHook(self.config, self._logger)
+                    if semantic_hook.should_run(
+                        verifier_passed=True,
+                        feature_id=feature_id,
+                        issue_number=issue_number,
+                    ):
+                        semantic_result = semantic_hook.run(
+                            feature_id=feature_id,
+                            issue_number=issue_number,
+                        )
+
+                        if semantic_result.should_block:
+                            # FAIL verdict - block commit and create bug
+                            self._log("semantic_test_blocked", {
+                                "feature_id": feature_id,
+                                "issue_number": issue_number,
+                                "verdict": semantic_result.verdict,
+                                "reason": semantic_result.block_reason,
+                                "bug_id": semantic_result.created_bug_id,
+                            }, level="error")
+                            success = False  # Block the commit
+                        elif semantic_result.verdict == "PARTIAL":
+                            # PARTIAL verdict - log warning but continue
+                            self._log("semantic_test_partial", {
+                                "feature_id": feature_id,
+                                "issue_number": issue_number,
+                                "warning": semantic_result.warning,
+                                "recommendations": semantic_result.recommendations,
+                            }, level="warning")
+                        # PASS verdict - continue normally (already logged by hook)
+                except Exception as e:
+                    # Semantic test failures should not block implementation (fail open)
+                    self._log("semantic_test_error", {
+                        "feature_id": feature_id,
+                        "issue_number": issue_number,
+                        "error": str(e),
+                    }, level="warning")
+
+            if success:
                 # Create commit
                 commit_hash = self._create_commit(
                     feature_id,

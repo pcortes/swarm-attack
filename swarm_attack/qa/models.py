@@ -48,6 +48,7 @@ class QADepth(Enum):
     SHALLOW = "shallow"
     STANDARD = "standard"
     DEEP = "deep"
+    SEMANTIC = "semantic"  # Claude CLI semantic testing
     REGRESSION = "regression"
 
 

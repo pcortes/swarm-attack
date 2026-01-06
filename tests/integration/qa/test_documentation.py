@@ -33,8 +33,15 @@ class TestDocumentationGeneration:
 
     def test_all_public_modules_documented(self, tmp_path):
         """All public QA modules should have generated docs."""
+        # Generate docs for individual modules (pdoc generates separate files this way)
+        modules = [
+            "swarm_attack.qa.models",
+            "swarm_attack.qa.orchestrator",
+            "swarm_attack.qa.context_builder",
+            "swarm_attack.qa.depth_selector",
+        ]
         subprocess.run(
-            ["python", "-m", "pdoc", "swarm_attack.qa", "-o", str(tmp_path)],
+            ["python", "-m", "pdoc", *modules, "-o", str(tmp_path)],
             capture_output=True,
             cwd="/Users/philipjcortes/Desktop/swarm-attack-qa-agent",
             env=_get_env_with_pythonpath(),
@@ -53,8 +60,9 @@ class TestDocumentationGeneration:
 
     def test_orchestrator_methods_documented(self, tmp_path):
         """QAOrchestrator public methods should be in docs."""
+        # Generate docs for orchestrator module specifically
         subprocess.run(
-            ["python", "-m", "pdoc", "swarm_attack.qa", "-o", str(tmp_path)],
+            ["python", "-m", "pdoc", "swarm_attack.qa.orchestrator", "-o", str(tmp_path)],
             capture_output=True,
             cwd="/Users/philipjcortes/Desktop/swarm-attack-qa-agent",
             env=_get_env_with_pythonpath(),

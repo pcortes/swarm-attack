@@ -799,6 +799,72 @@ else:
 | `swarm_attack/qa/regression_detector.py` | Regression detection |
 | `swarm_attack/qa/session_extension.py` | Orchestration |
 
+## Semantic QA Testing (v0.3.1)
+
+AI-powered semantic testing using Claude Code CLI with Opus 4.5. Zero API cost (Max plan).
+
+### Key Features
+
+- **SemanticTesterAgent** - Claude Code CLI-powered semantic testing with human-like validation
+- **SemanticVerdict** - PASS, FAIL, or PARTIAL verdicts with evidence
+- **SemanticTestHook** - Pipeline integration for feature/bug workflows
+- **RegressionScheduler** - Tracks commits/issues, triggers periodic testing
+- **RegressionReporter** - Generates markdown reports for regression runs
+- **SemanticQAMetrics** - Tracks test performance (pass rate, true/false positives)
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `swarm-attack qa semantic-test` | Run semantic test on changes |
+| `swarm-attack qa semantic-test --scope affected` | Test affected code (wider scope) |
+| `swarm-attack qa semantic-test --expected "desc"` | Test with expected behavior |
+| `swarm-attack qa regression-status` | Check regression scheduler state |
+| `swarm-attack qa regression --force` | Force regression test run |
+| `swarm-attack qa regression --check` | Check if regression is needed |
+
+### Pipeline Integration
+
+Both pipelines include semantic testing:
+
+**Feature Pipeline:**
+```
+... → Verifier Pass → SemanticTestHook → Commit
+                         ↓
+                   FAIL → Block + Create Bug
+                   PARTIAL → Warn + Allow
+                   PASS → Allow
+```
+
+**Bug Pipeline:**
+```
+... → Fix Verified → SemanticTestHook → Pytest
+                         ↓
+                   FAIL → Block
+                   PASS → Continue
+```
+
+### SemanticVerdict Handling
+
+| Verdict | Action | Pipeline Effect |
+|---------|--------|-----------------|
+| **PASS** | Allow commit | Continue normally |
+| **PARTIAL** | Log warning | Allow but warn |
+| **FAIL** | Block commit | Create bug investigation |
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `swarm_attack/qa/agents/semantic_tester.py` | SemanticTesterAgent with Claude CLI |
+| `swarm_attack/qa/regression_scheduler.py` | RegressionScheduler trigger logic |
+| `swarm_attack/qa/regression_reporter.py` | RegressionReporter markdown generation |
+| `swarm_attack/qa/metrics.py` | SemanticQAMetrics tracking |
+| `swarm_attack/qa/hooks/semantic_hook.py` | SemanticTestHook for pipeline integration |
+| `swarm_attack/cli/qa.py` | CLI commands for semantic testing |
+
+---
+
 ## Context Flow & Schema Drift Prevention (v0.3.0)
 
 Prevents duplicate class definitions across issues by tracking what each issue creates or modifies.
