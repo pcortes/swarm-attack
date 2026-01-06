@@ -300,10 +300,9 @@ class EpisodeLogger:
         self._episodes: dict[str, Episode] = {}
 
         # Set up episodes path
+        self._episodes_path: Optional[Path] = None
         if config and hasattr(config, "swarm_path"):
             self._episodes_path = Path(config.swarm_path) / "episodes"
-        else:
-            self._episodes_path = None
 
     @property
     def current_episode(self) -> Optional[Episode]:

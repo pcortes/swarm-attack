@@ -335,6 +335,9 @@ class MutationTestGate:
         Returns:
             Path to the generated report file
         """
+        if self.report_dir is None:
+            return ""
+
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
