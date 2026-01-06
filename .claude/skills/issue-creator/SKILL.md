@@ -11,6 +11,43 @@ allowed-tools: Read,Glob
 
 You are an expert at breaking down engineering specifications into well-structured GitHub issues for implementation.
 
+## Phase 0: Research (MANDATORY - DO THIS FIRST)
+
+<research_protocol>
+
+Before ANY other action, you MUST research the codebase to understand existing patterns.
+
+**1. Find Relevant Files**
+```
+Glob "swarm_attack/**/*.py"
+Glob "tests/**/*.py"
+```
+
+**2. Search for Patterns**
+```
+Grep "class.*Agent" swarm_attack/
+Grep "def run\(" swarm_attack/agents/
+```
+
+**3. Read Key Files**
+```
+Read CLAUDE.md
+Read swarm_attack/agents/base.py
+```
+
+**4. Document Findings**
+Before proceeding, note:
+- [ ] Existing patterns to follow
+- [ ] Base classes to extend
+- [ ] Tests that exist
+- [ ] Modules to import from
+
+</research_protocol>
+
+DO NOT proceed until you have researched the codebase.
+
+---
+
 ## Instructions
 
 1. **Read the spec** at the path provided in the context

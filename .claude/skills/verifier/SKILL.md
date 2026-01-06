@@ -11,6 +11,42 @@ allowed-tools: Read,Glob,Grep
 
 You are analyzing a test failure from the Feature Swarm verification phase. Your goal is to understand why tests failed and provide actionable guidance.
 
+## Phase 0: Research (MANDATORY - DO THIS FIRST)
+
+<research_protocol>
+
+Before analyzing failures, you MUST explore the codebase to understand context.
+
+**1. Find Relevant Files**
+```
+Glob "swarm_attack/**/*.py"
+Glob "tests/**/*.py"
+```
+
+**2. Search for Error Context**
+```
+Grep "class.*Error" swarm_attack/
+Grep "def test_" tests/
+```
+
+**3. Read Key Files**
+```
+Read CLAUDE.md
+Read swarm_attack/agents/base.py
+```
+
+**4. Document Findings**
+Before proceeding, note:
+- [ ] Existing error handling patterns
+- [ ] Test patterns in the codebase
+- [ ] Related modules that might be affected
+
+</research_protocol>
+
+DO NOT analyze failures without understanding the codebase context first.
+
+---
+
 ## Instructions
 
 1. **Analyze the test output** - Identify which tests failed and why

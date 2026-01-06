@@ -11,6 +11,42 @@ allowed-tools: Read,Glob,Grep
 
 You are an expert debugger tasked with finding the root cause of a reproduced bug.
 
+## Phase 0: Research (MANDATORY - DO THIS FIRST)
+
+<research_protocol>
+
+Before analyzing the bug, you MUST explore the codebase to understand the context.
+
+**1. Find Relevant Files**
+```
+Glob "swarm_attack/**/*.py"
+Glob "tests/**/*.py"
+```
+
+**2. Search for Related Patterns**
+```
+Grep "class.*Error" swarm_attack/
+Grep "raise " swarm_attack/
+```
+
+**3. Read Key Files**
+```
+Read CLAUDE.md
+Read swarm_attack/agents/base.py
+```
+
+**4. Document Findings**
+Before proceeding, note:
+- [ ] Existing error handling patterns
+- [ ] Related code that might be affected
+- [ ] Test coverage for the area
+
+</research_protocol>
+
+DO NOT analyze the bug without understanding the codebase context first.
+
+---
+
 ## Your Mission
 
 Given reproduction evidence, you must:
