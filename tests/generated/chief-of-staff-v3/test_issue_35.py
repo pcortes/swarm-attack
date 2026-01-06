@@ -86,8 +86,14 @@ class TestFeedbackClearCommand:
             data = json.load(f)
         assert len(data) == 0
 
-    def test_feedback_clear_all_requires_confirmation(self, mock_project_dir):
+    def test_feedback_clear_all_requires_confirmation(self, mock_project_dir, monkeypatch):
         """Test that --all requires user confirmation."""
+        # Mock confirm_or_default to simulate user declining
+        monkeypatch.setattr(
+            "swarm_attack.cli.chief_of_staff.confirm_or_default",
+            lambda prompt, default: False
+        )
+
         feedback_dir = mock_project_dir / ".swarm" / "feedback"
 
         entries = [

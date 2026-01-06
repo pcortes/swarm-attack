@@ -39,14 +39,18 @@ class TestAutopilotRunnerProgressTrackerIntegration:
         mock = MagicMock(spec=CheckpointSystem)
         mock.reset_daily_cost = MagicMock()
         mock.update_daily_cost = MagicMock()
-        
+
         # check_before_execution returns a result that doesn't require approval
         check_result = MagicMock()
         check_result.requires_approval = False
         check_result.approved = True
         check_result.checkpoint = None
         mock.check_before_execution = AsyncMock(return_value=check_result)
-        
+
+        # Add store mock with cleanup method
+        mock.store = MagicMock()
+        mock.store.cleanup_stale_checkpoints_sync = MagicMock()
+
         return mock
 
     @pytest.fixture
@@ -237,13 +241,17 @@ class TestProgressTrackerIntegrationEndToEnd:
         mock = MagicMock(spec=CheckpointSystem)
         mock.reset_daily_cost = MagicMock()
         mock.update_daily_cost = MagicMock()
-        
+
         check_result = MagicMock()
         check_result.requires_approval = False
         check_result.approved = True
         check_result.checkpoint = None
         mock.check_before_execution = AsyncMock(return_value=check_result)
-        
+
+        # Add store mock with cleanup method
+        mock.store = MagicMock()
+        mock.store.cleanup_stale_checkpoints_sync = MagicMock()
+
         return mock
 
     @pytest.fixture
