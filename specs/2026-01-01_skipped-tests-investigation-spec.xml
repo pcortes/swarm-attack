@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec version="1.0">
+  <metadata>
+    <title>Skipped Tests Root Cause Investigation</title>
+    <created>2026-01-01</created>
+    <priority>P2</priority>
+    <estimated_effort>1-2 hours</estimated_effort>
+    <author>Claude Code</author>
+    <description>
+      Investigate 2 skipped unit tests in tests/unit/cli/test_qa_commands.py.
+      Both tests are explicitly skipped with pytest.skip() citing "pre-existing missing modules".
+      Determine root cause and whether code fixes are needed.
+    </description>
+  </metadata>
+
+  <!-- ============================================== -->
+  <!-- SETUP INSTRUCTIONS                            -->
+  <!-- ============================================== -->
+  <setup>
+    <worktree_instructions>
+      <step order="1">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack</command>
+        <description>Navigate to main repo</description>
+      </step>
+      <step order="2">
+        <command>git worktree add /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-skipped-tests -b fix/skipped-tests-investigation</command>
+        <description>Create dedicated worktree for investigation</description>
+      </step>
+      <step order="3">
+        <command>cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/fix-skipped-tests</command>
+        <description>Enter worktree</description>
+      </step>
+      <step order="4">
+        <command>pip install -e .</command>
+        <description>Install package in editable mode</description>
+      </step>
+      <step order="5">
+        <command>PYTHONPATH=. pytest tests/unit/cli/test_qa_commands.py -v 2>&amp;1 | grep -E "SKIPPED|PASSED|FAILED"</command>
+        <description>Verify the 2 skipped tests</description>
+      </step>
+    </worktree_instructions>
+
+    <team_structure>
+      <expert role="ImportChainAnalyst" focus="Trace import dependencies and find missing modules"/>
+      <expert role="CLIArchitect" focus="Understand CLI registration and Typer app structure"/>
+      <expert role="TDDSpecialist" focus="Write failing tests first, then implement fixes"/>
+      <expert role="IntegrationTester" focus="Verify fixes don't break other tests"/>
+    </team_structure>
+
+    <tdd_protocol>
+      <rule>Investigate BEFORE implementing - understand the root cause fully</rule>
+      <rule>If fix is needed, remove pytest.skip() and make test pass</rule>
+      <rule>If fix is NOT needed (test is obsolete), remove the test with justification</rule>
+      <rule>Run full test suite after any changes</rule>
+    </tdd_protocol>
+  </setup>
+
+  <!-- ============================================== -->
+  <!-- SKIPPED TESTS SUMMARY                         -->
+  <!-- ============================================== -->
+  <summary>
+    <total_skipped>2</total_skipped>
+    <test_file>tests/unit/cli/test_qa_commands.py</test_file>
+    <skip_reason>pytest.skip("Skipped due to pre-existing missing modules in codebase")</skip_reason>
+    <tests>
+      <test id="1">
+        <name>TestImports::test_qa_app_is_typer</name>
+        <line>115-120</line>
+        <intent>Verify qa app is a Typer instance</intent>
+        <current_code><![CDATA[
+def test_qa_app_is_typer(self):
+    """qa app should be a Typer instance."""
+    import typer
+    # Skip this test as it requires the full import chain
+    # The command tests below verify Typer functionality
+    pytest.skip("Skipped due to pre-existing missing modules in codebase")
+        ]]></current_code>
+      </test>
+      <test id="2">
+        <name>TestMainAppIntegration::test_qa_command_registered_in_main_app</name>
+        <line>932-936</line>
+        <intent>Verify QA commands are registered in main CLI app</intent>
+        <current_code><![CDATA[
+def test_qa_command_registered_in_main_app(self, runner):
+    """QA commands should be registered in main app."""
+    # Skip due to pre-existing missing modules in codebase
+    # The qa commands are registered in app.py - verified by code inspection
+    pytest.skip("Skipped due to pre-existing missing modules in codebase")
+        ]]></current_code>
+      </test>
+    </tests>
+  </summary>
+
+  <!-- ============================================== -->
+  <!-- INVESTIGATION TASKS                           -->
+  <!-- ============================================== -->
+  <investigation>
+    <task id="1" priority="P0">
+      <title>Trace Import Chain for QA App</title>
+      <description>
+        Identify which modules are missing when importing from swarm_attack.cli.qa_commands.
+        The test references a file at /Users/philipjcortes/Desktop/swarm-attack-qa-agent/swarm_attack/cli/qa_commands.py
+        which may be in a DIFFERENT repo (swarm-attack-qa-agent vs swarm-attack).
+      </description>
+      <steps>
+        <step>Check if swarm_attack/cli/qa_commands.py exists in THIS repo</step>
+        <step>If not, check if it exists in swarm-attack-qa-agent worktree</step>
+        <step>Try: python3 -c "from swarm_attack.cli.qa_commands import app" and capture error</step>
+        <step>Trace the full import chain to find the first missing module</step>
+        <step>Document all missing imports</step>
+      </steps>
+      <files_to_check>
+        <file>swarm_attack/cli/qa_commands.py</file>
+        <file>swarm_attack/cli/__init__.py</file>
+        <file>swarm_attack/cli_legacy.py</file>
+        <file>swarm_attack/qa/__init__.py</file>
+      </files_to_check>
+    </task>
+
+    <task id="2" priority="P0">
+      <title>Determine Test Validity</title>
+      <description>
+        Decide if these tests are testing functionality that:
+        A) Should exist but is broken (needs fix)
+        B) Was planned but never implemented (needs implementation or test removal)
+        C) Exists in a different repo/worktree (test is in wrong location)
+        D) Is obsolete (test should be removed)
+      </description>
+      <decision_matrix>
+        <option id="A">
+          <condition>Module exists but has broken imports</condition>
+          <action>Fix the imports, remove pytest.skip(), verify test passes</action>
+        </option>
+        <option id="B">
+          <condition>Module was never implemented</condition>
+          <action>Either implement the module OR remove the test with justification</action>
+        </option>
+        <option id="C">
+          <condition>Test belongs to different repo (swarm-attack-qa-agent)</condition>
+          <action>Move test to correct repo OR update import path</action>
+        </option>
+        <option id="D">
+          <condition>Test is obsolete/superseded</condition>
+          <action>Remove test with git commit explaining why</action>
+        </option>
+      </decision_matrix>
+    </task>
+
+    <task id="3" priority="P1">
+      <title>Implement Fix (if needed)</title>
+      <description>
+        Based on investigation findings, implement the appropriate fix following TDD.
+      </description>
+      <acceptance_criteria>
+        <criterion>No tests are skipped due to missing modules</criterion>
+        <criterion>Either tests pass OR tests are properly removed with justification</criterion>
+        <criterion>Full test suite still passes (1681+ tests)</criterion>
+        <criterion>Changes are committed with clear explanation</criterion>
+      </acceptance_criteria>
+    </task>
+  </investigation>
+
+  <!-- ============================================== -->
+  <!-- PARALLEL AGENT ASSIGNMENTS                    -->
+  <!-- ============================================== -->
+  <agent_assignments>
+    <description>
+      Work should be parallelized across specialized agents.
+      Each agent investigates a different aspect simultaneously.
+    </description>
+    <agent id="1" role="ImportChainAnalyst">
+      <task>Trace import chain for qa_commands.py</task>
+      <task>Identify all missing modules</task>
+      <task>Check if modules exist in other worktrees/repos</task>
+    </agent>
+    <agent id="2" role="CLIArchitect">
+      <task>Analyze CLI structure in swarm_attack/cli/</task>
+      <task>Determine how QA commands should be registered</task>
+      <task>Check cli_legacy.py for existing patterns</task>
+    </agent>
+    <agent id="3" role="IntegrationTester">
+      <task>Run tests with verbose import tracing</task>
+      <task>Document exact error messages</task>
+      <task>Verify fix doesn't break other tests</task>
+    </agent>
+  </agent_assignments>
+
+  <!-- ============================================== -->
+  <!-- EXPECTED OUTCOMES                             -->
+  <!-- ============================================== -->
+  <outcomes>
+    <outcome id="1" type="fix">
+      <description>Missing modules are created/fixed</description>
+      <result>Tests pass, pytest.skip() removed</result>
+    </outcome>
+    <outcome id="2" type="removal">
+      <description>Tests are obsolete or in wrong repo</description>
+      <result>Tests removed with commit explaining rationale</result>
+    </outcome>
+    <outcome id="3" type="relocation">
+      <description>Tests belong in swarm-attack-qa-agent</description>
+      <result>Tests moved to correct location</result>
+    </outcome>
+  </outcomes>
+
+  <!-- ============================================== -->
+  <!-- COMPLETION CHECKLIST                          -->
+  <!-- ============================================== -->
+  <completion_checklist>
+    <item>Root cause documented in investigation report</item>
+    <item>Decision made: fix, remove, or relocate tests</item>
+    <item>Implementation complete (if fix chosen)</item>
+    <item>No skipped tests remaining (0 skipped target)</item>
+    <item>Full test suite passes (1681+ passed, 0 skipped)</item>
+    <item>Changes committed with descriptive message</item>
+    <item>Merged to master when complete</item>
+    <item>Worktree cleaned up</item>
+  </completion_checklist>
+
+  <!-- ============================================== -->
+  <!-- CONTEXT FROM PRIOR SESSION                    -->
+  <!-- ============================================== -->
+  <prior_context>
+    <note>
+      The test file references a hardcoded path:
+      /Users/philipjcortes/Desktop/swarm-attack-qa-agent/swarm_attack/cli/qa_commands.py
+
+      This suggests the qa_commands module may be in the swarm-attack-qa-agent worktree,
+      NOT in the main swarm-attack repo. This is a strong hint that either:
+      1. The test is in the wrong repo
+      2. The import should use relative paths
+      3. The qa_commands module needs to be copied/moved
+    </note>
+    <worktrees>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack" branch="master"/>
+      <worktree path="/Users/philipjcortes/Desktop/swarm-attack-qa-agent" branch="main"/>
+    </worktrees>
+  </prior_context>
+</spec>

@@ -28,6 +28,7 @@ from swarm_attack.config.main import (
     load_config,
     get_config,
     clear_config_cache,
+    _parse_chief_of_staff_config,
 )
 
 # Export model variants configuration
@@ -62,6 +63,7 @@ __all__ = [
     "load_config",
     "get_config",
     "clear_config_cache",
+    "_parse_chief_of_staff_config",
     # Model variants
     "ModelConfig",
     "ModelProvider",

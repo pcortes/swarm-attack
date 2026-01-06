@@ -1,0 +1,1186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  IMPLEMENTATION PROMPT: Code Quality and Refactor Expert Team
+
+  This prompt orchestrates a swarm of 5-10 parallel agents to implement
+  the code quality refactor system in a new worktree.
+
+  Spec: /Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml
+  Status: APPROVED
+  Created: 2026-01-01
+
+  USAGE:
+  1. Feed this entire XML to Claude Code
+  2. Claude will create worktree and spawn subagents
+  3. Each subagent works on an independent module
+  4. Coordinator monitors and integrates
+-->
+<implementation_prompt>
+
+  <!-- ============================================================ -->
+  <!-- METADATA                                                      -->
+  <!-- ============================================================ -->
+  <metadata>
+    <title>Code Quality Refactor Team Implementation</title>
+    <spec_path>/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml</spec_path>
+    <target_repo>/Users/philipjcortes/Desktop/swarm-attack</target_repo>
+    <worktree_path>/Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor</worktree_path>
+    <branch>feature/code-quality-refactor-team</branch>
+    <created>2026-01-01</created>
+    <estimated_agents>8</estimated_agents>
+    <parallel_limit>5-10</parallel_limit>
+  </metadata>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 0: WORKTREE SETUP                                       -->
+  <!-- ============================================================ -->
+  <phase name="worktree_setup" order="0">
+    <description>
+      Create fresh worktree for isolated development. This MUST complete
+      before spawning any implementation agents.
+    </description>
+
+    <commands><![CDATA[
+# Navigate to swarm-attack root
+cd /Users/philipjcortes/Desktop/swarm-attack
+
+# Check if worktree already exists
+if [ -d "worktrees/code-quality-refactor" ]; then
+    echo "Worktree exists. Verifying branch..."
+    cd worktrees/code-quality-refactor
+    git branch --show-current
+else
+    # Create new worktree with feature branch
+    git worktree add worktrees/code-quality-refactor -b feature/code-quality-refactor-team
+    cd worktrees/code-quality-refactor
+fi
+
+# Verify we're in correct location
+pwd  # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+git branch  # Must show: * feature/code-quality-refactor-team
+
+# Create directory structure
+mkdir -p swarm_attack/code_quality
+mkdir -p .claude/skills/code-quality-analyst
+mkdir -p .claude/skills/refactor-critic
+mkdir -p .claude/skills/refactor-moderator
+mkdir -p tests/unit/code_quality
+mkdir -p tests/integration
+mkdir -p tests/fixtures/code_quality_corpus/{hallucinations,code_smells,error_handling,solid_violations,clean_code}
+    ]]></commands>
+
+    <verification>
+      <check>pwd returns worktree path</check>
+      <check>git branch shows feature/code-quality-refactor-team</check>
+      <check>Directory structure created</check>
+    </verification>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- TEAM STRUCTURE: Expert Implementation Panel                   -->
+  <!-- ============================================================ -->
+  <team_structure>
+    <description>
+      A team of world-class software engineers implementing the Code Quality
+      Refactor system. Each agent specializes in a specific module and works
+      in parallel with others. The coordinator orchestrates and integrates.
+    </description>
+
+    <coordinator id="chief_architect">
+      <name>Principal Architect</name>
+      <role>Orchestrates all agents, resolves conflicts, integrates modules</role>
+      <responsibilities>
+        <responsibility>Spawn and monitor all subagents</responsibility>
+        <responsibility>Resolve interface conflicts between modules</responsibility>
+        <responsibility>Run integration tests after each module completes</responsibility>
+        <responsibility>Commit and push when all tests pass</responsibility>
+      </responsibilities>
+    </coordinator>
+
+    <agent id="models_agent">
+      <name>Data Models Engineer</name>
+      <module>swarm_attack/code_quality/models.py</module>
+      <dependencies>None (foundational)</dependencies>
+      <deliverables>
+        <deliverable>Finding dataclass</deliverable>
+        <deliverable>AnalysisResult dataclass</deliverable>
+        <deliverable>CriticReview dataclass</deliverable>
+        <deliverable>ModeratorDecision dataclass</deliverable>
+        <deliverable>RetryContext dataclass</deliverable>
+        <deliverable>All from_dict/to_dict methods</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_models.py</test_file>
+    </agent>
+
+    <agent id="smell_detector_agent">
+      <name>Code Smell Detection Engineer</name>
+      <module>swarm_attack/code_quality/smell_detector.py</module>
+      <dependencies>models.py</dependencies>
+      <deliverables>
+        <deliverable>SmellDetector class</deliverable>
+        <deliverable>Long method detection (>50 lines)</deliverable>
+        <deliverable>Large class detection (>300 lines)</deliverable>
+        <deliverable>Deep nesting detection (>4 levels)</deliverable>
+        <deliverable>Duplication detection</deliverable>
+        <deliverable>AST parsing utilities</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_smell_detector.py</test_file>
+    </agent>
+
+    <agent id="solid_checker_agent">
+      <name>SOLID Principles Engineer</name>
+      <module>swarm_attack/code_quality/solid_checker.py</module>
+      <dependencies>models.py</dependencies>
+      <deliverables>
+        <deliverable>SOLIDChecker class</deliverable>
+        <deliverable>SRP violation detection</deliverable>
+        <deliverable>OCP violation detection (switch on type)</deliverable>
+        <deliverable>DIP violation detection (direct instantiation)</deliverable>
+        <deliverable>Method clustering algorithm</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_solid_checker.py</test_file>
+    </agent>
+
+    <agent id="llm_auditor_agent">
+      <name>LLM Code Auditor Engineer</name>
+      <module>swarm_attack/code_quality/llm_auditor.py</module>
+      <dependencies>models.py</dependencies>
+      <deliverables>
+        <deliverable>LLMAuditor class</deliverable>
+        <deliverable>Hallucinated import detection</deliverable>
+        <deliverable>Hallucinated API detection</deliverable>
+        <deliverable>Incomplete implementation detection (TODO/FIXME)</deliverable>
+        <deliverable>Placeholder return detection</deliverable>
+        <deliverable>Import verification via importlib</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_llm_auditor.py</test_file>
+    </agent>
+
+    <agent id="refactor_suggester_agent">
+      <name>Refactoring Suggestion Engineer</name>
+      <module>swarm_attack/code_quality/refactor_suggester.py</module>
+      <dependencies>models.py, smell_detector.py, solid_checker.py</dependencies>
+      <deliverables>
+        <deliverable>RefactorSuggester class</deliverable>
+        <deliverable>Pattern matching (smell -> refactoring)</deliverable>
+        <deliverable>Extract Method suggestions</deliverable>
+        <deliverable>Extract Class suggestions</deliverable>
+        <deliverable>Move Method suggestions</deliverable>
+        <deliverable>Effort estimation (small/medium/large)</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_refactor_suggester.py</test_file>
+    </agent>
+
+    <agent id="tdd_generator_agent">
+      <name>TDD Plan Generator Engineer</name>
+      <module>swarm_attack/code_quality/tdd_generator.py</module>
+      <dependencies>models.py, refactor_suggester.py</dependencies>
+      <deliverables>
+        <deliverable>TDDGenerator class</deliverable>
+        <deliverable>RED phase test generation</deliverable>
+        <deliverable>GREEN phase implementation steps</deliverable>
+        <deliverable>REFACTOR phase cleanup steps</deliverable>
+        <deliverable>Test code templates by smell type</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_tdd_generator.py</test_file>
+    </agent>
+
+    <agent id="analyzer_agent">
+      <name>Analysis Engine Engineer</name>
+      <module>swarm_attack/code_quality/analyzer.py</module>
+      <dependencies>All detection modules</dependencies>
+      <deliverables>
+        <deliverable>CodeQualityAnalyzer class</deliverable>
+        <deliverable>File analysis orchestration</deliverable>
+        <deliverable>Finding aggregation</deliverable>
+        <deliverable>Priority classification (fix_now/fix_later/ignore)</deliverable>
+        <deliverable>Confidence scoring</deliverable>
+        <deliverable>Timing budget enforcement</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_analyzer.py</test_file>
+    </agent>
+
+    <agent id="dispatcher_agent">
+      <name>Debate Dispatcher Engineer</name>
+      <module>swarm_attack/code_quality/dispatcher.py</module>
+      <dependencies>analyzer.py, models.py</dependencies>
+      <deliverables>
+        <deliverable>CodeQualityDispatcher class</deliverable>
+        <deliverable>Three-stage debate orchestration</deliverable>
+        <deliverable>RetryContext state management</deliverable>
+        <deliverable>Timeout handling per phase</deliverable>
+        <deliverable>Cost tracking and budget enforcement</deliverable>
+        <deliverable>Graceful degradation on timeout</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_dispatcher.py</test_file>
+    </agent>
+
+    <agent id="skills_agent">
+      <name>Skills Definition Engineer</name>
+      <module>.claude/skills/*/SKILL.md</module>
+      <dependencies>All Python modules (for accurate tool lists)</dependencies>
+      <deliverables>
+        <deliverable>.claude/skills/code-quality-analyst/SKILL.md</deliverable>
+        <deliverable>.claude/skills/refactor-critic/SKILL.md</deliverable>
+        <deliverable>.claude/skills/refactor-moderator/SKILL.md</deliverable>
+        <deliverable>Correct tool whitelists per skill</deliverable>
+        <deliverable>JSON output format specifications</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_skills_loading.py</test_file>
+    </agent>
+
+    <agent id="corpus_agent">
+      <name>Test Corpus Engineer</name>
+      <module>tests/fixtures/code_quality_corpus/</module>
+      <dependencies>None (can work in parallel)</dependencies>
+      <deliverables>
+        <deliverable>25 hallucination samples</deliverable>
+        <deliverable>60 code smell samples</deliverable>
+        <deliverable>20 error handling samples</deliverable>
+        <deliverable>25 SOLID violation samples</deliverable>
+        <deliverable>30 clean code samples</deliverable>
+        <deliverable>manifest.json with labels</deliverable>
+      </deliverables>
+      <test_file>tests/unit/code_quality/test_corpus_validity.py</test_file>
+    </agent>
+  </team_structure>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 1: PARALLEL FOUNDATION (Agents 1-4)                     -->
+  <!-- ============================================================ -->
+  <phase name="foundation" order="1">
+    <description>
+      Launch foundational agents in parallel. These have no dependencies
+      on each other and can work simultaneously.
+    </description>
+
+    <parallel_agents>
+      <agent_ref>models_agent</agent_ref>
+      <agent_ref>smell_detector_agent</agent_ref>
+      <agent_ref>solid_checker_agent</agent_ref>
+      <agent_ref>llm_auditor_agent</agent_ref>
+      <agent_ref>corpus_agent</agent_ref>
+    </parallel_agents>
+
+    <spawn_instruction><![CDATA[
+Use the Task tool to spawn 5 agents in parallel. Each agent:
+1. Works in the worktree at /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+2. Reads the spec at /Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml
+3. Implements their specific module with TDD (tests first)
+4. Runs their tests and iterates until passing
+5. Reports completion with test results
+
+Agent prompts should include:
+- Working directory verification
+- TDD requirement (RED -> GREEN -> REFACTOR)
+- Specific deliverables from team_structure
+- Test file location
+- Interface contract requirements (from_dict/to_dict for dataclasses)
+    ]]></spawn_instruction>
+
+    <completion_criteria>
+      <criterion>All 5 agents report success</criterion>
+      <criterion>All unit tests pass for each module</criterion>
+      <criterion>No import errors between modules</criterion>
+    </completion_criteria>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 2: DEPENDENT MODULES (Agents 5-7)                       -->
+  <!-- ============================================================ -->
+  <phase name="dependent_modules" order="2">
+    <description>
+      Launch agents that depend on Phase 1 modules. These can run
+      in parallel with each other but must wait for Phase 1.
+    </description>
+
+    <depends_on>foundation</depends_on>
+
+    <parallel_agents>
+      <agent_ref>refactor_suggester_agent</agent_ref>
+      <agent_ref>tdd_generator_agent</agent_ref>
+      <agent_ref>analyzer_agent</agent_ref>
+    </parallel_agents>
+
+    <spawn_instruction><![CDATA[
+Wait for Phase 1 completion, then spawn 3 agents in parallel:
+1. refactor_suggester_agent - Uses smell_detector and solid_checker
+2. tdd_generator_agent - Uses models and refactor_suggester patterns
+3. analyzer_agent - Orchestrates all detection modules
+
+Each agent must:
+- Import and use Phase 1 modules correctly
+- Follow existing interface contracts
+- Maintain timing budget awareness (90s for analyzer)
+    ]]></spawn_instruction>
+
+    <completion_criteria>
+      <criterion>All 3 agents report success</criterion>
+      <criterion>Integration between modules works</criterion>
+      <criterion>Analyzer can call all detection modules</criterion>
+    </completion_criteria>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 3: ORCHESTRATION (Agents 8-9)                           -->
+  <!-- ============================================================ -->
+  <phase name="orchestration" order="3">
+    <description>
+      Launch final orchestration agents. Dispatcher needs analyzer,
+      skills need all Python modules.
+    </description>
+
+    <depends_on>dependent_modules</depends_on>
+
+    <parallel_agents>
+      <agent_ref>dispatcher_agent</agent_ref>
+      <agent_ref>skills_agent</agent_ref>
+    </parallel_agents>
+
+    <spawn_instruction><![CDATA[
+Wait for Phase 2 completion, then spawn 2 agents in parallel:
+1. dispatcher_agent - Three-stage debate orchestration
+2. skills_agent - SKILL.md files for all three skills
+
+Dispatcher must implement:
+- RetryContext state management
+- Phase timing budgets (analyst: 90s, critic: 30s, moderator: 30s)
+- Graceful degradation on timeout
+- Cost tracking
+
+Skills agent must:
+- Extract accurate tool lists from Python modules
+- Match JSON output formats to spec schemas
+- Include all detection rules in analyst skill
+    ]]></spawn_instruction>
+
+    <completion_criteria>
+      <criterion>Both agents report success</criterion>
+      <criterion>Dispatcher can run full three-stage debate</criterion>
+      <criterion>Skills load correctly via skill_loader</criterion>
+    </completion_criteria>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 4: INTEGRATION TESTING                                  -->
+  <!-- ============================================================ -->
+  <phase name="integration" order="4">
+    <description>
+      Run full integration tests. Single agent runs comprehensive
+      test suite across all modules.
+    </description>
+
+    <depends_on>orchestration</depends_on>
+
+    <single_agent>
+      <name>Integration Test Engineer</name>
+      <tasks>
+        <task>Run full unit test suite</task>
+        <task>Run integration tests (end-to-end pipeline)</task>
+        <task>Test against corpus samples</task>
+        <task>Measure accuracy metrics (AC1, AC5)</task>
+        <task>Verify timing SLA (2-minute target)</task>
+        <task>Fix any failures</task>
+      </tasks>
+    </single_agent>
+
+    <test_commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+
+# Run all unit tests
+PYTHONPATH=. pytest tests/unit/code_quality/ -v --tb=short
+
+# Run integration tests
+PYTHONPATH=. pytest tests/integration/test_code_quality_pipeline.py -v --tb=short
+
+# Run corpus accuracy tests
+PYTHONPATH=. pytest tests/unit/code_quality/test_corpus_accuracy.py -v
+
+# Timing benchmark
+PYTHONPATH=. python -c "
+from swarm_attack.code_quality.dispatcher import CodeQualityDispatcher
+import time
+start = time.time()
+dispatcher = CodeQualityDispatcher()
+result = dispatcher.run_review(['tests/fixtures/code_quality_corpus/code_smells/long_method_001.py'])
+elapsed = time.time() - start
+print(f'Pipeline completed in {elapsed:.2f}s (target: <120s)')
+assert elapsed < 120, 'Timing SLA violated'
+"
+    ]]></test_commands>
+
+    <completion_criteria>
+      <criterion>All unit tests pass</criterion>
+      <criterion>Integration tests pass</criterion>
+      <criterion>Hallucination detection >= 85% accuracy</criterion>
+      <criterion>Critic false positive filter >= 80%</criterion>
+      <criterion>Pipeline completes in < 2 minutes</criterion>
+    </completion_criteria>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- PHASE 5: COMMIT AND FINALIZE                                  -->
+  <!-- ============================================================ -->
+  <phase name="finalize" order="5">
+    <description>
+      Commit all changes, update documentation, prepare for merge.
+    </description>
+
+    <depends_on>integration</depends_on>
+
+    <tasks>
+      <task>Run final test suite</task>
+      <task>Update __init__.py exports</task>
+      <task>Create module-level docstrings</task>
+      <task>Commit with descriptive message</task>
+      <task>Push branch to remote</task>
+    </tasks>
+
+    <commit_commands><![CDATA[
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+
+# Final test run
+PYTHONPATH=. pytest tests/ -v --tb=short
+
+# Stage all changes
+git add -A
+
+# Commit
+git commit -m "$(cat <<'EOF'
+feat: Add Code Quality and Refactor Expert Team
+
+Implements three-stage debate system for code quality analysis:
+- code-quality-analyst: Detects smells, SOLID violations, LLM hallucinations
+- refactor-critic: Validates findings, catches false positives
+- refactor-moderator: Produces final verdict with TDD plans
+
+Key features:
+- LLM hallucination detection (import/API verification)
+- Code smell detection (long method, large class, deep nesting)
+- SOLID principle violation detection
+- TDD plan generation for each finding
+- Retry state management across iterations
+- Per-phase timing budgets (90s/30s/30s)
+- 160+ test corpus samples with labels
+
+Pipeline position: After coder agent, before QA
+Decision points: APPROVE / REFACTOR / ESCALATE
+
+Spec: specs/code-quality-refactor/SPEC.xml
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+
+# Push to remote
+git push -u origin feature/code-quality-refactor-team
+    ]]></commit_commands>
+  </phase>
+
+  <!-- ============================================================ -->
+  <!-- AGENT PROMPT TEMPLATES                                        -->
+  <!-- ============================================================ -->
+  <agent_prompts>
+    <prompt agent_id="models_agent"><![CDATA[
+# Agent: Data Models Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show: /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+git branch   # Must show: * feature/code-quality-refactor-team
+```
+
+**STOP if not in correct worktree.**
+
+## Your Task
+
+Implement `swarm_attack/code_quality/models.py` with all dataclasses for the code quality system.
+
+## Read the Spec First
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on:
+- `<output_formats>` section for JSON schemas
+- `<retry_state>` section for RetryContext schema
+
+## Deliverables
+
+```python
+# swarm_attack/code_quality/models.py
+
+from dataclasses import dataclass, field
+from typing import Any, Optional
+from enum import Enum
+
+class Severity(Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+class Priority(Enum):
+    FIX_NOW = "fix_now"
+    FIX_LATER = "fix_later"
+    IGNORE = "ignore"
+
+class Category(Enum):
+    CODE_SMELL = "code_smell"
+    SOLID = "solid"
+    LLM_HALLUCINATION = "llm_hallucination"
+    INCOMPLETE = "incomplete"
+    ERROR_HANDLING = "error_handling"
+
+@dataclass
+class Finding:
+    finding_id: str
+    severity: Severity
+    category: Category
+    file: str
+    line: int
+    title: str
+    description: str
+    expert: str = ""
+    code_snippet: str = ""
+    refactoring_pattern: str = ""
+    refactoring_steps: list[str] = field(default_factory=list)
+    priority: Priority = Priority.FIX_LATER
+    effort_estimate: str = "medium"
+    confidence: float = 0.8
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Finding":
+        # Implementation
+        pass
+
+    def to_dict(self) -> dict[str, Any]:
+        # Implementation
+        pass
+
+# Add: AnalysisResult, CriticReview, ModeratorDecision, RetryContext
+# Each with from_dict/to_dict methods
+```
+
+## TDD Protocol
+
+1. **RED**: Write failing tests in `tests/unit/code_quality/test_models.py`
+   - Test roundtrip: `from_dict(x.to_dict()) == x`
+   - Test all enum conversions
+   - Test optional field defaults
+
+2. **GREEN**: Implement models to pass tests
+
+3. **REFACTOR**: Add docstrings, type hints
+
+## Interface Contracts (CRITICAL)
+
+Every dataclass MUST have:
+- `from_dict(cls, data: dict) -> Self` classmethod
+- `to_dict(self) -> dict` method
+- Roundtrip equality: `from_dict(x.to_dict()) == x`
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_models.py -v
+```
+
+Report: "Models complete. All X tests passing."
+    ]]></prompt>
+
+    <prompt agent_id="smell_detector_agent"><![CDATA[
+# Agent: Code Smell Detection Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Implement `swarm_attack/code_quality/smell_detector.py` for detecting code smells.
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on: `<anti_patterns><category name="Code Smells">`
+
+## Deliverables
+
+```python
+# swarm_attack/code_quality/smell_detector.py
+
+import ast
+from pathlib import Path
+from .models import Finding, Severity, Category, Priority
+
+class SmellDetector:
+    """Detects code smells using AST analysis."""
+
+    # Thresholds (from spec)
+    MAX_METHOD_LINES = 50
+    MAX_CLASS_LINES = 300
+    MAX_NESTING_DEPTH = 4
+    MAX_PARAMETERS = 3
+
+    def analyze_file(self, file_path: Path) -> list[Finding]:
+        """Analyze a Python file for code smells."""
+        pass
+
+    def detect_long_methods(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find methods > 50 lines."""
+        pass
+
+    def detect_large_classes(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find classes > 300 lines."""
+        pass
+
+    def detect_deep_nesting(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find nesting > 4 levels."""
+        pass
+
+    def detect_too_many_parameters(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find functions with > 3 parameters."""
+        pass
+
+    def _count_lines(self, node: ast.AST) -> int:
+        """Count lines in an AST node."""
+        pass
+
+    def _measure_nesting_depth(self, node: ast.AST) -> int:
+        """Measure maximum nesting depth."""
+        pass
+```
+
+## TDD Protocol
+
+1. **RED**: Write tests with real code samples
+   ```python
+   def test_detects_long_method():
+       # Create temp file with 60-line method
+       # Assert finding returned with correct severity
+   ```
+
+2. **GREEN**: Implement detection
+
+3. **REFACTOR**: Optimize AST traversal
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_smell_detector.py -v
+```
+
+Report: "SmellDetector complete. All X tests passing."
+    ]]></prompt>
+
+    <prompt agent_id="llm_auditor_agent"><![CDATA[
+# Agent: LLM Code Auditor Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Implement `swarm_attack/code_quality/llm_auditor.py` for LLM-specific issue detection.
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on: `<anti_patterns><category name="LLM-Specific Issues">`
+
+## Deliverables
+
+```python
+# swarm_attack/code_quality/llm_auditor.py
+
+import ast
+import importlib.util
+from pathlib import Path
+from .models import Finding, Severity, Category
+
+class LLMAuditor:
+    """Detects LLM-specific code issues (hallucinations, incomplete implementations)."""
+
+    def analyze_file(self, file_path: Path) -> list[Finding]:
+        """Analyze file for LLM-specific issues."""
+        pass
+
+    def detect_hallucinated_imports(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find imports of non-existent modules.
+
+        Uses importlib.util.find_spec() to verify module existence.
+        Returns CRITICAL severity findings.
+        """
+        pass
+
+    def detect_hallucinated_apis(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find method calls on classes that don't have those methods.
+
+        This is harder - requires tracking class definitions and method calls.
+        Focus on self.method() calls first.
+        """
+        pass
+
+    def detect_incomplete_implementations(self, source: str, file_path: str) -> list[Finding]:
+        """Find TODO, FIXME, XXX, HACK comments.
+
+        Also detect placeholder returns: return None, return {}, return 0
+        """
+        pass
+
+    def detect_swallowed_exceptions(self, tree: ast.AST, file_path: str) -> list[Finding]:
+        """Find empty except blocks or bare except clauses."""
+        pass
+
+    def _verify_import_exists(self, module_name: str) -> bool:
+        """Check if a module can be imported."""
+        try:
+            return importlib.util.find_spec(module_name) is not None
+        except (ModuleNotFoundError, ValueError):
+            return False
+```
+
+## Critical Detection: Hallucinated Imports
+
+This is the most important detection. Example:
+
+```python
+# BAD - module doesn't exist
+from swarm_attack.utils.magic_helper import do_magic  # CRITICAL finding
+
+# GOOD - module exists
+from swarm_attack.agents.base import BaseAgent
+```
+
+## TDD Protocol
+
+1. **RED**: Create test files with known hallucinations
+2. **GREEN**: Implement detection
+3. **REFACTOR**: Handle edge cases (relative imports, aliased imports)
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_llm_auditor.py -v
+```
+
+Report: "LLMAuditor complete. All X tests passing."
+    ]]></prompt>
+
+    <prompt agent_id="dispatcher_agent"><![CDATA[
+# Agent: Debate Dispatcher Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Implement `swarm_attack/code_quality/dispatcher.py` for three-stage debate orchestration.
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on:
+- `<timing_budgets>` section
+- `<retry_state>` section
+- `<pipeline_position>` section
+
+## Deliverables
+
+```python
+# swarm_attack/code_quality/dispatcher.py
+
+import time
+import json
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional
+from .models import AnalysisResult, CriticReview, ModeratorDecision, RetryContext
+from .analyzer import CodeQualityAnalyzer
+
+@dataclass
+class TimingBudget:
+    analyst_timeout: int = 90
+    critic_timeout: int = 30
+    moderator_timeout: int = 30
+    max_output_tokens: dict = None
+
+    def __post_init__(self):
+        self.max_output_tokens = {
+            "analyst": 8000,
+            "critic": 4000,
+            "moderator": 4000
+        }
+
+class CodeQualityDispatcher:
+    """Orchestrates three-stage code quality debate."""
+
+    def __init__(
+        self,
+        timing_budget: Optional[TimingBudget] = None,
+        max_cost_usd: float = 2.0,
+        retry_state_dir: str = ".swarm/code_quality/retry_state"
+    ):
+        self.timing = timing_budget or TimingBudget()
+        self.max_cost = max_cost_usd
+        self.retry_state_dir = Path(retry_state_dir)
+        self.analyzer = CodeQualityAnalyzer()
+
+    def run_review(
+        self,
+        files: list[str],
+        issue_id: Optional[str] = None,
+        retry_context: Optional[RetryContext] = None
+    ) -> ModeratorDecision:
+        """Run full three-stage review.
+
+        1. Analyst: Analyze files for issues
+        2. Critic: Validate findings
+        3. Moderator: Produce final verdict
+
+        Respects timing budgets and cost limits.
+        """
+        pass
+
+    def _run_analyst_phase(self, files: list[str], context: RetryContext) -> AnalysisResult:
+        """Run analyst with timeout."""
+        pass
+
+    def _run_critic_phase(self, analysis: AnalysisResult) -> CriticReview:
+        """Run critic with timeout."""
+        pass
+
+    def _run_moderator_phase(
+        self,
+        analysis: AnalysisResult,
+        review: CriticReview,
+        context: RetryContext
+    ) -> ModeratorDecision:
+        """Run moderator with timeout."""
+        pass
+
+    def _load_retry_context(self, issue_id: str) -> Optional[RetryContext]:
+        """Load previous retry state if exists."""
+        pass
+
+    def _save_retry_context(self, issue_id: str, context: RetryContext) -> None:
+        """Persist retry state for next iteration."""
+        pass
+
+    def _handle_timeout(self, phase: str, partial_result: any) -> any:
+        """Handle timeout gracefully per spec."""
+        pass
+```
+
+## Timing Budget Enforcement
+
+```python
+def _run_with_timeout(self, phase: str, func, *args):
+    timeout = getattr(self.timing, f"{phase}_timeout")
+    start = time.time()
+
+    # Run function
+    result = func(*args)
+
+    elapsed = time.time() - start
+    if elapsed > timeout:
+        return self._handle_timeout(phase, result)
+
+    return result
+```
+
+## RetryContext State Management
+
+Track across iterations:
+- `previously_validated_findings`: Don't re-analyze
+- `previously_rejected_findings`: Don't re-raise
+- `cumulative_tech_debt`: Accumulate fix_later items
+- `iteration_history`: Track progress
+
+## TDD Protocol
+
+1. **RED**: Test timeout handling, retry state, full pipeline
+2. **GREEN**: Implement dispatcher
+3. **REFACTOR**: Optimize state management
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_dispatcher.py -v
+```
+
+Report: "Dispatcher complete. All X tests passing."
+    ]]></prompt>
+
+    <prompt agent_id="corpus_agent"><![CDATA[
+# Agent: Test Corpus Engineer
+
+## FIRST: Verify Working Directory
+
+```bash
+cd /Users/philipjcortes/Desktop/swarm-attack/worktrees/code-quality-refactor
+pwd      # Must show worktree path
+git branch   # Must show feature branch
+```
+
+## Your Task
+
+Create test corpus with 160+ labeled code samples.
+
+## Read the Spec
+
+Read: `/Users/philipjcortes/Desktop/swarm-attack/specs/code-quality-refactor/SPEC.xml`
+
+Focus on: `<test_corpus>` section
+
+## Directory Structure
+
+```
+tests/fixtures/code_quality_corpus/
+├── manifest.json          # Labels and expected findings
+├── hallucinations/        # 25 samples
+│   ├── hallucinated_import_001.py
+│   ├── hallucinated_import_002.py
+│   ├── ...
+│   ├── hallucinated_method_001.py
+│   └── wrong_signature_001.py
+├── code_smells/           # 60 samples
+│   ├── long_method_001.py
+│   ├── large_class_001.py
+│   ├── deep_nesting_001.py
+│   ├── god_class_001.py
+│   ├── copy_paste_001.py
+│   └── primitive_obsession_001.py
+├── error_handling/        # 20 samples
+│   ├── swallowed_exception_001.py
+│   ├── bare_except_001.py
+│   └── missing_handling_001.py
+├── solid_violations/      # 25 samples
+│   ├── srp_violation_001.py
+│   ├── ocp_violation_001.py
+│   └── dip_violation_001.py
+└── clean_code/            # 30 samples
+    ├── well_structured_001.py
+    ├── proper_error_handling_001.py
+    └── solid_compliant_001.py
+```
+
+## Manifest Schema
+
+```json
+{
+  "corpus_version": "1.0.0",
+  "created": "2026-01-01",
+  "total_samples": 160,
+  "samples": [
+    {
+      "file": "hallucinations/hallucinated_import_001.py",
+      "category": "hallucinations",
+      "subcategory": "hallucinated_import",
+      "source": "synthetic",
+      "expected_findings": [
+        {
+          "type": "llm_hallucination",
+          "severity": "critical",
+          "line_range": [1, 1]
+        }
+      ],
+      "is_false_positive_test": false
+    }
+  ]
+}
+```
+
+## Sample Examples
+
+### Hallucinated Import
+```python
+# hallucinations/hallucinated_import_001.py
+from swarm_attack.utils.nonexistent_module import fake_function
+
+def use_fake():
+    return fake_function()
+```
+
+### Long Method
+```python
+# code_smells/long_method_001.py
+def process_data(data):
+    # 60 lines of sequential processing
+    step1 = data.get("field1")
+    step2 = step1.upper()
+    # ... 58 more lines ...
+    return result
+```
+
+### Clean Code (No Findings Expected)
+```python
+# clean_code/well_structured_001.py
+"""Well-structured module with clean code."""
+
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class User:
+    name: str
+    email: str
+
+    def display_name(self) -> str:
+        return self.name.title()
+```
+
+## Deliverables
+
+1. Create all 160 sample files
+2. Create manifest.json with labels
+3. Create test to validate corpus:
+
+```python
+# tests/unit/code_quality/test_corpus_validity.py
+
+def test_all_samples_in_manifest():
+    """Every file in corpus is listed in manifest."""
+    pass
+
+def test_manifest_schema_valid():
+    """Manifest matches JSON schema."""
+    pass
+
+def test_samples_are_valid_python():
+    """All .py files parse without syntax errors."""
+    pass
+```
+
+## Test Command
+
+```bash
+PYTHONPATH=. pytest tests/unit/code_quality/test_corpus_validity.py -v
+```
+
+Report: "Corpus complete. X samples created. Manifest valid."
+    ]]></prompt>
+  </agent_prompts>
+
+  <!-- ============================================================ -->
+  <!-- COORDINATOR INSTRUCTIONS                                      -->
+  <!-- ============================================================ -->
+  <coordinator_instructions><![CDATA[
+# Coordinator: Principal Architect
+
+You are the coordinator for implementing the Code Quality Refactor Team.
+
+## Your Responsibilities
+
+1. **Phase Execution**: Execute phases in order (0 -> 1 -> 2 -> 3 -> 4 -> 5)
+2. **Agent Spawning**: Use Task tool to spawn agents in parallel where specified
+3. **Monitoring**: Wait for all agents in a phase before proceeding
+4. **Integration**: Resolve any interface conflicts between modules
+5. **Testing**: Run integration tests after each phase
+6. **Committing**: Commit only after all tests pass
+
+## Execution Flow
+
+### Phase 0: Setup
+```
+1. Create worktree (run commands from <phase name="worktree_setup">)
+2. Verify directory structure
+3. Proceed to Phase 1
+```
+
+### Phase 1: Foundation (5 parallel agents)
+```
+1. Spawn 5 agents using Task tool with agent_prompts
+2. Wait for all to complete (use TaskOutput)
+3. Run: PYTHONPATH=. pytest tests/unit/code_quality/test_models.py test_smell_detector.py test_solid_checker.py test_llm_auditor.py test_corpus_validity.py -v
+4. If failures, resume failed agents
+5. Proceed to Phase 2
+```
+
+### Phase 2: Dependent Modules (3 parallel agents)
+```
+1. Spawn 3 agents for refactor_suggester, tdd_generator, analyzer
+2. Wait for completion
+3. Run integration test
+4. Proceed to Phase 3
+```
+
+### Phase 3: Orchestration (2 parallel agents)
+```
+1. Spawn dispatcher and skills agents
+2. Wait for completion
+3. Test skill loading
+4. Proceed to Phase 4
+```
+
+### Phase 4: Integration
+```
+1. Run full test suite
+2. Run accuracy measurement
+3. Run timing benchmark
+4. Fix any issues
+5. Proceed to Phase 5
+```
+
+### Phase 5: Finalize
+```
+1. Final test run
+2. Commit with message from spec
+3. Push to remote
+4. Report completion
+```
+
+## Spawning Agents
+
+Use this pattern for each agent:
+
+```
+Task tool:
+- description: "Implement [module_name]"
+- prompt: [agent prompt from <agent_prompts>]
+- subagent_type: "general-purpose"
+- run_in_background: true (for parallel execution)
+```
+
+Spawn all agents in a phase with a single message containing multiple Task tool calls.
+
+## Error Handling
+
+If an agent fails:
+1. Check error message
+2. Resume agent with additional context
+3. If persistent failure, implement that module yourself
+4. Do not proceed to next phase until current phase passes
+
+## Final Report
+
+After Phase 5, report:
+- Total agents spawned
+- Total tests passing
+- Accuracy metrics achieved
+- Time to complete
+- PR/branch URL
+  ]]></coordinator_instructions>
+
+</implementation_prompt>

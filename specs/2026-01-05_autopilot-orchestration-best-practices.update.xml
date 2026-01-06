@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec_update version="1.0">
+  <metadata>
+    <title>Updates and Expert Reflections - Autopilot Orchestration Best Practices</title>
+    <created>2026-01-05</created>
+    <updated>2026-01-05</updated>
+    <author>Expert synthesis panel</author>
+    <base_spec_path>specs/2026-01-05_autopilot-orchestration-best-practices.xml</base_spec_path>
+    <working_directory>/Users/philipjcortes/Desktop/swarm-attack</working_directory>
+    <branch>master</branch>
+    <description>
+      Comments, updates, and improvement suggestions from a cross-functional expert
+      team, including COO and QA constraints. Focused on making swarm-attack + QA + COO
+      a safe, bounded, and observable autopilot software company.
+    </description>
+  </metadata>
+
+  <first_verify>
+    <command>cd /Users/philipjcortes/Desktop/swarm-attack</command>
+    <command>pwd</command>
+    <command>git branch</command>
+    <expected_branch>master</expected_branch>
+  </first_verify>
+
+  <team_structure>
+    <expert role="Chief Architect">
+      <name>Systems Architect</name>
+      <focus>Orchestration boundaries, hook lifecycle design</focus>
+      <why>Prevent schema drift and reduce orchestration latency.</why>
+    </expert>
+    <expert role="QA Director">
+      <name>QA Lead</name>
+      <focus>Test coverage, integration testing, manual QA gate</focus>
+      <why>Autopilot must not ship without verified behavior.</why>
+    </expert>
+    <expert role="Security Lead">
+      <name>Safety Engineer</name>
+      <focus>Command blocking, dependency validation, secrets hygiene</focus>
+      <why>Hard technical constraints beat soft prompt rules.</why>
+    </expert>
+    <expert role="COO">
+      <name>Operations Strategist</name>
+      <focus>Spec archival, priority alignment, budget enforcement</focus>
+      <why>Autonomy must serve portfolio goals and cost caps.</why>
+    </expert>
+    <expert role="Platform Engineer">
+      <name>Cross-Platform Lead</name>
+      <focus>Windows/Linux/macOS compatibility</focus>
+      <why>Most real-world failures are OS or dependency mismatches.</why>
+    </expert>
+    <expert role="Product">
+      <name>Delivery Manager</name>
+      <focus>Completion promises, stop conditions, release readiness</focus>
+      <why>Perpetual improvement loops are not acceptable for delivery.</why>
+    </expert>
+  </team_structure>
+
+  <tdd_protocol>
+    <phase name="RED">Write failing tests for each acceptance criterion.</phase>
+    <phase name="GREEN">Implement minimal code to pass tests.</phase>
+    <phase name="REFACTOR">Refine without changing behavior; keep tests green.</phase>
+  </tdd_protocol>
+
+  <updates>
+    <update id="U1" category="governance">
+      <change>Add COO archival and checkpoint expectations into the autopilot spec.</change>
+      <why>COO is the archive and quality gate across all projects.</why>
+      <impact>Autopilot outputs must be stored and discoverable by COO tooling.</impact>
+    </update>
+    <update id="U2" category="qa">
+      <change>Explicit manual test report requirement for QA-facing changes.</change>
+      <why>QA agent mandates manual testing after any implementation.</why>
+      <impact>Autopilot must emit .swarm/qa/test-reports/* with timestamps.</impact>
+    </update>
+    <update id="U3" category="safety">
+      <change>Cross-platform hook compatibility checklist and dependency checks.</change>
+      <why>Repeated failures from /bin/bash, python3, notify-send, jq, and Windows shells.</why>
+      <impact>Hooks must gracefully degrade with clear user guidance.</impact>
+    </update>
+    <update id="U4" category="workflow">
+      <change>Auto-merge should be gated behind QA and security checks.</change>
+      <why>Direct-to-main workflows are risky without hard gates.</why>
+      <impact>Adopt staged merge policy with override logging.</impact>
+    </update>
+    <update id="U5" category="observability">
+      <change>Statusline telemetry should be authoritative (match /context).</change>
+      <why>Claude HUD reported mismatched context % vs /context.</why>
+      <impact>Use native token counts; flag mismatches with warnings.</impact>
+    </update>
+    <update id="U6" category="continuity">
+      <change>Multi-session isolation for autopilot loops.</change>
+      <why>Ralph Wiggum stop hook triggered across sessions.</why>
+      <impact>State files scoped by session ID + project path.</impact>
+    </update>
+    <update id="U7" category="integration">
+      <change>Document model-variant sync and config sharing.</change>
+      <why>CC-MIRROR users want variant config sync across teams.</why>
+      <impact>Provide config sync utility or CLI option.</impact>
+    </update>
+    <update id="U8" category="licensing">
+      <change>Add explicit guidance on third-party code reuse risk.</change>
+      <why>Auto-Claude is AGPL; direct reuse would impose copyleft requirements.</why>
+      <impact>Adopt patterns, not code, unless licensing is cleared.</impact>
+    </update>
+  </updates>
+
+  <reflections>
+    <reflection id="R1">
+      <point>The base spec is strong on autonomy but light on COO archival rules.</point>
+      <why>COO requires structured prompts/specs with team + TDD metadata.</why>
+    </reflection>
+    <reflection id="R2">
+      <point>Cross-platform constraints were underweighted.</point>
+      <why>Most reported failures in the ecosystem are OS dependency breaks.</why>
+    </reflection>
+    <reflection id="R3">
+      <point>Manual QA gating needs explicit enforcement.</point>
+      <why>QA agent instructions mandate manual verification and report artifacts.</why>
+    </reflection>
+    <reflection id="R4">
+      <point>Autopilot stop conditions need stronger guarantees.</point>
+      <why>Perpetual improvement loops are not acceptable for delivery targets.</why>
+    </reflection>
+  </reflections>
+
+  <improvement_suggestions>
+    <suggestion id="S1" priority="P0">
+      <title>Hook dependency validator</title>
+      <why>Prevent notify-send/python3/jq/breadcrumb failures before runtime.</why>
+      <how>On SessionStart, run a dependency check and record status in .swarm/status.json.</how>
+    </suggestion>
+    <suggestion id="S2" priority="P0">
+      <title>Session-scoped autopilot state</title>
+      <why>Ralph Wiggum stop-hook cross-session bug is a known failure mode.</why>
+      <how>Key state files by session ID + project root; clean on SessionEnd.</how>
+    </suggestion>
+    <suggestion id="S3" priority="P1">
+      <title>Manual QA report auto-template</title>
+      <why>QA agent requires manual testing reports with timestamps.</why>
+      <how>Create a report template and auto-create path in .swarm/qa/test-reports.</how>
+    </suggestion>
+    <suggestion id="S4" priority="P1">
+      <title>Statusline and dashboard parity</title>
+      <why>HUD mismatch vs /context reduces operator trust.</why>
+      <how>Use Claude Code native token counters; warn on deltas &gt; 2%.</how>
+    </suggestion>
+    <suggestion id="S5" priority="P1">
+      <title>Auto-merge gate policy</title>
+      <why>Direct-to-main is too risky for autonomous systems.</why>
+      <how>Require tests + code quality + safety net pass before merge.</how>
+    </suggestion>
+    <suggestion id="S6" priority="P2">
+      <title>Variant config sync utility</title>
+      <why>Multi-variant setups drift without shared config.</why>
+      <how>Implement a CLI task: sync skills/MCP/CLAUDE.md across variants.</how>
+    </suggestion>
+    <suggestion id="S7" priority="P2">
+      <title>Worktree safety by default</title>
+      <why>Auto-Claude shows worktree isolation reduces damage to main.</why>
+      <how>Default autopilot to create a worktree per task and merge via gate.</how>
+    </suggestion>
+  </improvement_suggestions>
+
+  <acceptance_criteria>
+    <criterion>Update file includes team_structure, tdd_protocol, and acceptance criteria.</criterion>
+    <criterion>COO and QA rules are explicitly represented in updates/reflections.</criterion>
+    <criterion>Each suggestion includes a clear why and how.</criterion>
+  </acceptance_criteria>
+</spec_update>

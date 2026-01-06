@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spec version="2.0">
+  <metadata>
+    <title>Autopilot Orchestration Best Practices for Swarm-Attack + QA + COO</title>
+    <created>2026-01-05</created>
+    <updated>2026-01-05</updated>
+    <priority>P0</priority>
+    <estimated_effort>4-6 weeks</estimated_effort>
+    <author>Codex synthesis</author>
+    <description>
+      Evidence-backed spec to incorporate best practices from recent Claude Code
+      Opus 4.5 orchestration systems (Ralph Wiggum, Gastown, and viral Claude Code
+      projects created in the last 14 days). The goal is to evolve swarm-attack,
+      QA, and COO into a full autopilot software company with A+ reliability.
+    </description>
+  </metadata>
+
+  <objective>
+    <summary>
+      Build a safe, observable, and self-healing autopilot that can plan, execute,
+      verify, and ship software across swarm-attack, QA, and COO with minimal human
+      intervention while maintaining strong quality and cost controls.
+    </summary>
+    <success_criteria>
+      <criterion>Autopilot loop finishes tasks within explicit budgets (time, cost, max iterations).</criterion>
+      <criterion>Continuity survives context compaction with zero loss of active goals and decisions.</criterion>
+      <criterion>Safety net blocks destructive commands and requires explicit human override.</criterion>
+      <criterion>Observability shows live agent status, tool activity, tests, and context health.</criterion>
+      <criterion>QA gates enforce unit, integration, and manual test reporting for all autopilot runs.</criterion>
+      <criterion>COO and swarm-attack share a unified priority + archive workflow.</criterion>
+    </success_criteria>
+  </objective>
+
+  <scope>
+    <in_scope>
+      <item>Session continuity (ledger, handoffs, auto-handoff on compaction).</item>
+      <item>Autopilot loop with stop conditions and completion promises.</item>
+      <item>Safety net hooks for destructive command blocking.</item>
+      <item>Statusline and dashboard telemetry (agents, tools, context).</item>
+      <item>Agent orchestration pipeline: plan, validate, implement, verify.</item>
+      <item>Multi-variant model routing and project-scoped task isolation.</item>
+      <item>CI templates, issue/PR templates, and release automation updates.</item>
+      <item>COO integration: priority board sync, spec archival, multi-project oversight.</item>
+    </in_scope>
+    <out_of_scope>
+      <item>Marketplace packaging for new plugins (defer to later release cycle).</item>
+      <item>Infinite improvement loops without explicit stop conditions.</item>
+      <item>Full repo merge of COO and swarm-attack (already scoped in ADR).</item>
+    </out_of_scope>
+  </scope>
+
+  <sources>
+    <source id="S1" type="repo">
+      <name>anthropics/claude-code (Ralph Wiggum plugin)</name>
+      <url>https://github.com/anthropics/claude-code/blob/main/plugins/ralph-wiggum/README.md</url>
+      <issues>
+        <issue>#16028 Multi-line bash permission check fails</issue>
+        <issue>#16037 Bash permission check fails on newlines</issue>
+        <issue>#15047 Stop hook triggers in separate session (comment: game-breaker)</issue>
+        <issue>#12880 Hardcoded /bin/bash breaks on NixOS</issue>
+        <issue>#14817 Undocumented jq dependency on Windows/Git Bash</issue>
+        <issue>#15885 Multiple ralph state files requested</issue>
+      </issues>
+    </source>
+    <source id="S2" type="repo">
+      <name>steveyegge/gastown (.github)</name>
+      <url>https://github.com/steveyegge/gastown/tree/main/.github</url>
+      <issues>
+        <issue>#189 Boot agent respawns (missing marker file)</issue>
+        <issue>#190 Wrong work prefix for mayor tasks</issue>
+      </issues>
+    </source>
+    <source id="S3" type="repo">
+      <name>parcadei/Continuous-Claude-v2</name>
+      <url>https://github.com/parcadei/Continuous-Claude-v2</url>
+      <issues>
+        <issue>#10 Missing scripts in global install path</issue>
+        <issue>#9 Statusline overwrote custom status bar</issue>
+        <issue>#5 Mac-only dependency not documented</issue>
+      </issues>
+    </source>
+    <source id="S4" type="repo">
+      <name>CloudAI-X/claude-workflow-v2</name>
+      <url>https://github.com/CloudAI-X/claude-workflow-v2</url>
+      <issues>
+        <issue>#5 verify-on-complete hook fails when notify-send missing</issue>
+        <issue>#3 plugin.json and hooks.json schema mismatch</issue>
+        <issue>#2 Missing practical examples for multi-agent workflows</issue>
+      </issues>
+    </source>
+    <source id="S5" type="repo">
+      <name>asklokesh/claudeskill-loki-mode</name>
+      <url>https://github.com/asklokesh/claudeskill-loki-mode</url>
+      <issues>
+        <issue>#2 Marketplace installation request</issue>
+      </issues>
+    </source>
+    <source id="S6" type="repo">
+      <name>jarrodwatts/claude-hud</name>
+      <url>https://github.com/jarrodwatts/claude-hud</url>
+      <issues>
+        <issue>#33 Linux install fails on Arch</issue>
+        <issue>#20 Windows Terminal setup not recognized</issue>
+        <issue>#17 NixOS install fails due to cross-device rename</issue>
+        <issue>#16 Context percentage mismatch vs /context</issue>
+        <issue>#11 statusLine uses bash -c (Windows incompatible)</issue>
+      </issues>
+    </source>
+    <source id="S7" type="repo">
+      <name>kenryu42/claude-code-safety-net</name>
+      <url>https://github.com/kenryu42/claude-code-safety-net</url>
+      <issues>
+        <issue>#2 Windows lacks python3 command for hook</issue>
+        <issue>#1 Plugin install fails (git clone error)</issue>
+        <issue>#8 Request for generic CLI (non-Claude Code agents)</issue>
+      </issues>
+    </source>
+    <source id="S8" type="repo">
+      <name>numman-ali/cc-mirror</name>
+      <url>https://github.com/numman-ali/cc-mirror</url>
+      <issues>
+        <issue>#7 Windows install fails for claude-code dependency</issue>
+        <issue>#8 Request to sync config across variants</issue>
+      </issues>
+    </source>
+  </sources>
+
+  <source_findings>
+    <finding source_id="S1">
+      <strengths>
+        <item>Stop-hook loop enables iterative, self-referential improvement inside a single session.</item>
+        <item>Completion promise + max-iterations provide a clear stopping mechanism.</item>
+        <item>Prompt best practices stress explicit completion criteria and TDD.</item>
+      </strengths>
+      <pain_points>
+        <item>Stop hook session isolation bugs when multiple sessions run in parallel.</item>
+        <item>Hook scripts fail on OS portability (/bin/bash, jq dependency).</item>
+        <item>Multi-line bash triggers permission checks; security layer is too strict for real-world commands.</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S2">
+      <strengths>
+        <item>Strong issue templates for reproducible bugs and feature requests.</item>
+        <item>PR template enforces testing and documentation hygiene.</item>
+        <item>CI workflows gate generated artifacts, lint, test, integration, and release.</item>
+      </strengths>
+      <pain_points>
+        <item>Direct-to-main workflow can be risky for autonomous agents without hard gates.</item>
+        <item>Boot agent watchdog bug (missing marker file) indicates need for robust liveness checks.</item>
+        <item>Incorrect task prefix shows naming contract fragility across agents.</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S3">
+      <strengths>
+        <item>Continuity ledger and handoff system reduces context loss across sessions.</item>
+        <item>Statusline warns on context usage and prompts handoff before compaction.</item>
+        <item>Plan-validate-implement orchestration with explicit agent handoffs.</item>
+        <item>Reasoning history stored per commit to enable search and recall.</item>
+      </strengths>
+      <pain_points>
+        <item>Global install path assumptions break when scripts are missing locally.</item>
+        <item>Custom statusline overwritten by tooling.</item>
+        <item>Mac-only dependency not documented (platform mismatch risk).</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S4">
+      <strengths>
+        <item>Packaged agents, skills, and hooks for security, formatting, verification.</item>
+        <item>Command catalog for inner-loop git workflow and verification.</item>
+        <item>Configuration templates for permissions, team conventions, and MCP servers.</item>
+      </strengths>
+      <pain_points>
+        <item>Hook dependencies (notify-send) missing on WSL/headless systems.</item>
+        <item>Schema mismatch for plugin.json and hooks.json broke install.</item>
+        <item>Missing multi-agent workflow examples reduced adoption.</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S5">
+      <strengths>
+        <item>RARV cycle enforces reason-act-reflect-verify loop.</item>
+        <item>Auto-resume with exponential backoff and checkpoints.</item>
+        <item>Live dashboard and task queue visualization.</item>
+      </strengths>
+      <pain_points>
+        <item>Perpetual improvement mode has no natural stop condition.</item>
+        <item>Marketplace install not available yet.</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S6">
+      <strengths>
+        <item>Statusline telemetry for model, context, tools, agents, and todos.</item>
+        <item>Uses Claude Code native statusline API for low overhead.</item>
+      </strengths>
+      <pain_points>
+        <item>Cross-platform install failures (Arch, NixOS, Windows).</item>
+        <item>Context percent mismatch vs /context command.</item>
+        <item>Default statusline command uses bash -c (Windows incompatible).</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S7">
+      <strengths>
+        <item>Hard safety net blocks destructive commands via PreToolUse hook.</item>
+        <item>Clear allow/block lists and customizable rules.</item>
+      </strengths>
+      <pain_points>
+        <item>Windows lacks python3 command in hook configuration.</item>
+        <item>Install failures in plugin flow.</item>
+        <item>Demand for non-Claude Code CLI interface.</item>
+      </pain_points>
+    </finding>
+    <finding source_id="S8">
+      <strengths>
+        <item>Model-variant isolation and team-mode orchestration.</item>
+        <item>Project-scoped task isolation avoids cross-project bleed.</item>
+      </strengths>
+      <pain_points>
+        <item>Windows installation fails on claude-code dependency.</item>
+        <item>Config duplication across variants drives user friction.</item>
+      </pain_points>
+    </finding>
+  </source_findings>
+
+  <adoption_matrix>
+    <principle category="autonomy" decision="adopt" priority="P0">
+      <name>Bounded Autopilot Loop (Ralph + RARV)</name>
+      <rationale>Use stop-hook loops with explicit completion promises, max iterations, and budget ceilings.</rationale>
+      <implementation_notes>Reject perpetual improvement loops; enforce stopping criteria and cost caps.</implementation_notes>
+    </principle>
+    <principle category="continuity" decision="adopt" priority="P0">
+      <name>Ledger + Handoff Continuity</name>
+      <rationale>Auto-handoff on compaction and session end prevents context loss.</rationale>
+      <implementation_notes>Use per-session ledgers in .swarm/continuity and inject on SessionStart.</implementation_notes>
+    </principle>
+    <principle category="safety" decision="adopt" priority="P0">
+      <name>Hard Command Blocking Safety Net</name>
+      <rationale>Prevents destructive commands that ignore soft prompt rules.</rationale>
+      <implementation_notes>Ship allow/block lists, custom rules, and explicit override prompts.</implementation_notes>
+    </principle>
+    <principle category="observability" decision="adopt" priority="P1">
+      <name>Statusline Telemetry + Agent HUD</name>
+      <rationale>Operators need real-time context usage and agent status visibility.</rationale>
+      <implementation_notes>Cross-platform statusline command; no bash dependency.</implementation_notes>
+    </principle>
+    <principle category="orchestration" decision="adopt" priority="P1">
+      <name>Plan-Validate-Implement Pipeline</name>
+      <rationale>Improves quality by separating planning, validation, and execution.</rationale>
+      <implementation_notes>Reuse spec debate patterns; add validation agent with RAG and research.</implementation_notes>
+    </principle>
+    <principle category="hooks" decision="adopt" priority="P1">
+      <name>Hook-Based Automation</name>
+      <rationale>Lifecycle hooks enable auto-verify, command logging, and context warnings.</rationale>
+      <implementation_notes>Use schema validation and dependency checks to avoid hook failures.</implementation_notes>
+    </principle>
+    <principle category="model-routing" decision="adopt" priority="P2">
+      <name>Model Variants + Project-Scoped Tasks</name>
+      <rationale>Supports Opus 4.5 plus alternate providers without cross-project leakage.</rationale>
+      <implementation_notes>Provide variant config sync and isolation boundaries.</implementation_notes>
+    </principle>
+    <principle category="workflow" decision="adopt" priority="P2">
+      <name>Issue/PR Templates and CI Gates</name>
+      <rationale>Standardized intake and automated gates reduce regression risk.</rationale>
+      <implementation_notes>Adopt bug/feature templates and explicit testing checklist.</implementation_notes>
+    </principle>
+    <principle category="workflow" decision="adapt" priority="P2">
+      <name>Direct-to-Main Policy</name>
+      <rationale>Fast flow is good for autonomy but needs guardrails.</rationale>
+      <implementation_notes>Use autopilot branch with auto-merge after gates and manual override.</implementation_notes>
+    </principle>
+    <principle category="anti-pattern" decision="avoid" priority="P0">
+      <name>Perpetual Improvement with No Stop Condition</name>
+      <rationale>Cost and scope blowout risk; violates budget controls.</rationale>
+    </principle>
+    <principle category="anti-pattern" decision="avoid" priority="P0">
+      <name>OS-Specific Hook Scripts and Hidden Dependencies</name>
+      <rationale>Repeated failure mode across plugins.</rationale>
+    </principle>
+  </adoption_matrix>
+
+  <expert_debate>
+    <panel>
+      <expert role="Chief Architect">
+        <position>Adopt continuity, hooks, and plan-validate-implement pipeline. Guard against schema drift.</position>
+        <concern>Do not overload agents with too many hooks; keep latency low.</concern>
+      </expert>
+      <expert role="QA Director">
+        <position>Require auto-verify plus manual test reports for every autopilot cycle.</position>
+        <concern>Without hard QA gates, direct-to-main will regress quality.</concern>
+      </expert>
+      <expert role="Security Lead">
+        <position>Safety net command blocking is mandatory with explicit override flow.</position>
+        <concern>Hook scripts must be OS-agnostic and dependency-safe.</concern>
+      </expert>
+      <expert role="Operations">
+        <position>Instrumentation is non-negotiable: statusline plus dashboard.</position>
+        <concern>Telemetry must not leak secrets or overwhelm logs.</concern>
+      </expert>
+      <expert role="COO">
+        <position>Prioritize integration with priority board and spec archival.</position>
+        <concern>Autopilot must remain accountable to strategic goals and budgets.</concern>
+      </expert>
+      <expert role="Product">
+        <position>Bounded autonomy with clear completion promises and release criteria.</position>
+        <concern>Never-ending improvement loops are unacceptable for product delivery.</concern>
+      </expert>
+    </panel>
+    <decision>
+      Implement bounded autopilot with strong safety and QA gates. Integrate continuity,
+      telemetry, and model variants in phases, while keeping the workflow lean.
+      Avoid perpetual loops and OS-specific hooks.
+    </decision>
+  </expert_debate>
+
+  <architecture>
+    <diagram>
+      <![CDATA[
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        AUTOPILOT SOFTWARE COMPANY                           │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Strategic Layer (COO)                                                       │
+│ - Priority board, expert reviews, spec archival, budgets                    │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Tactical Layer (Chief of Staff)                                             │
+│ - Autopilot loop, RARV cycle, checkpoints, cost/time caps                   │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Execution Layer (Agents + QA)                                               │
+│ - Spec debate, issue creation, coder TDD, QA verification                   │
+│ - Plan -> Validate -> Implement -> Verify                                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Cross-Cutting                                                               │
+│ - Safety Net Hooks (PreToolUse)                                             │
+│ - Continuity Ledger + Handoff                                               │
+│ - Statusline + Dashboard Telemetry                                          │
+│ - Model Variants + Project-Scoped Tasks                                     │
+└────────────────────────────────────────────────────────────────────────────┘
+      ]]>
+    </diagram>
+  </architecture>
+
+  <implementation_plan>
+    <phase number="1" name="Safety and Continuity" duration="1-2 weeks">
+      <deliverables>
+        <item>Safety net hook with allow/block lists and override messaging.</item>
+        <item>Continuity ledger + handoff system integrated with SessionStart/PreCompact hooks.</item>
+        <item>Statusline context warnings (thresholds 70/80/90 percent).</item>
+      </deliverables>
+      <acceptance_criteria>
+        <criterion>Destructive commands are blocked with actionable reasons.</criterion>
+        <criterion>Auto-handoff generated on compaction and injected on resume.</criterion>
+        <criterion>Context warnings visible before hitting critical thresholds.</criterion>
+      </acceptance_criteria>
+    </phase>
+
+    <phase number="2" name="Orchestration and Verification" duration="1-2 weeks">
+      <deliverables>
+        <item>Plan-validate-implement pipeline with explicit agent handoffs.</item>
+        <item>Auto-verify hook: tests, lint, and security scan on task completion.</item>
+        <item>Command logging and reasoning history per commit.</item>
+      </deliverables>
+      <acceptance_criteria>
+        <criterion>Every implementation step creates a handoff and a verification record.</criterion>
+        <criterion>Failing tests trigger recovery or rollback suggestions.</criterion>
+      </acceptance_criteria>
+    </phase>
+
+    <phase number="3" name="Observability and Dashboard" duration="1 week">
+      <deliverables>
+        <item>Statusline HUD shows model, context, tools, agents, todo progress.</item>
+        <item>Lightweight dashboard view for agent status and task queue.</item>
+      </deliverables>
+      <acceptance_criteria>
+        <criterion>Statusline works on macOS, Linux, and Windows without bash dependency.</criterion>
+        <criterion>Dashboard updates from .swarm/status.json without manual refresh.</criterion>
+      </acceptance_criteria>
+    </phase>
+
+    <phase number="4" name="Workflow and COO Integration" duration="1 week">
+      <deliverables>
+        <item>Issue and PR templates for swarm-attack, QA, and COO.</item>
+        <item>CI gates for generated artifacts and integration tests.</item>
+        <item>COO integration: priority board sync and spec archival hooks.</item>
+        <item>Model variant config with project-scoped task isolation.</item>
+      </deliverables>
+      <acceptance_criteria>
+        <criterion>Autopilot runs produce archived specs and test reports in COO format.</criterion>
+        <criterion>Model variants do not leak tasks across projects.</criterion>
+      </acceptance_criteria>
+    </phase>
+  </implementation_plan>
+
+  <qa_strategy>
+    <automated>
+      <item>Unit tests for hooks, safety net patterns, and ledger/handoff logic.</item>
+      <item>Integration tests for plan-validate-implement and auto-verify pipelines.</item>
+      <item>Cross-platform smoke tests for statusline commands.</item>
+    </automated>
+    <manual>
+      <item>Run autopilot loop with a small PRD and verify completion promise output.</item>
+      <item>Trigger compaction and confirm auto-handoff restoration.</item>
+      <item>Attempt blocked commands and validate safety messaging.</item>
+      <item>Record results in .swarm/qa/test-reports/&lt;feature&gt;-YYYYMMDD-HHMMSS.md</item>
+    </manual>
+  </qa_strategy>
+
+  <risk_register>
+    <risk severity="high">
+      <name>Infinite or runaway autopilot loops</name>
+      <mitigation>Enforce max iterations, time budget, and cost ceilings at COO level.</mitigation>
+    </risk>
+    <risk severity="high">
+      <name>Cross-platform hook failures</name>
+      <mitigation>Use portable commands and dependency checks; fallback to no-op hooks.</mitigation>
+    </risk>
+    <risk severity="medium">
+      <name>Telemetry privacy leakage</name>
+      <mitigation>Redact secrets and avoid storing raw prompts in dashboards by default.</mitigation>
+    </risk>
+    <risk severity="medium">
+      <name>Over-orchestration latency</name>
+      <mitigation>Keep hooks lightweight and optional; allow disabling in config.</mitigation>
+    </risk>
+  </risk_register>
+
+  <open_questions>
+    <question>Should autopilot use direct-to-main or an auto-merge branch with gates?</question>
+    <question>Where should the continuity ledger live (.swarm vs .claude)?</question>
+    <question>Do we want a shared dashboard across swarm-attack and COO or per-repo?</question>
+  </open_questions>
+
+  <appendix>
+    <notes>
+      <note>Most external pain points are about cross-platform installs, missing dependencies, and hook schema mismatches.</note>
+      <note>Adopt portability-first hook scripts and explicit dependency checks from day one.</note>
+    </notes>
+  </appendix>
+</spec>
